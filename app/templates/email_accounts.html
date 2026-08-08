@@ -1,0 +1,111 @@
+{% extends 'base.html' %} {% block content %}
+<div class="email-management">
+  <h2>Email Accounts Management</h2>
+  <div class="actions">
+    <button onclick="addNewAccount()">+ Add Account</button>
+  </div>
+  <div class="action-bar" id="action-bar" style="display: block">
+    <button id="move-up-btn" onclick="bulkMove(-1)" disabled>Move Up</button>
+    <button id="move-down-btn" onclick="bulkMove(1)" disabled>Move Down</button>
+    <button id="edit-btn" onclick="bulkToggle()" disabled>
+      Enable/Disable
+    </button>
+    <button id="delete-btn" onclick="bulkDelete()" disabled>Delete</button>
+  </div>
+  <div class="table-container">
+    <table id="email-table">
+      <thead>
+        <tr>
+          <th>Select</th>
+          <th>⋮⋮</th>
+          <th>Code</th>
+          <th>Group</th>
+          <th>Order</th>
+          <th>Status</th>
+          <th>Reserved By</th>
+        </tr>
+      </thead>
+      <tbody id="email-table-body">
+        <!-- Rendered by JS -->
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/prototype.js') }}"></script>
+<script>
+  let selectedCodes = new Set();
+
+  function toggleSelection(code) {
+    if (selectedCodes.has(code)) selectedCodes.delete(code);
+    else selectedCodes.add(code);
+    updateActionBar();
+    renderEmailTable();
+  }
+
+  function updateActionBar() {
+    const count = selectedCodes.size;
+    document.getElementById("move-up-btn").disabled = count !== 1;
+    document.getElementById("move-down-btn").disabled = count !== 1;
+    document.getElementById("edit-btn").disabled = count === 0;
+    document.getElementById("delete-btn").disabled = count === 0;
+  }
+
+  function renderEmailTable() {
+    const body = document.getElementById("email-table-body");
+    if (!body) return;
+    // Sort by order
+    const sorted = [...mockEmailAccounts].sort((a, b) => a.order - b.order);
+
+    body.innerHTML = sorted
+      .map(
+        (acc) => `
+            <tr data-code="${acc.code}" draggable="true" class="${selectedCodes.has(acc.code) ? "selected" : ""}">
+                <td><input type="checkbox" ${selectedCodes.has(acc.code) ? "checked" : ""} onchange="toggleSelection('${acc.code}')"></td>
+                <td class="drag-handle">⋮⋮</td>
+                <td>${acc.code}</td>
+                <td>${acc.group}</td>
+                <td>${acc.order}</td>
+                <td>${acc.state}</td>
+                <td>${acc.reservedFor || "-"}</td>
+            </tr>
+        `,
+      )
+      .join("");
+
+    updateActionBar();
+    makeDraggable(); // Re-initialize dragging after render
+  }
+  function toggleAccount(code) {
+    const acc = mockEmailAccounts.find((a) => a.code === code);
+    acc.state = acc.state === "Disabled" ? "Available" : "Disabled";
+    renderEmailTable();
+  }
+
+  function removeAccount(code) {
+    const idx = mockEmailAccounts.findIndex((a) => a.code === code);
+    mockEmailAccounts.splice(idx, 1);
+    selectedCodes.delete(code);
+    updateActionBar();
+    renderEmailTable();
+  }
+
+  function moveAccount(code, dir) {
+    const idx = mockEmailAccounts.findIndex((a) => a.code === code);
+    const newIdx = idx + dir;
+    if (newIdx >= 0 && newIdx < mockEmailAccounts.length) {
+      // Swap orders
+      const temp = mockEmailAccounts[idx].order;
+      mockEmailAccounts[idx].order = mockEmailAccounts[newIdx].order;
+      mockEmailAccounts[newIdx].order = temp;
+
+      // Sort to maintain order integrity
+      mockEmailAccounts.sort((a, b) => a.order - b.order);
+      renderEmailTable();
+    }
+  }
+
+  // Initial render
+  renderEmailTable();
+</script>
+{% endblock %}

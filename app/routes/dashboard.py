@@ -5,3 +5,7 @@ bp = Blueprint('dashboard', __name__)
 @bp.route('/')
 def index():
     return render_template('dashboard.html')
+
+@bp.route('/email-accounts')
+def email_accounts():
+    return render_template('email_accounts.html')

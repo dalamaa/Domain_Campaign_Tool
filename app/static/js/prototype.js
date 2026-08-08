@@ -65,6 +65,8 @@ const mockEmailAccounts = allEmailCodes.map((code, index) => ({
   reservedFor: null,
 }));
 
+let selectedCodes = new Set();
+
 // 2. Clean Campaigns
 const mockCampaigns = Array.from({ length: 35 }, (_, i) => {
   const groups = ["M", "T", "N", "Y", "Z"];
@@ -95,19 +97,8 @@ const mockCampaigns = Array.from({ length: 35 }, (_, i) => {
   };
 });
 
-// Issue identification:
-// The issue is that the initial mockEmailAccounts setup manually sets state = 'Reserved'
-// for some accounts (index % 5 === 0), but the campaign objects in mockCampaigns
-// were not initialized with `isReserved = true` to match that state.
-// Therefore, the UI renders the button as "Reserve" because isReserved is undefined (falsy),
-// but clicking it triggers a conflict because the accounts are already marked 'Reserved' in mockEmailAccounts.
-
-// Fix: Sync mockCampaigns state with mockEmailAccounts state during initialization.
-
 function syncCampaignStates() {
   mockCampaigns.forEach((c) => {
-    // A campaign is reserved if ALL of its required email blocks are currently in 'Reserved' state
-    // AND 'reservedFor' matches the domain.
     const blocks = c.suggestedBlock;
     const allReserved = blocks.every((code) => {
       const acc = mockEmailAccounts.find((a) => a.code === code);
@@ -117,12 +108,6 @@ function syncCampaignStates() {
   });
 }
 
-// Updated initialization to ensure sync
-syncCampaignStates();
-refreshDashboard();
-
-// UI Logic
-// Fix: Accordion logic
 function toggleAccordion(id) {
   const el = document.getElementById(id);
   el.style.display = el.style.display === "block" ? "none" : "block";
@@ -157,13 +142,11 @@ function openSidePanel(id) {
   if (campaign) showSidePanel(campaign.domain);
 }
 
-// Reservation Logic Toggle
 function reserveBlock(domain) {
   const campaign = mockCampaigns.find((c) => c.domain === domain);
   const isReserved = campaign.isReserved;
 
   if (isReserved) {
-    // Unreserve
     campaign.suggestedBlock.forEach((code) => {
       const acc = mockEmailAccounts.find((a) => a.code === code);
       acc.state = "Available";
@@ -171,7 +154,6 @@ function reserveBlock(domain) {
     });
     campaign.isReserved = false;
   } else {
-    // Reserve
     const conflicts = campaign.suggestedBlock.filter(
       (code) =>
         mockEmailAccounts.find((a) => a.code === code).state === "Reserved",
@@ -192,38 +174,36 @@ function reserveBlock(domain) {
   refreshDashboard();
 }
 
-// 2. Logic to filter and render
-// Fix: Render Logic
-function refreshDashboard() {
-  syncCampaignStates(); // Always sync state before rendering
+function getSortedAccounts() {
+  return [...mockEmailAccounts].sort((a, b) => a.order - b.order);
+}
 
-  // 1. Overview
+function refreshDashboard() {
+  syncCampaignStates();
   document.getElementById("total-domains").textContent = mockCampaigns.length;
   document.getElementById("active-campaigns").textContent =
     mockCampaigns.filter((c) => c.status === "Active").length;
   document.getElementById("resting-campaigns").textContent =
     mockCampaigns.filter((c) => c.status === "Resting").length;
 
-  // 2. Email Board
   updateReservationBoard();
   renderSuggestedWork();
 }
 
-// Update the render logic for the Reservation Board to show which campaign holds an account
 function updateReservationBoard() {
   const list = document.getElementById("email-accounts-list");
-  list.innerHTML = mockEmailAccounts
-    .map((acc) => {
-      let display = `<strong>${acc.code}</strong>`;
-      if (acc.reservedFor) {
-        display += `<br><small>${acc.reservedFor}</small>`;
-      }
-      return `<div class="acc-item ${acc.state.toLowerCase()}">${display}</div>`;
-    })
+  if (!list) return;
+  list.innerHTML = getSortedAccounts()
+    .map(
+      (acc) => `
+        <div class="acc-item ${acc.state.toLowerCase()}">
+            <strong>${acc.code}</strong><br>
+            <small>${acc.reservedFor || acc.state}</small>
+        </div>
+    `,
+    )
     .join("");
 }
-
-// Render Suggested Work Sections with Toggle Logic
 function renderSuggestedWork() {
   const categories = [
     { id: "first-followup", action: "First Follow-up" },
@@ -234,6 +214,7 @@ function renderSuggestedWork() {
   categories.forEach((cat) => {
     const container = document.getElementById(cat.id);
     const data = mockCampaigns.filter((c) => c.action === cat.action);
+    if (!container) return;
     container.innerHTML = `<table>
             <tr><th>Domain</th><th>Block</th><th>Action</th></tr>
             ${data
@@ -254,5 +235,158 @@ function renderSuggestedWork() {
   });
 }
 
-// Refresh call at end of file
+function renderEmailTable() {
+  const body = document.querySelector("#email-table-body");
+  if (!body) return; // Only run if we are on the right page
+  const sorted = getSortedAccounts();
+  body.innerHTML = sorted
+    .map(
+      (acc) => `
+    <tr data-code="${acc.code}" draggable="true">
+        <td><input type="checkbox" ${selectedCodes.has(acc.code) ? "checked" : ""} onchange="toggleSelection('${acc.code}')"></td>
+        <td class="drag-handle">⋮⋮</td>
+        <td>${acc.code}</td>
+        <td>${acc.group}</td>
+        <td>${acc.order}</td>
+        <td>${acc.state}</td>
+        <td>${acc.reservedFor || "-"}</td>
+    </tr>
+`,
+    )
+    .join("");
+
+  // Re-enable action bar visibility based on selection
+  updateActionBar();
+  makeDraggable();
+}
+
+// Ensure init logic runs only once
+if (document.querySelector("#email-table-body")) {
+  renderEmailTable();
+}
+
+function toggleSelection(code) {
+  if (selectedCodes.has(code)) selectedCodes.delete(code);
+  else selectedCodes.add(code);
+  updateActionBar();
+}
+
+// Ensure the action bar starts hidden
+document.addEventListener("DOMContentLoaded", () => {
+  const bar = document.getElementById("action-bar");
+  if (bar) bar.style.display = "block";
+});
+
+// Update Action Bar logic
+function updateActionBar() {
+  const bar = document.getElementById("action-bar");
+  if (!bar) return;
+
+  // Always keep block display
+  bar.style.display = "block";
+
+  const count = selectedCodes.size;
+  const moveUp = document.getElementById("move-up-btn");
+  const moveDown = document.getElementById("move-down-btn");
+  const editBtn = document.getElementById("edit-btn");
+  const delBtn = document.getElementById("delete-btn");
+
+  if (moveUp) moveUp.disabled = count !== 1;
+  if (moveDown) moveDown.disabled = count !== 1;
+  if (editBtn) editBtn.disabled = count === 0;
+  if (delBtn) delBtn.disabled = count === 0;
+}
+
+function makeDraggable() {
+  const rows = document.querySelectorAll("#email-table-body tr");
+  rows.forEach((row) => {
+    row.addEventListener("dragstart", (e) => {
+      e.target.classList.add("dragging");
+      e.dataTransfer.setData("text/plain", e.target.dataset.code);
+    });
+    row.addEventListener("dragend", (e) =>
+      e.target.classList.remove("dragging"),
+    );
+  });
+
+  const tbody = document.querySelector("#email-table-body");
+  tbody.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    const dragging = document.querySelector(".dragging");
+    const afterElement = getDragAfterElement(tbody, e.clientY);
+    if (afterElement == null) {
+      tbody.appendChild(dragging);
+    } else {
+      tbody.insertBefore(dragging, afterElement);
+    }
+  });
+
+  tbody.addEventListener("drop", (e) => {
+    updateOrderFromDOM();
+  });
+}
+
+function getDragAfterElement(container, y) {
+  const draggableElements = [
+    ...container.querySelectorAll("tr:not(.dragging)"),
+  ];
+  return draggableElements.reduce(
+    (closest, child) => {
+      const box = child.getBoundingClientRect();
+      const offset = y - box.top - box.height / 2;
+      if (offset < 0 && offset > closest.offset) {
+        return { offset: offset, element: child };
+      } else {
+        return closest;
+      }
+    },
+    { offset: Number.NEGATIVE_INFINITY },
+  ).element;
+}
+
+function updateOrderFromDOM() {
+  const rows = document.querySelectorAll("#email-table-body tr");
+  rows.forEach((row, index) => {
+    const code = row.dataset.code;
+    const account = mockEmailAccounts.find((a) => a.code === code);
+    account.order = index + 1;
+  });
+  mockEmailAccounts.sort((a, b) => a.order - b.order);
+  renderEmailTable();
+}
+
+function bulkToggle() {
+  selectedCodes.forEach((code) => {
+    const acc = mockEmailAccounts.find((a) => a.code === code);
+    acc.state = acc.state === "Disabled" ? "Available" : "Disabled";
+  });
+  selectedCodes.clear();
+  updateActionBar();
+  renderEmailTable();
+}
+
+function bulkDelete() {
+  selectedCodes.forEach((code) => {
+    const idx = mockEmailAccounts.findIndex((a) => a.code === code);
+    if (idx !== -1) mockEmailAccounts.splice(idx, 1);
+  });
+  selectedCodes.clear();
+  updateActionBar();
+  renderEmailTable();
+}
+
+function bulkMove(dir) {
+  const code = Array.from(selectedCodes)[0];
+  const idx = mockEmailAccounts.findIndex((a) => a.code === code);
+  const newIdx = idx + dir;
+  if (newIdx >= 0 && newIdx < mockEmailAccounts.length) {
+    [mockEmailAccounts[idx].order, mockEmailAccounts[newIdx].order] = [
+      mockEmailAccounts[newIdx].order,
+      mockEmailAccounts[idx].order,
+    ];
+    mockEmailAccounts.sort((a, b) => a.order - b.order);
+    renderEmailTable();
+  }
+}
+
 refreshDashboard();

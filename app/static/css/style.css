@@ -72,3 +72,37 @@ td {
   padding: 8px;
   text-align: left;
 }
+
+.table-container {
+  max-height: 600px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+}
+thead th {
+  position: sticky;
+  top: 0;
+  background: #fff;
+  border-bottom: 2px solid #ddd;
+  z-index: 1;
+}
+.dragging {
+  opacity: 0.5;
+  background: #e0f7fa;
+}
+tr {
+  cursor: grab;
+}
+tr:active {
+  cursor: grabbing;
+}
+
+.action-bar {
+  padding: 15px;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  margin-bottom: 10px;
+  display: block;
+}
+.action-bar button {
+  margin-right: 5px;
+}
