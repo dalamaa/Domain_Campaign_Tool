@@ -1,0 +1,57 @@
+{% extends 'base.html' %} {% block content %}
+<div class="dashboard">
+  <!-- Overview Cards -->
+  <section class="overview-cards">
+    <div class="card">Total Domains: <span id="total-domains"></span></div>
+    <div class="card">
+      Active Campaigns: <span id="active-campaigns"></span>
+    </div>
+    <div class="card">
+      Resting Campaigns: <span id="resting-campaigns"></span>
+    </div>
+    <div class="card">
+      Expiring:
+      <select id="expiry-filter" onchange="refreshDashboard()">
+        <option value="30">30 Days</option>
+        <option value="45">45 Days</option>
+        <option value="60">60 Days</option>
+      </select>
+      <span id="expiring-count"></span>
+    </div>
+  </section>
+  <!-- Suggested Work -->
+  <section class="suggested-work">
+    <h2>Suggested Work</h2>
+    <div class="accordion">
+      <button onclick="toggleAccordion('first-followup')">
+        First Follow-ups
+      </button>
+      <div id="first-followup" class="content"></div>
+    </div>
+    <div class="accordion">
+      <button onclick="toggleAccordion('normal-followup')">
+        Normal Follow-ups
+      </button>
+      <div id="normal-followup" class="content"></div>
+    </div>
+    <div class="accordion">
+      <button onclick="toggleAccordion('price-reduction')">
+        Price Reductions
+      </button>
+      <div id="price-reduction" class="content"></div>
+    </div>
+  </section>
+  <!-- Reservation Board -->
+  <section id="reservation-board">
+    <h2>Reservation Board</h2>
+    <div id="email-accounts-list" class="grid-board"></div>
+  </section>
+</div>
+<!-- Side Panel -->
+<div id="side-panel" class="hidden">
+  <button onclick="hideSidePanel()">Close</button>
+  <div id="panel-content"></div>
+</div>
+
+<script src="{{ url_for('static', filename='js/prototype.js') }}"></script>
+{% endblock %}

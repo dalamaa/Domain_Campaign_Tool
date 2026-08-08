@@ -1,0 +1,74 @@
+body {
+  font-family: sans-serif;
+  padding: 20px;
+}
+.dashboard {
+  padding: 20px;
+}
+.overview-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 15px;
+  margin-bottom: 20px;
+}
+.card {
+  background: #f4f4f4;
+  padding: 20px;
+  border-radius: 8px;
+  text-align: center;
+}
+.accordion {
+  border: 1px solid #ccc;
+  margin-bottom: 10px;
+}
+.accordion button {
+  width: 100%;
+  text-align: left;
+  padding: 15px;
+  background: #eee;
+  cursor: pointer;
+}
+.content {
+  display: none;
+  padding: 10px;
+}
+.grid-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 10px;
+}
+.acc-item {
+  padding: 10px;
+  border: 1px solid #ccc;
+  font-size: 0.8em;
+}
+.available {
+  background: #d4edda;
+}
+.reserved {
+  background: #fff3cd;
+}
+#side-panel {
+  position: fixed;
+  right: 0;
+  top: 0;
+  width: 400px;
+  height: 100%;
+  border-left: 1px solid #000;
+  background: #fff;
+  padding: 20px;
+  box-shadow: -2px 0 5px rgba(0, 0, 0, 0.2);
+}
+.hidden {
+  display: none;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th,
+td {
+  border: 1px solid #eee;
+  padding: 8px;
+  text-align: left;
+}
