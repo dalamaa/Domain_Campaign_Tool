@@ -1,0 +1,77 @@
+{% extends 'base.html' %} {% block content %}
+<div class="domain-management">
+  <h2>Domains / Campaigns</h2>
+
+  <div class="action-bar" id="domain-action-bar" style="display: block">
+    <button onclick="document.getElementById('csv-input').click()">
+      Import CSV
+    </button>
+    <input
+      type="file"
+      id="csv-input"
+      style="display: none"
+      onchange="handleCSVImport(event)"
+    />
+    <button onclick="openModal()">+ Add Domain</button>
+    <button id="edit-btn" onclick="editSelected()" disabled>Edit</button>
+    <button id="delete-btn" onclick="bulkDeleteDomains()" disabled>
+      Delete
+    </button>
+  </div>
+
+  <div class="table-container" style="max-height: 600px; overflow-y: auto">
+    <table id="domain-table">
+      <thead>
+        <tr>
+          <th>Select</th>
+          <th>Domain</th>
+          <th>Expiry</th>
+          <th>Days Left</th>
+          <th>Status</th>
+          <th>Price</th>
+          <th>Days Since</th>
+        </tr>
+      </thead>
+      <tbody id="domain-table-body">
+        <!-- Rendered by JS -->
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div
+  id="domain-modal"
+  class="modal"
+  style="
+    display: none;
+    position: fixed;
+    top: 20%;
+    left: 30%;
+    background: white;
+    padding: 20px;
+    border: 1px solid #ccc;
+    z-index: 100;
+  "
+>
+  <h3 id="modal-title">Domain</h3>
+  <input type="hidden" id="edit-id" />
+  <label>Domain: <input type="text" id="form-domain" /></label><br />
+  <label>Expiry: <input type="date" id="form-expiry" /></label><br />
+  <label>Last Contact: <input type="date" id="form-lastContact" /></label><br />
+  <label>Price: <input type="number" id="form-price" /></label><br />
+  <button onclick="saveDomain()">Save</button>
+  <button onclick="closeModal()">Cancel</button>
+</div>
+
+<div id="side-panel" class="hidden" style="position: fixed; right: 0; top: 0; width: 300px; height: 100%; border-left: 1px solid #000; background: #fff; padding: 20px;">
+  <button onclick="hideSidePanel()">Close</button>
+  <div id="panel-content"></div>
+</div>
+
+<script src="{{ url_for('static', filename='js/shared.js') }}"></script>
+<script src="{{ url_for('static', filename='js/pages/domains.js') }}"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", renderDomainTable);
+</script>
+{% endblock %}
+

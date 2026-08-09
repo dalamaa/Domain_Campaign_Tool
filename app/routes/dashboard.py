@@ -9,3 +9,8 @@ def index():
 @bp.route('/email-accounts')
 def email_accounts():
     return render_template('email_accounts.html')
+
+@bp.route('/domains')
+def domains():
+    return render_template('domains.html')
+
