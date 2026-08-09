@@ -1,23 +1,47 @@
 // 1. domains.js
 let selectedDomains = new Set();
+let searchTerm = "";
+
+function updateSearch(val) {
+  searchTerm = val.trim().toLowerCase();
+  renderDomainTable();
+}
 
 function renderDomainTable() {
   const body = document.getElementById("domain-table-body");
   if (!body) return;
-  body.innerHTML = mockCampaigns
-    .map(
-      (c) => `
+
+  // Filter by search
+  const filtered = mockCampaigns.filter((c) =>
+    c.domain.toLowerCase().includes(searchTerm),
+  );
+  // Show count
+  const countEl = document.getElementById("domain-count");
+  if (countEl)
+    countEl.textContent = `${filtered.length} of ${mockCampaigns.length} domains`;
+  body.innerHTML = filtered
+    .map((c) => {
+      const daysLeft = Math.floor(
+        (new Date(c.expiry) - new Date()) / (1000 * 60 * 60 * 24),
+      );
+      const daysSince = Math.floor(
+        (new Date() - new Date(c.lastContact)) / (1000 * 60 * 60 * 24),
+      );
+
+      return `
         <tr class="${selectedDomains.has(c.id) ? "selected" : ""}">
             <td><input type="checkbox" ${selectedDomains.has(c.id) ? "checked" : ""} onchange="toggleDomainSelection(${c.id})"></td>
             <td onclick="showSidePanel('${c.domain}')" style="cursor:pointer">${c.domain}</td>
             <td>${c.expiry}</td>
-            <td>${Math.floor((new Date(c.expiry) - new Date()) / (1000 * 60 * 60 * 24))}</td>
+            <td>${daysLeft} days</td>
             <td>${c.status}</td>
             <td>$${c.price}</td>
-            <td>${Math.floor((new Date() - new Date(c.lastContact)) / (1000 * 60 * 60 * 24))} days</td>
+            <td>${daysSince} days</td>
+            <td>${c.seq}</td>
+            <td><span class="pill">${c.lastAction || "N/A"}</span></td>
         </tr>
-    `,
-    )
+        `;
+    })
     .join("");
 }
 
@@ -107,25 +131,28 @@ function closeModal() {
   document.getElementById("domain-modal").style.display = "none";
 }
 
+// 1. Update saveDomain to handle the new modal fields
 function saveDomain() {
   const id = document.getElementById("edit-id").value;
-  const domain = document.getElementById("form-domain").value;
+  const data = {
+    domain: document.getElementById("form-domain").value,
+    expiry: document.getElementById("form-expiry").value,
+    lastContact: document.getElementById("form-lastContact").value,
+    price: parseInt(document.getElementById("form-price").value),
+    status: document.getElementById("form-status").value,
+    seq: document.getElementById("form-seq").value,
+    lastAction: document.getElementById("form-lastAction").value,
+  };
+
   if (id) {
-    const c = mockCampaigns.find(x => x.id == id);
-    c.domain = domain;
+    const c = mockCampaigns.find((x) => x.id == id);
+    Object.assign(c, data);
   } else {
     mockCampaigns.push({
       id: mockCampaigns.length + 1,
-      domain: domain,
-      status: "Active",
-      expiry: "2026-12-31",
-      price: 500,
-      seq: 1,
-      lastContact: "2026-08-01",
-      action: "First Follow-up",
+      ...data,
     });
   }
   renderDomainTable();
   closeModal();
 }
-

@@ -3,6 +3,12 @@
   <h2>Domains / Campaigns</h2>
 
   <div class="action-bar" id="domain-action-bar" style="display: block">
+    <input
+      type="text"
+      placeholder="Search domains..."
+      oninput="updateSearch(this.value)"
+    />
+    <span id="domain-count"></span>
     <button onclick="document.getElementById('csv-input').click()">
       Import CSV
     </button>
@@ -23,13 +29,17 @@
     <table id="domain-table">
       <thead>
         <tr>
-          <th>Select</th>
-          <th>Domain</th>
-          <th>Expiry</th>
-          <th>Days Left</th>
-          <th>Status</th>
-          <th>Price</th>
-          <th>Days Since</th>
+          <th style="position: sticky; top: 0; background: #eee">Select</th>
+          <th style="position: sticky; top: 0; background: #eee">Domain</th>
+          <th style="position: sticky; top: 0; background: #eee">Expiry</th>
+          <th style="position: sticky; top: 0; background: #eee">Days Left</th>
+          <th style="position: sticky; top: 0; background: #eee">Status</th>
+          <th style="position: sticky; top: 0; background: #eee">Price</th>
+          <th style="position: sticky; top: 0; background: #eee">Days Since</th>
+          <th style="position: sticky; top: 0; background: #eee">Seq</th>
+          <th style="position: sticky; top: 0; background: #eee">
+            Last Action
+          </th>
         </tr>
       </thead>
       <tbody id="domain-table-body">
@@ -53,17 +63,66 @@
     z-index: 100;
   "
 >
-  <h3 id="modal-title">Domain</h3>
+  <!-- 2. Update Modal Fields -->
+  <h3 id="modal-title">Add/Edit Domain</h3>
   <input type="hidden" id="edit-id" />
   <label>Domain: <input type="text" id="form-domain" /></label><br />
-  <label>Expiry: <input type="date" id="form-expiry" /></label><br />
-  <label>Last Contact: <input type="date" id="form-lastContact" /></label><br />
+  <label>Expiry Date: <input type="date" id="form-expiry" /></label><br />
+  <label
+    >Status:
+    <select id="form-status">
+      <option value="Active">Active</option>
+      <option value="Resting">Resting</option>
+      <option value="Sold">Sold</option>
+      <option value="Expired">Expired</option>
+      <option value="Archived">Archived</option>
+    </select> </label
+  ><br />
   <label>Price: <input type="number" id="form-price" /></label><br />
+  <label>Last Contact Date: <input type="date" id="form-lastContact" /></label
+  ><br />
+  <label
+    >Sequence:
+    <select id="form-seq">
+      <option value="1">1</option>
+      <option value="2">2</option>
+      <option value="3">3</option>
+      <option value="4">4</option>
+      <option value="5">5</option>
+      <option value="6">6</option>
+      <option value="7">7</option>
+      <option value="8">8</option>
+    </select> </label
+  ><br />
+  <label
+    >Last Action:
+    <select id="form-lastAction">
+      <option value="First Outreach">First Outreach</option>
+      <option value="Follow-up">Follow-up</option>
+      <option value="Price Reduction">Price Reduction</option>
+      <option value="Question">Question</option>
+      <option value="Final Follow-up">Final Follow-up</option>
+      <option value="Other">Other</option>
+    </select> </label
+  ><br />
   <button onclick="saveDomain()">Save</button>
   <button onclick="closeModal()">Cancel</button>
 </div>
 
-<div id="side-panel" class="hidden" style="position: fixed; right: 0; top: 0; width: 300px; height: 100%; border-left: 1px solid #000; background: #fff; padding: 20px;">
+<div
+  id="side-panel"
+  class="hidden"
+  style="
+    position: fixed;
+    right: 0;
+    top: 0;
+    width: 300px;
+    height: 100%;
+    border-left: 1px solid #000;
+    background: #fff;
+    padding: 20px;
+  "
+>
   <button onclick="hideSidePanel()">Close</button>
   <div id="panel-content"></div>
 </div>
@@ -74,4 +133,3 @@
   document.addEventListener("DOMContentLoaded", renderDomainTable);
 </script>
 {% endblock %}
-

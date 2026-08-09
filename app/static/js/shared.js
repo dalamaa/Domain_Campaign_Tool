@@ -97,23 +97,33 @@ function getSortedAccounts() {
 }
 
 // Side panel visibility helpers
+// 2. Update side panel logic in shared.js to show full detail
 function showSidePanel(domainName) {
   const campaign = mockCampaigns.find((c) => c.domain === domainName);
   if (!campaign) return;
 
-  // Ensure elements exist
   const panel = document.getElementById("side-panel");
   const content = document.getElementById("panel-content");
   if (!panel || !content) return;
 
+  const daysSince = Math.floor(
+    (new Date() - new Date(campaign.lastContact)) / (1000 * 60 * 60 * 24),
+  );
+  const daysUntil = Math.floor(
+    (new Date(campaign.expiry) - new Date()) / (1000 * 60 * 60 * 24),
+  );
   content.innerHTML = `
         <h3>${campaign.domain}</h3>
         <p><strong>Status:</strong> ${campaign.status}</p>
-        <p><strong>Current Price:</strong> $${campaign.price}</p>
-        <p><strong>Last Contact:</strong> ${campaign.lastContact}</p>
-        <h4>History</h4>
+        <p><strong>Price:</strong> $${campaign.price} | <strong>Seq:</strong> ${campaign.seq}</p>
+        <p><strong>Last Action:</strong> ${campaign.lastAction || "N/A"}</p>
+        <p><strong>Last Contact:</strong> ${campaign.lastContact} (${daysSince} days ago)</p>
+        <p><strong>Expiry:</strong> ${campaign.expiry} (${daysUntil} days left)</p>
+        <p><strong>Email Block:</strong> ${campaign.suggestedBlock ? campaign.suggestedBlock.join(", ") : "None"}</p>
+        <p><strong>Reservation:</strong> ${campaign.isReserved ? "Reserved" : "No reservation"}</p>
+        <h4>Campaign History</h4>
         <ul>
-            <li>Aug 4: Follow-up Sent ($${campaign.price})</li>
+            <li>${campaign.lastContact}: ${campaign.lastAction || "Action"} ($${campaign.price})</li>
         </ul>
         <button onclick="hideSidePanel()">Close</button>
     `;
