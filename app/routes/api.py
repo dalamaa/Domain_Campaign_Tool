@@ -3,6 +3,7 @@ from app.models.models import db, EmailAccount
 from sqlalchemy import asc
 import re
 from sqlalchemy import desc
+from datetime import datetime
 
 bp = Blueprint('api', __name__, url_prefix='/api')
 
@@ -133,4 +134,134 @@ def fix_order():
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
+
+@bp.route('/domains', methods=['GET'])
+def get_domains():
+    from app.models.models import Domain, Campaign
+    # Join domain and campaign to get combined data
+    domains = Domain.query.all()
+    results = []
+    for d in domains:
+        # Assuming one campaign per domain for prototype simplicity
+        c = Campaign.query.filter_by(domain_id=d.id).first()
+        results.append({
+            'id': d.id,
+            'domain': d.domain_name,
+            'expiry': d.expiry_date.isoformat() if d.expiry_date else '',
+            'status': c.status.value if c else 'Active',
+            'price': c.current_price if c else 0,
+            'seq': c.current_sequence if c else 1,
+            'lastContact': c.last_contact_date.isoformat() if c and c.last_contact_date else '',
+            'action': 'First Follow-up' # Placeholder for action mapping
+        })
+    return jsonify(results)
+
+@bp.route('/domains', methods=['POST'])
+def add_domain():
+    from app.models.models import Domain, Campaign, CampaignStatus
+    data = request.json
+    if Domain.query.filter_by(domain_name=data['domain']).first():
+        return jsonify({'error': 'Domain exists'}), 400
+
+    new_dom = Domain(domain_name=data['domain'], expiry_date=data['expiry'])
+    db.session.add(new_dom)
+    db.session.flush()
+
+    new_camp = Campaign(
+        domain_id=new_dom.id, status=CampaignStatus.ACTIVE,
+        start_date=datetime.utcnow(), current_price=data['price'],
+        current_sequence=1
+    )
+    db.session.add(new_camp)
+    db.session.commit()
+    return jsonify({'success': True})
+
+
+@bp.route('/domains/import', methods=['POST'])
+def import_domains():
+    from app.models.models import Domain, Campaign, CampaignStatus
+    data = request.json.get('domains', [])
+    try:
+        for item in data:
+            # Handle empty/invalid price
+            price_raw = item.get('price')
+            price = int(price_raw) if (price_raw and str(price_raw).isdigit()) else 0
+
+            # Handle empty/invalid sequence
+            seq_raw = item.get('seq')
+            seq = int(seq_raw) if (seq_raw and str(seq_raw).isdigit()) else 1
+
+            # Handle expiry date safely
+            expiry_date = None
+            if item.get('expiry'):
+                try:
+                    expiry_date = datetime.strptime(str(item.get('expiry')), '%Y-%m-%d').date()
+                except ValueError:
+                    pass # Keep None if date is invalid
+
+            new_dom = Domain(domain_name=item.get('domain'), expiry_date=expiry_date)
+            db.session.add(new_dom)
+            db.session.flush()
+
+            new_camp = Campaign(
+                domain_id=new_dom.id,
+                status=getattr(CampaignStatus, str(item.get('status', 'ACTIVE')).upper(), CampaignStatus.ACTIVE),
+                start_date=datetime.utcnow(),
+                current_price=price,
+                current_sequence=seq
+            )
+            db.session.add(new_camp)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        print(f"Import Error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# @bp.route('/domains/import', methods=['POST'])
+# def import_domains():
+#     from app.models.models import Domain, Campaign, CampaignStatus
+#     data = request.json.get('domains', [])
+#     try:
+#         for item in data:
+#             new_dom = Domain(domain_name=item['domain'], expiry_date=item.get('expiry') or None)
+#             db.session.add(new_dom)
+#             db.session.flush()
+#             new_camp = Campaign(
+#                 domain_id=new_dom.id,
+#                 status=getattr(CampaignStatus, item.get('status', 'ACTIVE').upper(), CampaignStatus.ACTIVE),
+#                 start_date=datetime.utcnow(),
+#                 current_price=item.get('price') or 0,
+#                 current_sequence=item.get('seq') or 1
+#             )
+#             db.session.add(new_camp)
+#         db.session.commit()
+#         return jsonify({'success': True})
+#     except Exception as e:
+#         db.session.rollback()
+#         return jsonify({'error': str(e)}), 500
+
+@bp.route('/domains/<int:id>', methods=['PUT', 'DELETE'])
+def manage_domain(id):
+    from app.models.models import Domain, Campaign, CampaignStatus
+    dom = Domain.query.get_or_404(id)
+    if request.method == 'DELETE':
+        db.session.delete(dom)
+        db.session.commit()
+        return jsonify({'success': True})
+
+    # Update logic
+    data = request.json
+    dom.domain_name = data['domain']
+    # Update Campaign
+    camp = Campaign.query.filter_by(domain_id=dom.id).first()
+    if camp:
+        camp.current_price = data.get('price', camp.current_price)
+        camp.status = getattr(CampaignStatus, str(data.get('status', 'ACTIVE')).upper(), camp.status)
+        camp.current_sequence = data.get('seq', camp.current_sequence)
+        # Note: logic for last_contact_date and last_action mapping should be added here
+        camp.updated_at = datetime.utcnow()
+
+    db.session.commit()
+    return jsonify({'success': True})
 
