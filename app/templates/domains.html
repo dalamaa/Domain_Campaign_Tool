@@ -30,15 +30,53 @@
       <thead>
         <tr>
           <th style="position: sticky; top: 0; background: #eee">Select</th>
-          <th style="position: sticky; top: 0; background: #eee">Domain</th>
-          <th style="position: sticky; top: 0; background: #eee">Expiry</th>
-          <th style="position: sticky; top: 0; background: #eee">Days Left</th>
-          <th style="position: sticky; top: 0; background: #eee">Status</th>
-          <th style="position: sticky; top: 0; background: #eee">Price</th>
-          <th style="position: sticky; top: 0; background: #eee">Days Since</th>
-          <th style="position: sticky; top: 0; background: #eee">Seq</th>
-          <th style="position: sticky; top: 0; background: #eee">
-            Last Action
+          <th
+            style="position: sticky; top: 0; background: #eee; cursor: pointer"
+            onclick="sortTable('domain')"
+          >
+            Domain ↕
+          </th>
+          <th
+            style="position: sticky; top: 0; background: #eee; cursor: pointer"
+            onclick="sortTable('expiry')"
+          >
+            Expiry ↕
+          </th>
+          <th
+            style="position: sticky; top: 0; background: #eee; cursor: pointer"
+            onclick="sortTable('expiry')"
+          >
+            Days Left ↕
+          </th>
+          <th
+            style="position: sticky; top: 0; background: #eee; cursor: pointer"
+            onclick="sortTable('status')"
+          >
+            Status ↕
+          </th>
+          <th
+            style="position: sticky; top: 0; background: #eee; cursor: pointer"
+            onclick="sortTable('price')"
+          >
+            Price ↕
+          </th>
+          <th
+            style="position: sticky; top: 0; background: #eee; cursor: pointer"
+            onclick="sortTable('lastContact')"
+          >
+            Days Since ↕
+          </th>
+          <th
+            style="position: sticky; top: 0; background: #eee; cursor: pointer"
+            onclick="sortTable('seq')"
+          >
+            Seq ↕
+          </th>
+          <th
+            style="position: sticky; top: 0; background: #eee; cursor: pointer"
+            onclick="sortTable('lastAction')"
+          >
+            Last Action ↕
           </th>
         </tr>
       </thead>

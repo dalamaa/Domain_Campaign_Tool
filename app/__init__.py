@@ -1,16 +1,21 @@
 from flask import Flask
+from flask_migrate import Migrate
+from config import Config
+from app.models.models import db
 
-def create_app(config_class=None):
+migrate = Migrate()
+
+def create_app(config_class=Config):
     app = Flask(__name__)
-    
-    # Minimal config loading
-    if config_class:
-        app.config.from_object(config_class)
-    else:
-        app.config.from_object('config.Config')
+    app.config.from_object(config_class)
 
-    # Register blueprints (to be added)
+    db.init_app(app)
+    migrate.init_app(app, db)
+
     from app.routes.dashboard import bp as dashboard_bp
+    from app.routes.api import bp as api_bp
     app.register_blueprint(dashboard_bp)
+    app.register_blueprint(api_bp)
 
     return app
+

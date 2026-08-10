@@ -1,9 +1,42 @@
 // 1. domains.js
 let selectedDomains = new Set();
 let searchTerm = "";
+let currentSort = { key: null, direction: 'asc' };
 
 function updateSearch(val) {
   searchTerm = val.trim().toLowerCase();
+  renderDomainTable();
+}
+
+function sortTable(key) {
+    if (currentSort.key === key) {
+        currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentSort.key = key;
+        currentSort.direction = 'asc';
+    }
+
+    mockCampaigns.sort((a, b) => {
+        let valA = a[key] || '';
+        let valB = b[key] || '';
+
+        // Handle dates and numbers for sorting
+        if (['expiry', 'lastContact'].includes(key)) {
+            valA = new Date(valA);
+            valB = new Date(valB);
+        } else if (key === 'price' || key === 'seq') {
+            valA = Number(valA);
+            valB = Number(valB);
+        } else {
+            valA = valA.toString().toLowerCase();
+            valB = valB.toString().toLowerCase();
+        }
+
+        if (valA < valB) return currentSort.direction === 'asc' ? -1 : 1;
+        if (valA > valB) return currentSort.direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+
   renderDomainTable();
 }
 
@@ -75,44 +108,98 @@ function bulkDeleteDomains() {
   renderDomainTable();
 }
 
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 function handleCSVImport(event) {
   const file = event.target.files[0];
+  if (!file || (file.type !== "text/csv" && !file.name.endsWith(".csv"))) {
+    alert("Invalid file. Please select a CSV file.");
+    return;
+  }
+
   const reader = new FileReader();
   reader.onload = (e) => {
     const text = e.target.result;
     const rows = text.split("\n");
     const headers = rows[0].split(",").map((h) => h.trim().toLowerCase());
-
-    const map = {
+    const fieldMap = {
       domain: headers.findIndex((h) => h === "domain"),
-      expiry: headers.findIndex((h) => h === "expiry date"),
+      expiry: headers.findIndex((h) => h === "expiry"),
       status: headers.findIndex((h) => h === "status"),
-      price: headers.findIndex((h) => h === "current price"),
+      price: headers.findIndex((h) => h === "price"),
+      lastContact: headers.findIndex((h) => h === "last contact"),
+      seq: headers.findIndex((h) => h === "seq"),
+      lastAction: headers.findIndex((h) => h === "last action"),
     };
 
-    if (map.domain === -1) {
-      alert("Missing Domain column");
-      return;
-    }
+    const validStatuses = ["active", "resting", "sold", "expired", "archived"];
+    const errors = [];
+    const processedDomains = [];
 
-    const newDomains = rows
-      .slice(1)
-      .filter((r) => r.trim())
-      .map((r) => {
-        const cols = r.split(",");
-        return {
-          id: mockCampaigns.length + 1,
-          domain: cols[map.domain]?.trim() || "Unknown",
-          status: map.status !== -1 ? cols[map.status].trim() : "Active",
-          expiry: map.expiry !== -1 ? cols[map.expiry].trim() : "2026-12-31",
-          price: map.price !== -1 ? parseInt(cols[map.price]) : 500,
-          seq: 1,
-          lastContact: "2026-08-01",
-          action: "First Follow-up",
-        };
+    rows.slice(1).forEach((row, idx) => {
+      if (!row.trim()) return;
+      const cols = row.split(",").map((c) => c.trim());
+      const rowNum = idx + 2;
+
+      const domain = cols[fieldMap.domain];
+      if (!domain) {
+        errors.push(`Row ${rowNum}: Missing Domain`);
+        return;
+      }
+
+      const expiry = fieldMap.expiry !== -1 ? cols[fieldMap.expiry] : "";
+      if (expiry && isNaN(Date.parse(expiry))) {
+        errors.push(`Row ${rowNum}: Invalid Expiry Date`);
+        return;
+      }
+
+      const status = fieldMap.status !== -1 ? cols[fieldMap.status] : "";
+      if (status && !validStatuses.includes(status.toLowerCase())) {
+        errors.push(`Row ${rowNum}: Invalid Status`);
+        return;
+      }
+
+      const price = fieldMap.price !== -1 ? cols[fieldMap.price] : "";
+      if (price && isNaN(price)) {
+        errors.push(`Row ${rowNum}: Invalid Price`);
+        return;
+      }
+
+      const seq = fieldMap.seq !== -1 ? cols[fieldMap.seq] : "";
+      if (seq && (isNaN(seq) || parseInt(seq) < 1 || parseInt(seq) > 8)) {
+        errors.push(`Row ${rowNum}: Seq must be between 1 and 8`);
+        return;
+      }
+
+      processedDomains.push({
+        id: mockCampaigns.length + processedDomains.length + 1,
+        domain: escapeHtml(domain),
+        expiry: expiry,
+        status: status || "Active",
+        price: price || 0,
+        lastContact:
+          fieldMap.lastContact !== -1 ? cols[fieldMap.lastContact] : "",
+        seq: seq || 1,
+        lastAction:
+          fieldMap.lastAction !== -1
+            ? escapeHtml(cols[fieldMap.lastAction])
+            : "",
+        action: "Other",
       });
-    mockCampaigns.push(...newDomains);
-    renderDomainTable();
+    });
+
+    if (errors.length > 0) {
+      alert(
+        `Import failed. ${errors.length} rows contain invalid data:\n${errors.join("\n")}`,
+      );
+    } else {
+      mockCampaigns.push(...processedDomains);
+      renderDomainTable();
+    }
   };
   reader.readAsText(file);
 }
@@ -156,3 +243,4 @@ function saveDomain() {
   renderDomainTable();
   closeModal();
 }
+

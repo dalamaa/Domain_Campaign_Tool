@@ -2,6 +2,15 @@
 <div class="email-management">
   <h2>Email Accounts Management</h2>
   <div class="action-bar" id="action-bar" style="display: block">
+<!-- In app/templates/email_accounts.html -->
+<div class="action-bar" id="action-bar" style="display: block;">
+    <button onclick="openAddModal()">+ Add Account</button>
+    <button id="move-up-btn" onclick="bulkMove(-1)" disabled>Move Up</button>
+    <button id="move-down-btn" onclick="bulkMove(1)" disabled>Move Down</button>
+    <button id="edit-btn" onclick="bulkToggle()" disabled>Enable/Disable</button>
+    <button id="delete-btn" onclick="bulkDelete()" disabled>Delete</button>
+    <button onclick="fixOrder()">Fix Order</button>
+</div>
     <button id="move-up-btn" onclick="bulkMove(-1)" disabled>Move Up</button>
     <button id="move-down-btn" onclick="bulkMove(1)" disabled>Move Down</button>
     <button id="edit-btn" onclick="bulkToggle()" disabled>
@@ -29,6 +38,16 @@
   </div>
 </div>
 
+<div id="add-email-modal" class="modal" style="display:none; position:fixed; top:20%; left:30%; background:white; padding:20px; border:1px solid #ccc; z-index:100;">
+    <h3>Add Email Account</h3>
+    <label>Code: <input type="text" id="form-code"></label><br>
+    <label>Group: <input type="text" id="form-group"></label><br>
+    <label>Order: <input type="number" id="form-order"></label><br>
+    <button onclick="saveNewAccount()">Save</button>
+    <button onclick="closeAddModal()">Cancel</button>
+</div>
+
 <script src="{{ url_for('static', filename='js/shared.js') }}"></script>
 <script src="{{ url_for('static', filename='js/pages/email_accounts.js') }}"></script>
 {% endblock %}
+
