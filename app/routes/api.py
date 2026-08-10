@@ -50,6 +50,21 @@ def check_order():
         return jsonify({'occupied': True, 'conflicting_code': existing.code})
     return jsonify({'occupied': False})
 
+@bp.route('/email-accounts/check-code', methods=['GET'])
+def check_code():
+    code = request.args.get('code', '').upper()
+    acc = EmailAccount.query.get(code)
+    if acc:
+        return jsonify({
+            'exists': True,
+            'account': {
+                'code': acc.code,
+                'group': acc.group,
+                'order': acc.profile_order
+            }
+        })
+    return jsonify({'exists': False})
+
 @bp.route('/email-accounts/add', methods=['POST'])
 def add_email_account():
     data = request.json

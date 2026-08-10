@@ -1,5 +1,11 @@
 let selectedCodes = new Set();
 
+// Update email_accounts.js to handle existing code lookup
+async function checkCodeExists(code) {
+  const res = await fetch(`/api/email-accounts/check-code?code=${code}`);
+  return await res.json();
+}
+
 // Update email_accounts.js to use API
 async function renderEmailTable() {
   const response = await fetch("/api/email-accounts");
@@ -155,42 +161,86 @@ function closeAddModal() {
 
 // In app/static/js/pages/email_accounts.js
 
-// Auto-derive group
-document.getElementById("form-code").addEventListener("input", async (e) => {
-  const code = e.target.value.toUpperCase();
-  const match = code.match(/^([A-Za-z]+)(\d+)$/);
-  if (match) {
-    document.getElementById("form-group").value = match[1];
+const codeInput = document.getElementById("form-code");
 
-    // Fetch suggested order
-    const res = await fetch("/api/email-accounts/suggest-order", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
-    });
-    const data = await res.json();
-    document.getElementById("form-order").value = data.suggested_order;
+// Ensure we only have one listener
+codeInput.onblur = async (e) => {
+  const code = e.target.value.toUpperCase();
+  if (!code) return;
+
+  // 1. Reset state
+  window.originalAccount = null;
+
+  // 2. Check Database
+  const data = await checkCodeExists(code);
+
+  if (data.exists) {
+    // Pre-populate actual DB values - DO NOT run suggestion logic
+    document.getElementById("form-group").value = data.account.group;
+    document.getElementById("form-order").value = data.account.order;
+    window.originalAccount = data.account;
+  } else {
+    // 3. Suggest New Order (ONLY if not exists)
+    const match = code.match(/^([A-Za-z]+)(\d+)$/);
+    if (match) {
+      document.getElementById("form-group").value = match[1];
+
+      const res = await fetch("/api/email-accounts/suggest-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      const sugData = await res.json();
+      document.getElementById("form-order").value = sugData.suggested_order;
+    }
   }
-});
+};
 
 async function saveNewAccount() {
   const code = document.getElementById("form-code").value.toUpperCase();
   const group = document.getElementById("form-group").value;
   const order = parseInt(document.getElementById("form-order").value);
 
-  // 1. Check order availability
-  const checkRes = await fetch("/api/email-accounts/check-order", {
+  // Check if it exists
+  const checkRes = await fetch(`/api/email-accounts/check-code?code=${code}`);
+  const checkData = await checkRes.json();
+
+  let isOverwrite = false;
+  if (checkData.exists) {
+    // Compare with original to see if changed
+    const original = window.originalAccount;
+    if (original && (original.group !== group || original.order !== order)) {
+      if (
+        !confirm(
+          `Code ${code} already exists. Do you want to overwrite this account?`,
+        )
+      ) {
+        return;
+      }
+      isOverwrite = true;
+    } else {
+      // No changes, no need to save
+      closeAddModal();
+      return;
+    }
+  }
+
+  // Check for order conflict
+  const conflictRes = await fetch("/api/email-accounts/check-order", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ order }),
   });
-  const checkData = await checkRes.json();
+  const conflictData = await conflictRes.json();
 
   let shiftExisting = false;
-  if (checkData.occupied) {
+  if (
+    conflictData.occupied &&
+    (!isOverwrite || conflictData.conflicting_code !== code)
+  ) {
     if (
       confirm(
-        `Order ${order} is currently assigned to ${checkData.conflicting_code}. Insert this account at order ${order} and move the following accounts down?`,
+        `Order ${order} is currently assigned to ${conflictData.conflicting_code}. Insert this account and move others down?`,
       )
     ) {
       shiftExisting = true;
@@ -199,7 +249,7 @@ async function saveNewAccount() {
     }
   }
 
-  // 2. Perform Save with Overwrite capability
+  // Perform Save
   const res = await fetch("/api/email-accounts/add", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -208,34 +258,11 @@ async function saveNewAccount() {
       group,
       order,
       shift_existing: shiftExisting,
-      overwrite: false,
+      overwrite: isOverwrite,
     }),
   });
 
-  const result = await res.json();
-
-  if (result.error === "Code already exists") {
-    if (
-      confirm(
-        `Code ${code} already exists. Do you want to overwrite this account?`,
-      )
-    ) {
-      // Overwrite logic - re-submit with overwrite: true
-      await fetch("/api/email-accounts/add", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code,
-          group,
-          order,
-          shift_existing: false,
-          overwrite: true,
-        }),
-      });
-      closeAddModal();
-      renderEmailTable();
-    }
-  } else if (res.ok) {
+  if (res.ok) {
     closeAddModal();
     renderEmailTable();
   }
@@ -244,17 +271,21 @@ async function saveNewAccount() {
 // Add Fix Order logic in email_accounts.js
 
 async function fixOrder() {
-    if (!confirm("Profile order gaps will be fixed. Account order will remain unchanged. Continue?")) {
-        return;
-    }
+  if (
+    !confirm(
+      "Profile order gaps will be fixed. Account order will remain unchanged. Continue?",
+    )
+  ) {
+    return;
+  }
 
-    const res = await fetch('/api/email-accounts/fix-order', { method: 'POST' });
-    const result = await res.json();
+  const res = await fetch("/api/email-accounts/fix-order", { method: "POST" });
+  const result = await res.json();
 
-    alert(result.message);
-    if (result.fixed) {
-        renderEmailTable();
-    }
+  alert(result.message);
+  if (result.fixed) {
+    renderEmailTable();
+  }
 }
 
 // Ensure init logic runs once DOM is ready
@@ -263,4 +294,3 @@ document.addEventListener("DOMContentLoaded", () => {
     renderEmailTable();
   }
 });
-
