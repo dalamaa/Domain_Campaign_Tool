@@ -138,11 +138,9 @@ def fix_order():
 @bp.route('/domains', methods=['GET'])
 def get_domains():
     from app.models.models import Domain, Campaign
-    # Join domain and campaign to get combined data
     domains = Domain.query.all()
     results = []
     for d in domains:
-        # Assuming one campaign per domain for prototype simplicity
         c = Campaign.query.filter_by(domain_id=d.id).first()
         results.append({
             'id': d.id,
@@ -152,7 +150,7 @@ def get_domains():
             'price': c.current_price if c else 0,
             'seq': c.current_sequence if c else 1,
             'lastContact': c.last_contact_date.isoformat() if c and c.last_contact_date else '',
-            'action': 'First Follow-up' # Placeholder for action mapping
+            'lastAction': c.last_action if c else 'N/A'
         })
     return jsonify(results)
 
@@ -218,50 +216,107 @@ def import_domains():
         print(f"Import Error: {e}")
         return jsonify({'error': str(e)}), 500
 
-# @bp.route('/domains/import', methods=['POST'])
-# def import_domains():
-#     from app.models.models import Domain, Campaign, CampaignStatus
-#     data = request.json.get('domains', [])
-#     try:
-#         for item in data:
-#             new_dom = Domain(domain_name=item['domain'], expiry_date=item.get('expiry') or None)
-#             db.session.add(new_dom)
-#             db.session.flush()
-#             new_camp = Campaign(
-#                 domain_id=new_dom.id,
-#                 status=getattr(CampaignStatus, item.get('status', 'ACTIVE').upper(), CampaignStatus.ACTIVE),
-#                 start_date=datetime.utcnow(),
-#                 current_price=item.get('price') or 0,
-#                 current_sequence=item.get('seq') or 1
-#             )
-#             db.session.add(new_camp)
-#         db.session.commit()
-#         return jsonify({'success': True})
-#     except Exception as e:
-#         db.session.rollback()
-#         return jsonify({'error': str(e)}), 500
-
 @bp.route('/domains/<int:id>', methods=['PUT', 'DELETE'])
 def manage_domain(id):
     from app.models.models import Domain, Campaign, CampaignStatus
     dom = Domain.query.get_or_404(id)
+
     if request.method == 'DELETE':
         db.session.delete(dom)
         db.session.commit()
         return jsonify({'success': True})
 
-    # Update logic
+    # Handle PUT (Edit)
     data = request.json
-    dom.domain_name = data['domain']
+
+    # Update Domain
+    if 'domain' in data:
+        dom.domain_name = data['domain']
+    if data.get('expiry'):
+        dom.expiry_date = datetime.strptime(data['expiry'], '%Y-%m-%d').date()
+
     # Update Campaign
     camp = Campaign.query.filter_by(domain_id=dom.id).first()
     if camp:
-        camp.current_price = data.get('price', camp.current_price)
-        camp.status = getattr(CampaignStatus, str(data.get('status', 'ACTIVE')).upper(), camp.status)
-        camp.current_sequence = data.get('seq', camp.current_sequence)
-        # Note: logic for last_contact_date and last_action mapping should be added here
+        if 'price' in data:
+            camp.current_price = int(data['price'])
+        if 'status' in data:
+            camp.status = getattr(CampaignStatus, str(data['status']).upper(), camp.status)
+        if 'seq' in data:
+            camp.current_sequence = int(data['seq'])
+        if 'lastContact' in data and data['lastContact']:
+            camp.last_contact_date = datetime.strptime(data['lastContact'], '%Y-%m-%d').date()
+        if 'lastAction' in data:
+            camp.last_action = data['lastAction']
         camp.updated_at = datetime.utcnow()
+        db.session.commit()
+        return jsonify({'success': True})
 
-    db.session.commit()
-    return jsonify({'success': True})
+@bp.route('/domains/bulk-edit', methods=['POST'])
+def bulk_edit_domains():
+    from app.models.models import Domain, Campaign, CampaignStatus, CampaignHistory
+
+    data = request.json
+    ids = data.get('ids', [])
+    updates = data.get('updates', {})
+
+    try:
+        # Pre-validate sequence-history requirement for ALL selected domains
+        # before making any changes, so we can name every offending domain
+        # and avoid partial/silent failures.
+        if 'seq' in updates and int(updates['seq']) > 1:
+            missing_history = []
+            for domain_id in ids:
+                camp = Campaign.query.filter_by(domain_id=domain_id).first()
+                if not camp:
+                    continue
+                has_history = CampaignHistory.query.filter_by(
+                    campaign_id=camp.id
+                ).first()
+                if not has_history:
+                    dom = Domain.query.get(domain_id)
+                    missing_history.append(dom.domain_name if dom else f"ID {domain_id}")
+
+            if missing_history:
+                return jsonify({
+                    'error': (
+                        'No campaign history has been recorded for the following '
+                        f'domain(s): {", ".join(missing_history)}. '
+                        'A first outreach (sequence 1) must be recorded before '
+                        'setting a higher sequence.'
+                    )
+                }), 400
+
+        # Apply updates (validation already passed)
+        for domain_id in ids:
+            dom = Domain.query.get(domain_id)
+            camp = Campaign.query.filter_by(domain_id=domain_id).first()
+
+            if not dom or not camp:
+                continue
+
+            # Update Campaign fields
+            if 'status' in updates:
+                camp.status = CampaignStatus[updates['status'].upper()]
+            if 'price' in updates:
+                camp.current_price = int(updates['price'])
+            if 'seq' in updates:
+                camp.current_sequence = int(updates['seq'])
+            if 'lastContact' in updates and updates['lastContact']:
+                camp.last_contact_date = datetime.strptime(
+                    updates['lastContact'], '%Y-%m-%d'
+                ).date()
+            if 'lastAction' in updates:
+                camp.last_action = updates['lastAction']
+
+            # Update Domain fields
+            if 'expiry' in updates and updates['expiry']:
+                dom.expiry_date = datetime.strptime(updates['expiry'], '%Y-%m-%d').date()
+            camp.updated_at = datetime.utcnow()
+
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
 

@@ -23,6 +23,9 @@
     <button id="delete-btn" onclick="bulkDeleteDomains()" disabled>
       Delete
     </button>
+    <button id="bulk-edit-btn" onclick="openBulkModal()" disabled>
+      Bulk Edit
+    </button>
   </div>
 
   <div class="table-container" style="max-height: 600px; overflow-y: auto">
@@ -101,27 +104,198 @@
     z-index: 100;
   "
 >
-  <!-- 2. Update Modal Fields -->
-  <h3 id="modal-title">Add/Edit Domain</h3>
+  <h3 id="modal-title">Edit Domain</h3>
   <input type="hidden" id="edit-id" />
-  <label>Domain: <input type="text" id="form-domain" /></label><br />
-  <label>Expiry Date: <input type="date" id="form-expiry" /></label><br />
+
+  <div class="form-group">
+    <label>Domain: <input type="text" id="form-domain" readonly /></label>
+  </div>
+
+  <div class="form-group">
+    <label>Expiry Date: <input type="date" id="form-expiry" disabled /></label>
+    <button onclick="toggleField('form-expiry')">✎</button>
+  </div>
+  <div class="form-group">
+    <label
+      >Status:
+      <select id="form-status" disabled>
+        <option value="Active">Active</option>
+        <option value="Resting">Resting</option>
+        <option value="Sold">Sold</option>
+        <option value="Expired">Expired</option>
+        <option value="Archived">Archived</option>
+        <option value="Dormant">Dormant</option>
+      </select></label
+    >
+    <button onclick="toggleField('form-status')">✎</button>
+  </div>
+  <div class="form-group">
+    <label>Price: <input type="number" id="form-price" disabled /></label>
+    <button onclick="toggleField('form-price')">✎</button>
+  </div>
+  <div class="form-group">
+    <label
+      >Last Contact Date: <input type="date" id="form-lastContact" disabled
+    /></label>
+    <button onclick="toggleField('form-lastContact')">✎</button>
+  </div>
+  <div class="form-group">
+    <label
+      >Sequence:
+      <select id="form-seq" disabled>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+        <option value="7">7</option>
+        <option value="8">8</option>
+      </select></label
+    >
+    <button onclick="toggleField('form-seq')">✎</button>
+  </div>
+  <div class="form-group">
+    <label
+      >Last Action:
+      <select id="form-lastAction" disabled>
+        <option value="First Outreach">First Outreach</option>
+        <option value="Follow-up">Follow-up</option>
+        <option value="Price Reduction">Price Reduction</option>
+        <option value="Question">Question</option>
+        <option value="Final Follow-up">Final Follow-up</option>
+        <option value="Other">Other</option>
+      </select></label
+    >
+    <button onclick="toggleField('form-lastAction')">✎</button>
+  </div>
+  <button onclick="saveDomain()">Save</button>
+  <button onclick="closeModal()">Cancel</button>
+</div>
+
+<div
+  id="bulk-edit-modal"
+  class="modal"
+  style="
+    display: none;
+    position: fixed;
+    top: 20%;
+    left: 30%;
+    background: white;
+    padding: 20px;
+    border: 1px solid #ccc;
+    z-index: 100;
+  "
+>
+  <h3>Bulk Edit Domains</h3>
+  <input type="hidden" id="bulk-ids" />
+  <p>Fields left as "No Change" will not be updated.</p>
+
+  <label
+    >Expiry:
+    <input
+      type="radio"
+      name="expiry-mode"
+      value="nochange"
+      checked
+      onchange="toggleField('bulk-expiry', false)"
+    />
+    No Change
+    <input
+      type="radio"
+      name="expiry-mode"
+      value="edit"
+      onchange="toggleField('bulk-expiry', true)"
+    />
+    Edit
+    <input type="date" id="bulk-expiry" disabled /> </label
+  ><br />
+
   <label
     >Status:
-    <select id="form-status">
+    <input
+      type="radio"
+      name="status-mode"
+      value="nochange"
+      checked
+      onchange="toggleField('bulk-status', false)"
+    />
+    No Change
+    <input
+      type="radio"
+      name="status-mode"
+      value="edit"
+      onchange="toggleField('bulk-status', true)"
+    />
+    Edit
+    <select id="bulk-status" disabled>
       <option value="Active">Active</option>
       <option value="Resting">Resting</option>
       <option value="Sold">Sold</option>
       <option value="Expired">Expired</option>
       <option value="Archived">Archived</option>
+      <option value="Dormant">Dormant</option>
     </select> </label
   ><br />
-  <label>Price: <input type="number" id="form-price" /></label><br />
-  <label>Last Contact Date: <input type="date" id="form-lastContact" /></label
+
+  <label
+    >Price:
+    <input
+      type="radio"
+      name="price-mode"
+      value="nochange"
+      checked
+      onchange="toggleField('bulk-price', false)"
+    />
+    No Change
+    <input
+      type="radio"
+      name="price-mode"
+      value="edit"
+      onchange="toggleField('bulk-price', true)"
+    />
+    Edit
+    <input type="number" id="bulk-price" disabled /> </label
   ><br />
+
+  <label
+    >Last Contact:
+    <input
+      type="radio"
+      name="contact-mode"
+      value="nochange"
+      checked
+      onchange="toggleField('bulk-lastContact', false)"
+    />
+    No Change
+    <input
+      type="radio"
+      name="contact-mode"
+      value="edit"
+      onchange="toggleField('bulk-lastContact', true)"
+    />
+    Edit
+    <input type="date" id="bulk-lastContact" disabled /> </label
+  ><br />
+
   <label
     >Sequence:
-    <select id="form-seq">
+    <input
+      type="radio"
+      name="seq-mode"
+      value="nochange"
+      checked
+      onchange="toggleField('bulk-seq', false)"
+    />
+    No Change
+    <input
+      type="radio"
+      name="seq-mode"
+      value="edit"
+      onchange="toggleField('bulk-seq', true)"
+    />
+    Edit
+    <select id="bulk-seq" disabled>
       <option value="1">1</option>
       <option value="2">2</option>
       <option value="3">3</option>
@@ -132,9 +306,25 @@
       <option value="8">8</option>
     </select> </label
   ><br />
+
   <label
     >Last Action:
-    <select id="form-lastAction">
+    <input
+      type="radio"
+      name="action-mode"
+      value="nochange"
+      checked
+      onchange="toggleField('bulk-lastAction', false)"
+    />
+    No Change
+    <input
+      type="radio"
+      name="action-mode"
+      value="edit"
+      onchange="toggleField('bulk-lastAction', true)"
+    />
+    Edit
+    <select id="bulk-lastAction" disabled>
       <option value="First Outreach">First Outreach</option>
       <option value="Follow-up">Follow-up</option>
       <option value="Price Reduction">Price Reduction</option>
@@ -143,8 +333,8 @@
       <option value="Other">Other</option>
     </select> </label
   ><br />
-  <button onclick="saveDomain()">Save</button>
-  <button onclick="closeModal()">Cancel</button>
+  <button onclick="saveBulkEdit()">Save Bulk Update</button>
+  <button onclick="closeBulkModal()">Cancel</button>
 </div>
 
 <div
@@ -168,6 +358,15 @@
 <script src="{{ url_for('static', filename='js/shared.js') }}"></script>
 <script src="{{ url_for('static', filename='js/pages/domains.js') }}"></script>
 <script>
-  document.addEventListener("DOMContentLoaded", renderDomainTable);
+  // toggleField handles both the single-edit pencil buttons (1 arg)
+  // and the bulk-edit radio buttons (2 args)
+  function toggleField(id, enable) {
+    if (enable !== undefined) {
+      document.getElementById(id).disabled = !enable;
+    } else {
+      const el = document.getElementById(id);
+      el.disabled = !el.disabled;
+    }
+  }
 </script>
 {% endblock %}

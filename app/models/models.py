@@ -15,6 +15,7 @@ class CampaignStatus(enum.Enum):
     SOLD = "SOLD"
     EXPIRED = "EXPIRED"
     ARCHIVED = "ARCHIVED"
+    DORMANT = "DORMANT"
 
 class ActionType(enum.Enum):
     CAMPAIGN_STARTED = "CAMPAIGN_STARTED"
@@ -52,6 +53,7 @@ class Campaign(db.Model):
     rest_start_date = db.Column(Date)
     rest_end_date = db.Column(Date)
     handled_by = db.Column(String)
+    last_action = db.Column(String)
     notes = db.Column(db.Text)
     created_at = db.Column(DateTime, default=datetime.utcnow)
     updated_at = db.Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -116,3 +118,4 @@ class CampaignHistory(db.Model):
     notes = db.Column(db.Text)
     
     campaign = relationship("Campaign", back_populates="history")
+

@@ -5,7 +5,7 @@ let currentSort = { key: null, direction: "asc" };
 let domains = [];
 
 async function fetchDomains() {
-  const res = await fetch("/api/domains");
+  const res = await fetch(`/api/domains?t=${Date.now()}`);
   const data = await res.json();
   return data;
 }
@@ -47,41 +47,46 @@ function sortTable(key) {
   renderDomainTable();
 }
 
+// 2. Fix sorting and table persistence in domains.js
+// 2. Fix the renderDomainTable in domains.js
 async function renderDomainTable() {
+  // 1. Fetch
   domains = await fetchDomains();
+  console.log("Domains data loaded:", domains);
   const body = document.getElementById("domain-table-body");
   if (!body) return;
 
   // Filter by search
-  const filtered = domains.filter((c) =>
-    c.domain.toLowerCase().includes(searchTerm),
+  const filtered = domains.filter(
+    (c) => c.domain && c.domain.toLowerCase().includes(searchTerm),
   );
-  // Show count
   const countEl = document.getElementById("domain-count");
   if (countEl)
     countEl.textContent = `${filtered.length} of ${domains.length} domains`;
   body.innerHTML = filtered
     .map((c) => {
-      const daysLeft = Math.floor(
-        (new Date(c.expiry) - new Date()) / (1000 * 60 * 60 * 24),
-      );
-      const daysSince = Math.floor(
-        (new Date() - new Date(c.lastContact)) / (1000 * 60 * 60 * 24),
-      );
+      const expiryDate = c.expiry ? new Date(c.expiry) : null;
+      const lastContactDate = c.lastContact ? new Date(c.lastContact) : null;
+      const today = new Date();
 
+      const daysLeft = expiryDate
+        ? Math.floor((expiryDate - today) / (1000 * 60 * 60 * 24))
+        : "N/A";
+      const daysSince = lastContactDate
+        ? Math.floor((today - lastContactDate) / (1000 * 60 * 60 * 24))
+        : "N/A";
       return `
         <tr class="${selectedDomains.has(c.id) ? "selected" : ""}">
             <td><input type="checkbox" ${selectedDomains.has(c.id) ? "checked" : ""} onchange="toggleDomainSelection(${c.id})"></td>
             <td onclick="showSidePanel('${c.domain}')" style="cursor:pointer">${c.domain}</td>
-            <td>${c.expiry}</td>
+            <td>${c.expiry || "N/A"}</td>
             <td>${daysLeft} days</td>
             <td>${c.status}</td>
             <td>$${c.price}</td>
             <td>${daysSince} days</td>
             <td>${c.seq}</td>
-            <td>${c.action || c.lastAction || "N/A"}</td>
-        </tr>
-        `;
+            <td>${c.lastAction || "N/A"}</td>
+        </tr>`;
     })
     .join("");
 }
@@ -93,17 +98,116 @@ function toggleDomainSelection(id) {
   renderDomainTable();
 }
 
+// 1. Update updateDomainActionBar in domains.js
 function updateDomainActionBar() {
   const count = selectedDomains.size;
   const editBtn = document.getElementById("edit-btn");
   const delBtn = document.getElementById("delete-btn");
-  if (editBtn) editBtn.disabled = count !== 1;
+
+  // Enable Edit for multiple selections too
+  if (editBtn) editBtn.disabled = count === 0;
   if (delBtn) delBtn.disabled = count === 0;
 }
 
+// 2. Add bulkEditSelected function
 function editSelected() {
-  const id = Array.from(selectedDomains)[0];
-  openModal(id);
+  const ids = Array.from(selectedDomains);
+  if (ids.length === 1) {
+    openModal(ids[0]);
+  } else {
+    openBulkModal(ids);
+  }
+}
+
+// Fix: Trigger reset at the beginning of opening the modal
+function openBulkModal(ids) {
+  resetBulkModal(); // Guaranteed clean slate
+  document.getElementById("bulk-edit-modal").style.display = "block";
+  document.getElementById("bulk-ids").value = ids.join(",");
+}
+
+// Ensure resetBulkModal correctly clears inputs and sets radio buttons
+function resetBulkModal() {
+  // Map field key -> radio button mode name used in the HTML
+  const fieldModeMap = {
+    expiry: "expiry",
+    status: "status",
+    price: "price",
+    lastContact: "contact",
+    seq: "seq",
+    lastAction: "action",
+  };
+
+  for (const [field, mode] of Object.entries(fieldModeMap)) {
+    // Reset radio button to "No Change"
+    const radio = document.querySelector(
+      `input[name="${mode}-mode"][value="nochange"]`,
+    );
+    // Note: radio.value property is buggy for radios; use .checked directly
+    if (radio) radio.checked = true;
+
+    // Disable and clear input/select
+    const input = document.getElementById(`bulk-${field}`);
+    if (input) {
+      input.disabled = true;
+      input.value = "";
+    }
+  }
+}
+
+// 1. Fix: Ensure closeBulkModal calls reset and update render logic for cache-busting
+function closeBulkModal() {
+  document.getElementById("bulk-edit-modal").style.display = "none";
+  resetBulkModal();
+}
+
+async function saveBulkEdit() {
+  const ids = document.getElementById("bulk-ids").value.split(",").map(Number);
+  const updates = {};
+  const summaryList = [];
+
+  const fields = [
+    { id: "bulk-expiry", key: "expiry", label: "Expiry" },
+    { id: "bulk-status", key: "status", label: "Status" },
+    { id: "bulk-price", key: "price", label: "Price" },
+    { id: "bulk-lastContact", key: "lastContact", label: "Last Contact" },
+    { id: "bulk-seq", key: "seq", label: "Sequence" },
+    { id: "bulk-lastAction", key: "lastAction", label: "Last Action" },
+  ];
+
+  fields.forEach((f) => {
+    const input = document.getElementById(f.id);
+    if (!input.disabled) {
+      updates[f.key] = input.value;
+      summaryList.push(`${f.label}: ${input.value}`);
+    }
+  });
+
+  if (summaryList.length === 0) {
+    alert("No changes selected.");
+    return;
+  }
+
+  if (
+    confirm(
+      `Confirm bulk update for ${ids.length} domains:\n\n${summaryList.join("\n")}`,
+    )
+  ) {
+    const res = await fetch("/api/domains/bulk-edit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, updates }),
+    });
+
+    if (res.ok) {
+      alert("Bulk update successful.");
+      await renderDomainTable();
+      closeBulkModal();
+    } else {
+      const err = await res.json();
+      alert("Error: " + (err.error || "Update failed"));
+    }
+  }
 }
 
 async function bulkDeleteDomains() {
@@ -118,7 +222,7 @@ async function bulkDeleteDomains() {
 function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text;
-  return div.innerHTML;
+  div.innerHTML;
 }
 
 // 1. Improved CSV parsing using a more flexible approach in domains.js
@@ -188,51 +292,73 @@ async function handleCSVImport(event) {
   reader.readAsText(file);
 }
 
-// 1. Update saveDomain to handle a fresh state for new campaigns
-async function saveDomain() {
-  const id = document.getElementById("edit-id").value;
-  const data = {
-    domain: document.getElementById("form-domain").value,
-    expiry: document.getElementById("form-expiry").value || null,
-    lastContact: document.getElementById("form-lastContact").value || null,
-    price: parseInt(document.getElementById("form-price").value) || 0,
-    status: document.getElementById("form-status").value || "Active",
-    seq: parseInt(document.getElementById("form-seq").value) || 1,
-    lastAction:
-      document.getElementById("form-lastAction").value || "First Outreach",
-  };
-
-  if (id) {
-    await fetch(`/api/domains/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-  } else {
-    await fetch("/api/domains", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-  }
-  renderDomainTable();
-  closeModal();
+// Update domains.js to support the new selective edit modal
+// 2. Update logic in domains.js
+function toggleField(id) {
+  const el = document.getElementById(id);
+  el.disabled = !el.disabled;
+  if (!el.disabled) el.focus();
 }
 
-// 2. Update openModal to correctly handle empty/new states
+async function saveDomain() {
+  const id = document.getElementById("edit-id").value;
+  const updates = {};
+  const summary = [];
+
+  const fields = [
+    { id: "form-expiry", key: "expiry" },
+    { id: "form-status", key: "status" },
+    { id: "form-price", key: "price" },
+    { id: "form-lastContact", key: "lastContact" },
+    { id: "form-seq", key: "seq" },
+    { id: "form-lastAction", key: "lastAction" },
+  ];
+
+  fields.forEach((f) => {
+    const input = document.getElementById(f.id);
+    if (!input.disabled) {
+      updates[f.key] = input.value;
+      summary.push(`${f.key}: ${input.value}`);
+    }
+  });
+
+  if (summary.length === 0) {
+    alert("No changes made.");
+    return;
+  }
+
+  if (confirm(`Confirm updates:\n${summary.join("\n")}`)) {
+    const res = await fetch(`/api/domains/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
+
+    if (res.ok) {
+      alert("Domain updated successfully.");
+      renderDomainTable();
+      closeModal();
+    } else {
+      const err = await res.json();
+      alert("Error: " + (err.error || "Update failed"));
+    }
+  }
+}
+
+// 3. Fix modal population in domains.js
 function openModal(id = null) {
   document.getElementById("domain-modal").style.display = "block";
   const modalTitle = document.getElementById("modal-title");
+  const c = domains.find((x) => x.id === id);
 
-  if (id) {
+  if (c) {
     modalTitle.innerText = "Edit Domain";
-    const c = domains.find((x) => x.id === id);
     document.getElementById("edit-id").value = c.id;
-    document.getElementById("form-domain").value = c.domain || "";
+    document.getElementById("form-domain").value = c.domain;
     document.getElementById("form-expiry").value = c.expiry || "";
-    document.getElementById("form-lastContact").value = c.lastContact || "";
+    document.getElementById("form-status").value = c.status || "ACTIVE";
     document.getElementById("form-price").value = c.price || 0;
-    document.getElementById("form-status").value = c.status || "Active";
+    document.getElementById("form-lastContact").value = c.lastContact || "";
     document.getElementById("form-seq").value = c.seq || 1;
     document.getElementById("form-lastAction").value =
       c.lastAction || "First Outreach";
@@ -252,3 +378,7 @@ function openModal(id = null) {
 function closeModal() {
   document.getElementById("domain-modal").style.display = "none";
 }
+
+// Render the table on page load
+document.addEventListener("DOMContentLoaded", renderDomainTable);
+
