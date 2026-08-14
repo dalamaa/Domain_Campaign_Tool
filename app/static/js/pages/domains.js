@@ -1,7 +1,7 @@
 // 1. domains.js
 let selectedDomains = new Set();
 let searchTerm = "";
-let currentSort = { key: null, direction: "asc" };
+let currentSort = { key: "daysSince", direction: "asc" };
 let domains = [];
 
 async function fetchDomains() {
@@ -23,28 +23,52 @@ function sortTable(key) {
     currentSort.direction = "asc";
   }
 
-  domains.sort((a, b) => {
-    let valA = a[key] || "";
-    let valB = b[key] || "";
+  applyCurrentSort();
+  renderDomainTable();
+}
 
-    // Handle dates and numbers for sorting
-    if (["expiry", "lastContact"].includes(key)) {
-      valA = new Date(valA);
-      valB = new Date(valB);
+function applyCurrentSort() {
+  const { key, direction } = currentSort;
+  const today = new Date();
+
+  domains.sort((a, b) => {
+    let valA, valB;
+
+    // Helper to calculate days since
+    const getDaysSince = (contactDate) => {
+      if (!contactDate) return Infinity; // N/A to the end
+      const date = new Date(contactDate);
+      return Math.floor((today - date) / (1000 * 60 * 60 * 24));
+    };
+
+    // Helper to calculate days left
+    const getDaysLeft = (expiryDate) => {
+      if (!expiryDate) return -Infinity;
+      const date = new Date(expiryDate);
+      return Math.floor((date - today) / (1000 * 60 * 60 * 24));
+    };
+
+    if (key === "daysSince") {
+      valA = getDaysSince(a.lastContact);
+      valB = getDaysSince(b.lastContact);
+    } else if (key === "daysLeft") {
+      valA = getDaysLeft(a.expiry);
+      valB = getDaysLeft(b.expiry);
+    } else if (["expiry", "lastContact"].includes(key)) {
+      valA = a[key] ? new Date(a[key]) : new Date(0);
+      valB = b[key] ? new Date(b[key]) : new Date(0);
     } else if (key === "price" || key === "seq") {
-      valA = Number(valA);
-      valB = Number(valB);
+      valA = Number(a[key] || 0);
+      valB = Number(b[key] || 0);
     } else {
-      valA = valA.toString().toLowerCase();
-      valB = valB.toString().toLowerCase();
+      valA = (a[key] || "").toString().toLowerCase();
+      valB = (b[key] || "").toString().toLowerCase();
     }
 
-    if (valA < valB) return currentSort.direction === "asc" ? -1 : 1;
-    if (valA > valB) return currentSort.direction === "asc" ? 1 : -1;
+    if (valA < valB) return direction === "asc" ? -1 : 1;
+    if (valA > valB) return direction === "asc" ? 1 : -1;
     return 0;
   });
-
-  renderDomainTable();
 }
 
 // 2. Fix sorting and table persistence in domains.js
@@ -53,6 +77,12 @@ async function renderDomainTable() {
   // 1. Fetch
   domains = await fetchDomains();
   console.log("Domains data loaded:", domains);
+
+  // Apply current sort
+  if (currentSort.key) {
+    applyCurrentSort();
+  }
+
   const body = document.getElementById("domain-table-body");
   if (!body) return;
 
@@ -381,4 +411,3 @@ function closeModal() {
 
 // Render the table on page load
 document.addEventListener("DOMContentLoaded", renderDomainTable);
-
