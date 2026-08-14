@@ -108,7 +108,7 @@ async function renderDomainTable() {
       return `
         <tr class="${selectedDomains.has(c.id) ? "selected" : ""}">
             <td><input type="checkbox" ${selectedDomains.has(c.id) ? "checked" : ""} onchange="toggleDomainSelection(${c.id})"></td>
-            <td onclick="showSidePanel('${c.domain}')" style="cursor:pointer">${c.domain}</td>
+            <td onclick="openHistoryModal(${c.id}, '${c.domain}')" style="cursor:pointer; text-decoration: underline;">${c.domain}</td>
             <td>${c.expiry || "N/A"}</td>
             <td>${daysLeft} days</td>
             <td>${c.status}</td>
@@ -119,6 +119,35 @@ async function renderDomainTable() {
         </tr>`;
     })
     .join("");
+}
+
+async function openHistoryModal(id, domainName) {
+  const modal = document.getElementById("history-modal");
+  const body = document.getElementById("history-table-body");
+  document.getElementById("history-modal-domain").textContent =
+    `History: ${domainName}`;
+
+  const res = await fetch(`/api/domains/${id}/history`);
+  const data = await res.json();
+
+  body.innerHTML = data
+    .map(
+      (h) => `
+    <tr>
+      <td>${new Date(h.date).toLocaleString()}</td>
+      <td>${h.action}</td>
+      <td>${h.price_before !== null ? `$${h.price_before} → ` : ""}$${h.price_after}</td>
+      <td>${h.notes || ""}</td>
+    </tr>
+  `,
+    )
+    .join("");
+
+  modal.style.display = "block";
+}
+
+function closeHistoryModal() {
+  document.getElementById("history-modal").style.display = "none";
 }
 
 function toggleDomainSelection(id) {
@@ -334,6 +363,26 @@ async function saveDomain() {
   const id = document.getElementById("edit-id").value;
   const updates = {};
   const summary = [];
+  const seq = document.getElementById("form-seq").value;
+
+  // Check history first
+  const checkRes = await fetch(`/api/domains/${id}/history/check`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ seq: seq }),
+  });
+  const checkData = await checkRes.json();
+
+  if (checkRes.status === 400) {
+    alert(checkData.message);
+    return;
+  }
+
+  if (
+    !confirm(`Action: ${checkData.action}\n${checkData.message}\n\nContinue?`)
+  ) {
+    return;
+  }
 
   const fields = [
     { id: "form-expiry", key: "expiry" },
@@ -357,24 +406,26 @@ async function saveDomain() {
     return;
   }
 
-  if (confirm(`Confirm updates:\n${summary.join("\n")}`)) {
-    const res = await fetch(`/api/domains/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(updates),
-    });
+  // Update Campaign and History
+  await fetch(`/api/domains/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(updates),
+  });
 
-    if (res.ok) {
-      alert("Domain updated successfully.");
-      renderDomainTable();
-      closeModal();
-    } else {
-      const err = await res.json();
-      alert("Error: " + (err.error || "Update failed"));
-    }
-  }
+  await fetch(`/api/domains/${id}/history`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      seq: seq,
+      price: updates.price,
+      notes: "Domain updated via edit modal",
+    }),
+  });
+  alert("Domain updated successfully.");
+  renderDomainTable();
+  closeModal();
 }
-
 // 3. Fix modal population in domains.js
 function openModal(id = null) {
   document.getElementById("domain-modal").style.display = "block";

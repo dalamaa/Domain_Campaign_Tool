@@ -252,6 +252,74 @@ def manage_domain(id):
         db.session.commit()
         return jsonify({'success': True})
 
+@bp.route('/domains/<int:id>/history', methods=['GET'])
+def get_campaign_history(id):
+    from app.models.models import Campaign, CampaignHistory
+    camp = Campaign.query.filter_by(domain_id=id).first()
+    if not camp:
+        return jsonify({'error': 'Campaign not found'}), 404
+
+    history = CampaignHistory.query.filter_by(campaign_id=camp.id).order_by(CampaignHistory.action_date.asc()).all()
+    return jsonify([{
+        'action': h.action_type.value,
+        'date': h.action_date.isoformat(),
+        'price_before': h.price_before,
+        'price_after': h.price_after,
+        'notes': h.notes
+    } for h in history])
+
+@bp.route('/domains/<int:id>/history/check', methods=['POST'])
+def check_history_action(id):
+    from app.models.models import Campaign, CampaignHistory
+    data = request.json
+    new_seq = int(data.get('seq'))
+
+    camp = Campaign.query.filter_by(domain_id=id).first()
+    if not camp:
+        return jsonify({'error': 'Campaign not found'}), 404
+
+    current_max_seq = db.session.query(db.func.max(CampaignHistory.sequence)).filter_by(campaign_id=camp.id).scalar() or 0
+
+    # Check for skip
+    if new_seq > current_max_seq + 1:
+        return jsonify({'action': 'INVALID_SKIP', 'message': f'Cannot skip to sequence {new_seq}. Next allowed is {current_max_seq + 1}'}), 400
+
+    existing = CampaignHistory.query.filter_by(campaign_id=camp.id, sequence=new_seq).first()
+    if existing:
+        return jsonify({'action': 'OVERWRITE', 'message': f'Sequence {new_seq} already exists. Overwriting will modify historical data.'})
+
+    return jsonify({'action': 'CREATE_NEW', 'message': 'This will create a new history record for sequence ' + str(new_seq)})
+
+@bp.route('/domains/<int:id>/history', methods=['PUT'])
+def update_campaign_history(id):
+    from app.models.models import Campaign, CampaignHistory
+    data = request.json
+    seq = int(data.get('seq'))
+
+    camp = Campaign.query.filter_by(domain_id=id).first()
+    if not camp:
+        return jsonify({'error': 'Campaign not found'}), 404
+
+    hist = CampaignHistory.query.filter_by(campaign_id=camp.id, sequence=seq).first()
+    if hist:
+        # Update existing
+        hist.price_after = int(data.get('price', hist.price_after))
+        hist.notes = data.get('notes', hist.notes)
+    else:
+        # Create new
+        prev = CampaignHistory.query.filter_by(campaign_id=camp.id, sequence=seq-1).first()
+        hist = CampaignHistory(
+            campaign_id=camp.id,
+            sequence=seq,
+            action_type=data.get('action_type', 'FORCE_OVERRIDE'),
+            price_before=prev.price_after if prev else 0,
+            price_after=int(data.get('price')),
+            notes=data.get('notes')
+                    )
+        db.session.add(hist)
+        db.session.commit()
+        return jsonify({'success': True})
+
 @bp.route('/domains/bulk-edit', methods=['POST'])
 def bulk_edit_domains():
     from app.models.models import Domain, Campaign, CampaignStatus, CampaignHistory
@@ -266,17 +334,16 @@ def bulk_edit_domains():
         # and avoid partial/silent failures.
         if 'seq' in updates and int(updates['seq']) > 1:
             missing_history = []
-            for domain_id in ids:
-                camp = Campaign.query.filter_by(domain_id=domain_id).first()
-                if not camp:
-                    continue
-                has_history = CampaignHistory.query.filter_by(
-                    campaign_id=camp.id
-                ).first()
-                if not has_history:
-                    dom = Domain.query.get(domain_id)
-                    missing_history.append(dom.domain_name if dom else f"ID {domain_id}")
-
+        for domain_id in ids:
+            camp = Campaign.query.filter_by(domain_id=domain_id).first()
+            if not camp:
+                continue
+            has_history = CampaignHistory.query.filter_by(
+                campaign_id=camp.id
+            ).first()
+            if not has_history:
+                dom = Domain.query.get(domain_id)
+                missing_history.append(dom.domain_name if dom else f"ID {domain_id}")
             if missing_history:
                 return jsonify({
                     'error': (
@@ -313,7 +380,6 @@ def bulk_edit_domains():
             if 'expiry' in updates and updates['expiry']:
                 dom.expiry_date = datetime.strptime(updates['expiry'], '%Y-%m-%d').date()
             camp.updated_at = datetime.utcnow()
-
         db.session.commit()
         return jsonify({'success': True})
     except Exception as e:

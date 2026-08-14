@@ -109,6 +109,7 @@ class CampaignHistory(db.Model):
     __tablename__ = 'campaign_history'
     id = db.Column(Integer, primary_key=True)
     campaign_id = db.Column(Integer, ForeignKey('campaigns.id'), nullable=False, index=True)
+    sequence = db.Column(Integer, index=True)
     action_type = db.Column(Enum(ActionType), nullable=False)
     action_date = db.Column(DateTime, default=datetime.utcnow, index=True)
     price_before = db.Column(Integer)
@@ -118,4 +119,5 @@ class CampaignHistory(db.Model):
     notes = db.Column(db.Text)
     
     campaign = relationship("Campaign", back_populates="history")
+    __table_args__ = (UniqueConstraint('campaign_id', 'sequence', name='uix_campaign_sequence'),)
 
