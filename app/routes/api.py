@@ -137,20 +137,29 @@ def fix_order():
 
 @bp.route('/domains', methods=['GET'])
 def get_domains():
-    from app.models.models import Domain, Campaign
+    from app.models.models import Domain, Campaign, CampaignStatus
     domains = Domain.query.all()
     results = []
     for d in domains:
         c = Campaign.query.filter_by(domain_id=d.id).first()
+        # A domain "has values" (i.e. has been started/worked on) only when its
+        # campaign is not Dormant and its sequence is 1 or higher. Dormant/not
+        # started domains (sequence 0) have no genuine campaign values yet.
+        has_values = bool(
+            c
+            and c.status != CampaignStatus.DORMANT
+            and c.current_sequence > 0
+        )
         results.append({
             'id': d.id,
             'domain': d.domain_name,
             'expiry': d.expiry_date.isoformat() if d.expiry_date else '',
-            'status': c.status.value if c else 'Active',
-            'price': c.current_price if c else 0,
-            'seq': c.current_sequence if c else 1,
+            'status': c.status.value if c else '',
+            'price': c.current_price if c else '',
+            'seq': c.current_sequence if c else '',
             'lastContact': c.last_contact_date.isoformat() if c and c.last_contact_date else '',
-            'lastAction': c.last_action if c else 'N/A'
+            'lastAction': c.last_action if c else '',
+            'hasValues': has_values
         })
     return jsonify(results)
 
@@ -165,10 +174,19 @@ def add_domain():
     db.session.add(new_dom)
     db.session.flush()
 
+    # A new domain starts Dormant (never worked on) unless explicitly started.
+    # Sequence 0 means "not started"; the price defaults to 0.
+    status = getattr(
+        CampaignStatus,
+        str(data.get('status', 'DORMANT')).upper(),
+        CampaignStatus.DORMANT,
+    )
+    seq = int(data['seq']) if str(data.get('seq', '')).isdigit() else 0
+
     new_camp = Campaign(
-        domain_id=new_dom.id, status=CampaignStatus.ACTIVE,
-        start_date=datetime.utcnow(), current_price=data['price'],
-        current_sequence=1
+        domain_id=new_dom.id, status=status,
+        start_date=datetime.utcnow(), current_price=int(data.get('price') or 0),
+        current_sequence=seq
     )
     db.session.add(new_camp)
     db.session.commit()
@@ -185,9 +203,11 @@ def import_domains():
             price_raw = item.get('price')
             price = int(price_raw) if (price_raw and str(price_raw).isdigit()) else 0
 
-            # Handle empty/invalid sequence
+            # Handle empty/invalid sequence. Omitted or invalid sequence means
+            # the domain is "not started" (0). A provided/castable sequence is
+            # used only when the domain is explicitly started.
             seq_raw = item.get('seq')
-            seq = int(seq_raw) if (seq_raw and str(seq_raw).isdigit()) else 1
+            seq = int(seq_raw) if (seq_raw is not None and str(seq_raw).isdigit() and int(seq_raw) > 0) else 0
 
             # Handle expiry date safely
             expiry_date = None
@@ -197,13 +217,27 @@ def import_domains():
                 except ValueError:
                     pass # Keep None if date is invalid
 
+            # Imported domains start Dormant (never worked on) unless the import
+            # explicitly provides an ACTIVE/status AND a real sequence. Sequence 0
+            # means "not started". If a status is given but no real sequence, we
+            # still require a started sequence before treating it as active.
+            status_resolved = getattr(
+                CampaignStatus,
+                str(item.get('status', 'DORMANT')).upper(),
+                CampaignStatus.DORMANT,
+            )
+            # Only keep an imported sequence/status as a genuine start.
+            if seq <= 0:
+                status_resolved = CampaignStatus.DORMANT
+                price = 0
+
             new_dom = Domain(domain_name=item.get('domain'), expiry_date=expiry_date)
             db.session.add(new_dom)
             db.session.flush()
 
             new_camp = Campaign(
                 domain_id=new_dom.id,
-                status=getattr(CampaignStatus, str(item.get('status', 'ACTIVE')).upper(), CampaignStatus.ACTIVE),
+                status=status_resolved,
                 start_date=datetime.utcnow(),
                 current_price=price,
                 current_sequence=seq

@@ -150,6 +150,7 @@
     <label
       >Status:
       <select id="form-status" disabled>
+        <option value="" disabled selected>-- Select Status --</option>
         <option value="Active">Active</option>
         <option value="Resting">Resting</option>
         <option value="Sold">Sold</option>
@@ -161,7 +162,10 @@
     <button onclick="toggleField('form-status')">✎</button>
   </div>
   <div class="form-group">
-    <label>Price: <input type="number" id="form-price" disabled /></label>
+    <label
+      >Price:
+      <input type="number" id="form-price" placeholder="Enter Price" disabled
+    /></label>
     <button onclick="toggleField('form-price')">✎</button>
   </div>
   <div class="form-group">
@@ -174,6 +178,7 @@
     <label
       >Sequence:
       <select id="form-seq" disabled>
+        <option value="" disabled selected>-- Select Sequence --</option>
         <option value="1">1</option>
         <option value="2">2</option>
         <option value="3">3</option>
@@ -190,6 +195,7 @@
     <label
       >Last Action:
       <select id="form-lastAction" disabled>
+        <option value="" disabled selected>-- Select Action --</option>
         <option value="First Outreach">First Outreach</option>
         <option value="Follow-up">Follow-up</option>
         <option value="Price Reduction">Price Reduction</option>
@@ -327,6 +333,7 @@
     />
     Edit
     <select id="bulk-seq" disabled>
+      <option value="0">Not Started (0)</option>
       <option value="1">1</option>
       <option value="2">2</option>
       <option value="3">3</option>
@@ -401,4 +408,3 @@
   }
 </script>
 {% endblock %}
-

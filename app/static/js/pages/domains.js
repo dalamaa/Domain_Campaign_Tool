@@ -111,10 +111,10 @@ async function renderDomainTable() {
             <td onclick="openHistoryModal(${c.id}, '${c.domain}')" style="cursor:pointer; text-decoration: underline;">${c.domain}</td>
             <td>${c.expiry || "N/A"}</td>
             <td>${daysLeft} days</td>
-            <td>${c.status}</td>
-            <td>$${c.price}</td>
+            <td>${c.status || "Dormant"}</td>
+            <td>${c.price ? `$${c.price}` : "N/A"}</td>
             <td>${daysSince} days</td>
-            <td>${c.seq}</td>
+            <td>${c.hasValues ? c.seq : "Not started"}</td>
             <td>${c.lastAction || "N/A"}</td>
         </tr>`;
     })
@@ -363,25 +363,47 @@ async function saveDomain() {
   const id = document.getElementById("edit-id").value;
   const updates = {};
   const summary = [];
-  const seq = document.getElementById("form-seq").value;
 
-  // Check history first
-  const checkRes = await fetch(`/api/domains/${id}/history/check`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ seq: seq }),
-  });
-  const checkData = await checkRes.json();
+  // Mandatory Validation Loop
+  const fieldsToValidate = [
+    { id: "form-seq", label: "Sequence" },
+    { id: "form-lastAction", label: "Last Action" },
+    { id: "form-status", label: "Status" },
+    { id: "form-price", label: "Price" },
+  ];
 
-  if (checkRes.status === 400) {
-    alert(checkData.message);
-    return;
+  for (const field of fieldsToValidate) {
+    const input = document.getElementById(field.id);
+    if (!input.disabled) {
+      if (input.value === null || input.value === "") {
+        alert(`Please select or enter a value for ${field.label}.`);
+        return;
+      }
+    }
   }
 
-  if (
-    !confirm(`Action: ${checkData.action}\n${checkData.message}\n\nContinue?`)
-  ) {
-    return;
+  // Get values for history check
+  const seq = document.getElementById("form-seq").value;
+
+  // Check history only if sequence is being changed/submitted
+  if (!document.getElementById("form-seq").disabled) {
+    const checkRes = await fetch(`/api/domains/${id}/history/check`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ seq: seq }),
+    });
+    const checkData = await checkRes.json();
+
+    if (checkRes.status === 400) {
+      alert(checkData.message);
+      return;
+    }
+
+    if (
+      !confirm(`Action: ${checkData.action}\n${checkData.message}\n\nContinue?`)
+    ) {
+      return;
+    }
   }
 
   const fields = [
@@ -413,15 +435,18 @@ async function saveDomain() {
     body: JSON.stringify(updates),
   });
 
-  await fetch(`/api/domains/${id}/history`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      seq: seq,
-      price: updates.price,
-      notes: "Domain updated via edit modal",
-    }),
-  });
+  // Only update history if we successfully validated sequence above
+  if (!document.getElementById("form-seq").disabled) {
+    await fetch(`/api/domains/${id}/history`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        seq: seq,
+        price: updates.price,
+        notes: "Domain updated via edit modal",
+      }),
+    });
+  }
   alert("Domain updated successfully.");
   renderDomainTable();
   closeModal();
@@ -432,27 +457,60 @@ function openModal(id = null) {
   const modalTitle = document.getElementById("modal-title");
   const c = domains.find((x) => x.id === id);
 
+  const seqEl = document.getElementById("form-seq");
+  const actionEl = document.getElementById("form-lastAction");
+  const statusEl = document.getElementById("form-status");
+  const priceEl = document.getElementById("form-price");
+
   if (c) {
     modalTitle.innerText = "Edit Domain";
     document.getElementById("edit-id").value = c.id;
     document.getElementById("form-domain").value = c.domain;
     document.getElementById("form-expiry").value = c.expiry || "";
-    document.getElementById("form-status").value = c.status || "ACTIVE";
-    document.getElementById("form-price").value = c.price || 0;
+
+    // Map the backend status enum value (e.g. "ACTIVE") to the select's
+    // option value (e.g. "Active") so real statuses display correctly.
+    const statusSelectValue = {
+      ACTIVE: "Active",
+      RESTING: "Resting",
+      SOLD: "Sold",
+      EXPIRED: "Expired",
+      ARCHIVED: "Archived",
+      DORMANT: "Dormant",
+    }[c.status ? String(c.status).toUpperCase() : ""];
+
+    // For a domain that hasn't been started (Dormant status / sequence 0),
+    // leave Status, Price, Sequence, and Last Action on their placeholders so
+    // the user can deliberately set real values rather than inheriting defaults.
+    const hasValues = c.hasValues;
+    statusEl.value = hasValues ? statusSelectValue || "" : "";
+    priceEl.value = hasValues ? c.price || "" : "";
     document.getElementById("form-lastContact").value = c.lastContact || "";
-    document.getElementById("form-seq").value = c.seq || 1;
-    document.getElementById("form-lastAction").value =
-      c.lastAction || "First Outreach";
+    seqEl.value = hasValues ? c.seq || "" : "";
+    actionEl.value = hasValues ? c.lastAction || "" : "";
+
+    // Ensure they stay disabled initially
+    statusEl.disabled = true;
+    priceEl.disabled = true;
+    seqEl.disabled = true;
+    actionEl.disabled = true;
   } else {
     modalTitle.innerText = "Add Domain";
     document.getElementById("edit-id").value = "";
     document.getElementById("form-domain").value = "";
     document.getElementById("form-expiry").value = "";
     document.getElementById("form-lastContact").value = "";
-    document.getElementById("form-price").value = 0;
-    document.getElementById("form-status").value = "Active";
-    document.getElementById("form-seq").value = 1;
-    document.getElementById("form-lastAction").value = "First Outreach";
+
+    // Explicitly reset to placeholder
+    statusEl.value = "";
+    priceEl.value = "";
+    seqEl.value = "";
+    actionEl.value = "";
+    // Disable them so user has to click edit
+    statusEl.disabled = true;
+    priceEl.disabled = true;
+    seqEl.disabled = true;
+    actionEl.disabled = true;
   }
 }
 

@@ -47,10 +47,34 @@ Do not store this value in the database.
 Domains may have one of the following statuses:
 
 - ACTIVE
+- DORMANT
 - RESTING
 - SOLD
 - EXPIRED
 - ARCHIVED
+
+Status definitions:
+
+- **ACTIVE** — the campaign is currently being worked on / running.
+- **DORMANT** — the domain has never been worked on (newly added or newly imported). It is "not started." A Dormant campaign has sequence `0`.
+- **RESTING** — the campaign has been worked on in the past and is now in its rest period. Resting campaigns have a non-zero sequence (they were started before).
+
+The key difference between DORMANT and RESTING is prior work:
+
+- DORMANT implies the domain has never been started (no work history).
+- RESTING implies the domain has been started and worked on before, and is currently resting.
+
+## D008
+
+A Dormant (not-started) domain uses sequence `0` to mean "has not started."
+
+- Sequence `0` must never be presented to the user as a real sequence value in the UI.
+- In the list/table, a Dormant domain's Sequence should display as "Not started."
+- The first real outreach moves a campaign to sequence `1`.
+
+---
+
+# CAMPAIGN RULES
 
 ---
 
@@ -620,6 +644,17 @@ Imported Active Campaigns must preserve:
 - Email Blocks
 - Last Contact Date
 - Campaign Status
+
+---
+
+## I005
+
+Imported domains that have NOT been started must be created as DORMANT with
+sequence `0` and price `0`.
+
+Importing a domain into the campaign table does NOT, by itself, mark it as
+ACTIVE. The domain stays Dormant ("not started") unless the user explicitly
+provides an ACTIVE status with a real sequence (1 or higher).
 
 ---
 
