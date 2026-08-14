@@ -259,7 +259,8 @@ def get_campaign_history(id):
     if not camp:
         return jsonify({'error': 'Campaign not found'}), 404
 
-    history = CampaignHistory.query.filter_by(campaign_id=camp.id).order_by(CampaignHistory.action_date.asc()).all()
+    # Order by action_date descending so latest actions appear first
+    history = CampaignHistory.query.filter_by(campaign_id=camp.id).order_by(CampaignHistory.action_date.desc()).all()
     return jsonify([{
         'action': h.action_type.value,
         'date': h.action_date.isoformat(),
