@@ -32,7 +32,13 @@
     <table id="domain-table">
       <thead>
         <tr>
-          <th style="position: sticky; top: 0; background: #eee">Select</th>
+          <th style="position: sticky; top: 0; background: #eee">
+            <input
+              type="checkbox"
+              id="select-all-checkbox"
+              onchange="toggleSelectAll(this)"
+            />
+          </th>
           <th
             style="position: sticky; top: 0; background: #eee; cursor: pointer"
             onclick="sortTable('domain')"

@@ -93,6 +93,19 @@ async function renderDomainTable() {
   const countEl = document.getElementById("domain-count");
   if (countEl)
     countEl.textContent = `${filtered.length} of ${domains.length} domains`;
+
+  // Update Select All checkbox state based on filtered results
+  const selectAll = document.getElementById("select-all-checkbox");
+  if (selectAll) {
+    const selectedCount = filtered.filter((c) =>
+      selectedDomains.has(c.id),
+    ).length;
+    selectAll.checked =
+      filtered.length > 0 && selectedCount === filtered.length;
+    selectAll.indeterminate =
+      selectedCount > 0 && selectedCount < filtered.length;
+  }
+
   body.innerHTML = filtered
     .map((c) => {
       const expiryDate = c.expiry ? new Date(c.expiry) : null;
@@ -157,15 +170,31 @@ function toggleDomainSelection(id) {
   renderDomainTable();
 }
 
+function toggleSelectAll(masterCheckbox) {
+  const filtered = domains.filter(
+    (c) => c.domain && c.domain.toLowerCase().includes(searchTerm),
+  );
+
+  if (masterCheckbox.checked) {
+    filtered.forEach((c) => selectedDomains.add(c.id));
+  } else {
+    filtered.forEach((c) => selectedDomains.delete(c.id));
+  }
+  updateDomainActionBar();
+  renderDomainTable();
+}
+
 // 1. Update updateDomainActionBar in domains.js
 function updateDomainActionBar() {
   const count = selectedDomains.size;
   const editBtn = document.getElementById("edit-btn");
   const delBtn = document.getElementById("delete-btn");
+  const bulkEditBtn = document.getElementById("bulk-edit-btn");
 
-  // Enable Edit for multiple selections too
+  // Enable buttons if anything is selected
   if (editBtn) editBtn.disabled = count === 0;
   if (delBtn) delBtn.disabled = count === 0;
+  if (bulkEditBtn) bulkEditBtn.disabled = count === 0;
 }
 
 // 2. Add bulkEditSelected function

@@ -121,3 +121,8 @@ class CampaignHistory(db.Model):
     campaign = relationship("Campaign", back_populates="history")
     __table_args__ = (UniqueConstraint('campaign_id', 'sequence', name='uix_campaign_sequence'),)
 
+class Setting(db.Model):
+    __tablename__ = 'settings'
+    key = db.Column(String, primary_key=True)
+    value = db.Column(String)
+
