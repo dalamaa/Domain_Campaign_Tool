@@ -112,6 +112,7 @@ class CampaignHistory(db.Model):
     sequence = db.Column(Integer, index=True)
     action_type = db.Column(Enum(ActionType), nullable=False)
     action_date = db.Column(DateTime, default=datetime.utcnow, index=True)
+    edited_at = db.Column(DateTime, nullable=True)
     price_before = db.Column(Integer)
     price_after = db.Column(Integer)
     sequence_before = db.Column(Integer)

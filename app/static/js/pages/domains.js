@@ -190,11 +190,13 @@ function updateDomainActionBar() {
   const editBtn = document.getElementById("edit-btn");
   const delBtn = document.getElementById("delete-btn");
   const bulkEditBtn = document.getElementById("bulk-edit-btn");
+  const actionBtn = document.getElementById("action-btn");
 
   // Enable buttons if anything is selected
   if (editBtn) editBtn.disabled = count === 0;
   if (delBtn) delBtn.disabled = count === 0;
   if (bulkEditBtn) bulkEditBtn.disabled = count === 0;
+  if (actionBtn) actionBtn.disabled = count !== 1; // Only allow for single selection
 }
 
 // 2. Add bulkEditSelected function
@@ -393,55 +395,10 @@ async function saveDomain() {
   const updates = {};
   const summary = [];
 
-  // Mandatory Validation Loop
-  const fieldsToValidate = [
-    { id: "form-seq", label: "Sequence" },
-    { id: "form-lastAction", label: "Last Action" },
-    { id: "form-status", label: "Status" },
-    { id: "form-price", label: "Price" },
-  ];
-
-  for (const field of fieldsToValidate) {
-    const input = document.getElementById(field.id);
-    if (!input.disabled) {
-      if (input.value === null || input.value === "") {
-        alert(`Please select or enter a value for ${field.label}.`);
-        return;
-      }
-    }
-  }
-
-  // Get values for history check
-  const seq = document.getElementById("form-seq").value;
-
-  // Check history only if sequence is being changed/submitted
-  if (!document.getElementById("form-seq").disabled) {
-    const checkRes = await fetch(`/api/domains/${id}/history/check`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ seq: seq }),
-    });
-    const checkData = await checkRes.json();
-
-    if (checkRes.status === 400) {
-      alert(checkData.message);
-      return;
-    }
-
-    if (
-      !confirm(`Action: ${checkData.action}\n${checkData.message}\n\nContinue?`)
-    ) {
-      return;
-    }
-  }
-
   const fields = [
     { id: "form-expiry", key: "expiry" },
     { id: "form-status", key: "status" },
     { id: "form-price", key: "price" },
-    { id: "form-lastContact", key: "lastContact" },
-    { id: "form-seq", key: "seq" },
-    { id: "form-lastAction", key: "lastAction" },
   ];
 
   fields.forEach((f) => {
@@ -457,37 +414,29 @@ async function saveDomain() {
     return;
   }
 
-  // Update Campaign and History
-  await fetch(`/api/domains/${id}`, {
+  // Update Domain / Campaign
+  const res = await fetch(`/api/domains/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(updates),
   });
 
-  // Only update history if we successfully validated sequence above
-  if (!document.getElementById("form-seq").disabled) {
-    await fetch(`/api/domains/${id}/history`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        seq: seq,
-        price: updates.price,
-        notes: "Domain updated via edit modal",
-      }),
-    });
+  if (res.ok) {
+    alert("Domain updated successfully.");
+    renderDomainTable();
+    closeModal();
+  } else {
+    const err = await res.json();
+    alert("Update failed: " + (err.error || "Unknown error"));
   }
-  alert("Domain updated successfully.");
-  renderDomainTable();
-  closeModal();
 }
+
 // 3. Fix modal population in domains.js
 function openModal(id = null) {
   document.getElementById("domain-modal").style.display = "block";
   const modalTitle = document.getElementById("modal-title");
   const c = domains.find((x) => x.id === id);
 
-  const seqEl = document.getElementById("form-seq");
-  const actionEl = document.getElementById("form-lastAction");
   const statusEl = document.getElementById("form-status");
   const priceEl = document.getElementById("form-price");
 
@@ -497,8 +446,6 @@ function openModal(id = null) {
     document.getElementById("form-domain").value = c.domain;
     document.getElementById("form-expiry").value = c.expiry || "";
 
-    // Map the backend status enum value (e.g. "ACTIVE") to the select's
-    // option value (e.g. "Active") so real statuses display correctly.
     const statusSelectValue = {
       ACTIVE: "Active",
       RESTING: "Resting",
@@ -508,43 +455,197 @@ function openModal(id = null) {
       DORMANT: "Dormant",
     }[c.status ? String(c.status).toUpperCase() : ""];
 
-    // For a domain that hasn't been started (Dormant status / sequence 0),
-    // leave Status, Price, Sequence, and Last Action on their placeholders so
-    // the user can deliberately set real values rather than inheriting defaults.
     const hasValues = c.hasValues;
     statusEl.value = hasValues ? statusSelectValue || "" : "";
     priceEl.value = hasValues ? c.price || "" : "";
-    document.getElementById("form-lastContact").value = c.lastContact || "";
-    seqEl.value = hasValues ? c.seq || "" : "";
-    actionEl.value = hasValues ? c.lastAction || "" : "";
 
-    // Ensure they stay disabled initially
     statusEl.disabled = true;
     priceEl.disabled = true;
-    seqEl.disabled = true;
-    actionEl.disabled = true;
   } else {
     modalTitle.innerText = "Add Domain";
     document.getElementById("edit-id").value = "";
     document.getElementById("form-domain").value = "";
     document.getElementById("form-expiry").value = "";
-    document.getElementById("form-lastContact").value = "";
 
-    // Explicitly reset to placeholder
     statusEl.value = "";
     priceEl.value = "";
-    seqEl.value = "";
-    actionEl.value = "";
-    // Disable them so user has to click edit
     statusEl.disabled = true;
     priceEl.disabled = true;
-    seqEl.disabled = true;
-    actionEl.disabled = true;
   }
 }
 
 function closeModal() {
   document.getElementById("domain-modal").style.display = "none";
+}
+
+async function openActionModal() {
+  const ids = Array.from(selectedDomains);
+  if (ids.length !== 1) return;
+  document.getElementById("action-modal").style.display = "block";
+  setActionMode("new");
+}
+
+function closeActionModal() {
+  document.getElementById("action-modal").style.display = "none";
+}
+
+async function setActionMode(mode) {
+  const container = document.getElementById("action-mode-content");
+  const campaignId = Array.from(selectedDomains)[0];
+
+  const tabNew = document.getElementById("tab-new");
+  const tabEdit = document.getElementById("tab-edit");
+
+  if (tabNew && tabEdit) {
+    if (mode === "new") {
+      tabNew.style.background = "#007bff";
+      tabNew.style.color = "white";
+      tabNew.style.fontWeight = "bold";
+      tabEdit.style.background = "#e0e0e0";
+      tabEdit.style.color = "black";
+      tabEdit.style.fontWeight = "normal";
+    } else {
+      tabEdit.style.background = "#007bff";
+      tabEdit.style.color = "white";
+      tabEdit.style.fontWeight = "bold";
+      tabNew.style.background = "#e0e0e0";
+      tabNew.style.color = "black";
+      tabNew.style.fontWeight = "normal";
+    }
+  }
+
+  if (mode === "new") {
+    container.innerHTML = `
+      <div class="form-group">
+        <label>Action Type:
+          <select id="action-type">
+            <option value="CAMPAIGN_STARTED">Campaign Started</option>
+            <option value="FOLLOW_UP_SENT">Follow-up Sent</option>
+            <option value="PRICE_REDUCTION">Price Reduction</option>
+            <option value="REST_STARTED">Rest Started</option>
+            <option value="CAMPAIGN_RESTARTED">Campaign Restarted</option>
+            <option value="CAMPAIGN_COMPLETED">Campaign Completed</option>
+            <option value="FORCE_OVERRIDE">Force Override</option>
+            <option value="PARTIAL_OVERRIDE">Partial Override</option>
+          </select>
+        </label>
+      </div>
+      <div class="form-group">
+        <label>Date: <input type="datetime-local" id="action-date"></label>
+    </div>
+    <div class="form-group">
+        <label>Price: <input type="number" id="action-price"></label>
+    </div>
+    <div class="form-group">
+        <label>Notes: <textarea id="action-notes"></textarea></label>
+      </div>
+      <button onclick="saveNewAction(${campaignId})">Save Action</button>
+    `;
+  } else {
+    // Edit Mode
+    const res = await fetch(`/api/campaigns/${campaignId}/actions`);
+    const history = await res.json();
+
+    let options = history
+      .map(
+        (h) =>
+          `<option value="${h.sequence}">Sequence ${h.sequence} (${h.action_type})</option>`,
+      )
+      .join("");
+
+    container.innerHTML = `
+      <div class="form-group">
+        <label>Sequence:
+          <select id="edit-seq-select" onchange="loadActionForEdit(${campaignId})">
+            <option value="">-- Select Sequence --</option>
+            ${options}
+          </select>
+        </label>
+      </div>
+      <div id="edit-action-fields"></div>
+    `;
+  }
+}
+
+async function loadActionForEdit(campaignId) {
+  const seq = document.getElementById("edit-seq-select").value;
+  if (!seq) return;
+  const res = await fetch(`/api/campaigns/${campaignId}/actions/${seq}`);
+  const data = await res.json();
+
+  const container = document.getElementById("edit-action-fields");
+  container.innerHTML = `
+    <div class="form-group">
+      <label>Action Type:
+        <select id="edit-type">
+          <option value="CAMPAIGN_STARTED" ${data.action_type === "CAMPAIGN_STARTED" ? "selected" : ""}>Campaign Started</option>
+          <option value="FOLLOW_UP_SENT" ${data.action_type === "FOLLOW_UP_SENT" ? "selected" : ""}>Follow-up Sent</option>
+          <option value="PRICE_REDUCTION" ${data.action_type === "PRICE_REDUCTION" ? "selected" : ""}>Price Reduction</option>
+          <option value="REST_STARTED" ${data.action_type === "REST_STARTED" ? "selected" : ""}>Rest Started</option>
+          <option value="CAMPAIGN_RESTARTED" ${data.action_type === "CAMPAIGN_RESTARTED" ? "selected" : ""}>Campaign Restarted</option>
+          <option value="CAMPAIGN_COMPLETED" ${data.action_type === "CAMPAIGN_COMPLETED" ? "selected" : ""}>Campaign Completed</option>
+          <option value="FORCE_OVERRIDE" ${data.action_type === "FORCE_OVERRIDE" ? "selected" : ""}>Force Override</option>
+          <option value="PARTIAL_OVERRIDE" ${data.action_type === "PARTIAL_OVERRIDE" ? "selected" : ""}>Partial Override</option>
+        </select>
+      </label>
+    </div>
+    <div class="form-group">
+      <label>Date: <input type="datetime-local" id="edit-date" value="${data.action_date.slice(0, 16)}"></label>
+    </div>
+    <div class="form-group">
+      <label>Price: <input type="number" id="edit-price" value="${data.price_after}"></label>
+    </div>
+    <div class="form-group">
+      <label>Notes: <textarea id="edit-notes">${data.notes || ""}</textarea></label>
+    </div>
+    <button onclick="saveEditAction(${campaignId}, ${seq})">Save Changes</button>
+  `;
+}
+
+async function saveNewAction(campaignId) {
+  const payload = {
+    action_type: document.getElementById("action-type").value,
+    action_date: document.getElementById("action-date").value,
+    price_after: document.getElementById("action-price").value,
+    notes: document.getElementById("action-notes").value,
+  };
+
+  const res = await fetch(`/api/campaigns/${campaignId}/actions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (res.ok) {
+    alert("Action saved!");
+    closeActionModal();
+    renderDomainTable();
+  } else {
+    alert("Failed to save action");
+  }
+}
+
+async function saveEditAction(campaignId, seq) {
+  const payload = {
+    action_type: document.getElementById("edit-type").value,
+    action_date: document.getElementById("edit-date").value,
+    price_after: document.getElementById("edit-price").value,
+    notes: document.getElementById("edit-notes").value,
+  };
+
+  const res = await fetch(`/api/campaigns/${campaignId}/actions/${seq}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (res.ok) {
+    alert("Changes saved!");
+    closeActionModal();
+    renderDomainTable();
+  } else {
+    alert("Failed to save changes");
+  }
 }
 
 // Render the table on page load

@@ -421,3 +421,77 @@ def bulk_edit_domains():
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
+@bp.route('/campaigns/<int:campaign_id>/actions', methods=['GET'])
+def get_campaign_actions(campaign_id):
+    from app.models.models import CampaignHistory
+    history = CampaignHistory.query.filter_by(campaign_id=campaign_id).order_by(CampaignHistory.sequence.asc()).all()
+    return jsonify([{
+        'sequence': h.sequence,
+        'action_type': h.action_type.value,
+        'action_date': h.action_date.isoformat(),
+        'price_before': h.price_before,
+        'price_after': h.price_after,
+        'notes': h.notes,
+        'edited_at': h.edited_at.isoformat() if h.edited_at else None
+    } for h in history])
+
+@bp.route('/campaigns/<int:campaign_id>/actions', methods=['POST'])
+def add_campaign_action(campaign_id):
+    from app.services.campaign_service import create_new_action, sync_campaign_state
+    from app.models.models import db, ActionType
+    data = request.json
+    try:
+        action_type = ActionType(data['action_type'])
+        action_date = datetime.fromisoformat(data['action_date'].replace('Z', ''))
+        price = int(data['price_after'])
+        notes = data.get('notes', '')
+
+        new_hist = create_new_action(campaign_id, action_type, action_date, price, notes)
+        db.session.commit()
+        sync_campaign_state(campaign_id)
+
+        return jsonify({'success': True, 'action': {
+            'sequence': new_hist.sequence,
+            'action_type': new_hist.action_type.value
+        }}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 400
+
+@bp.route('/campaigns/<int:campaign_id>/actions/<int:sequence>', methods=['GET'])
+def get_campaign_action(campaign_id, sequence):
+    from app.services.campaign_service import get_history_by_sequence
+    hist = get_history_by_sequence(campaign_id, sequence)
+    if not hist:
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify({
+        'sequence': hist.sequence,
+        'action_type': hist.action_type.value,
+        'action_date': hist.action_date.isoformat(),
+        'price_after': hist.price_after,
+        'notes': hist.notes
+    })
+
+@bp.route('/campaigns/<int:campaign_id>/actions/<int:sequence>', methods=['PUT'])
+def edit_campaign_action(campaign_id, sequence):
+    from app.services.campaign_service import update_existing_action
+    from app.models.models import ActionType
+    from datetime import datetime
+    data = request.json
+    try:
+        action_type = ActionType(data['action_type'])
+        action_date = datetime.fromisoformat(data['action_date'].replace('Z', ''))
+        price = int(data['price_after'])
+        notes = data.get('notes', '')
+
+        hist = update_existing_action(campaign_id, sequence, action_type, action_date, price, notes)
+        if not hist:
+            return jsonify({'error': 'Not found'}), 404
+
+        return jsonify({'success': True, 'action': {
+            'sequence': hist.sequence,
+            'edited_at': hist.edited_at.isoformat()
+        }})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+

@@ -26,6 +26,7 @@
     <button id="bulk-edit-btn" onclick="openBulkModal()" disabled>
       Bulk Edit
     </button>
+    <button id="action-btn" onclick="openActionModal()" disabled>Action</button>
   </div>
 
   <div class="table-container" style="max-height: 600px; overflow-y: auto">
@@ -128,6 +129,43 @@
   <button onclick="closeHistoryModal()">Close</button>
 </div>
 <div
+  id="action-modal"
+  class="modal"
+  style="
+    display: none;
+    position: fixed;
+    top: 10%;
+    left: 30%;
+    width: 40%;
+    background: white;
+    padding: 20px;
+    border: 1px solid #ccc;
+    z-index: 200;
+  "
+>
+  <h3>Campaign Action</h3>
+  <div style="margin-bottom: 15px">
+    <button
+      id="tab-new"
+      onclick="setActionMode('new')"
+      style="padding: 8px 16px; margin-right: 5px; cursor: pointer"
+    >
+      New Action
+    </button>
+    <button
+      id="tab-edit"
+      onclick="setActionMode('edit')"
+      style="padding: 8px 16px; cursor: pointer"
+    >
+      Edit History
+    </button>
+  </div>
+  <hr />
+  <div id="action-mode-content"></div>
+  <br />
+  <button onclick="closeActionModal()">Cancel</button>
+</div>
+<div
   id="domain-modal"
   class="modal"
   style="
@@ -173,44 +211,6 @@
       <input type="number" id="form-price" placeholder="Enter Price" disabled
     /></label>
     <button onclick="toggleField('form-price')">✎</button>
-  </div>
-  <div class="form-group">
-    <label
-      >Last Contact Date: <input type="date" id="form-lastContact" disabled
-    /></label>
-    <button onclick="toggleField('form-lastContact')">✎</button>
-  </div>
-  <div class="form-group">
-    <label
-      >Sequence:
-      <select id="form-seq" disabled>
-        <option value="" disabled selected>-- Select Sequence --</option>
-        <option value="1">1</option>
-        <option value="2">2</option>
-        <option value="3">3</option>
-        <option value="4">4</option>
-        <option value="5">5</option>
-        <option value="6">6</option>
-        <option value="7">7</option>
-        <option value="8">8</option>
-      </select></label
-    >
-    <button onclick="toggleField('form-seq')">✎</button>
-  </div>
-  <div class="form-group">
-    <label
-      >Last Action:
-      <select id="form-lastAction" disabled>
-        <option value="" disabled selected>-- Select Action --</option>
-        <option value="First Outreach">First Outreach</option>
-        <option value="Follow-up">Follow-up</option>
-        <option value="Price Reduction">Price Reduction</option>
-        <option value="Question">Question</option>
-        <option value="Final Follow-up">Final Follow-up</option>
-        <option value="Other">Other</option>
-      </select></label
-    >
-    <button onclick="toggleField('form-lastAction')">✎</button>
   </div>
   <button onclick="saveDomain()">Save</button>
   <button onclick="closeModal()">Cancel</button>
