@@ -398,7 +398,6 @@ async function saveDomain() {
   const fields = [
     { id: "form-expiry", key: "expiry" },
     { id: "form-status", key: "status" },
-    { id: "form-price", key: "price" },
   ];
 
   fields.forEach((f) => {
@@ -438,8 +437,6 @@ function openModal(id = null) {
   const c = domains.find((x) => x.id === id);
 
   const statusEl = document.getElementById("form-status");
-  const priceEl = document.getElementById("form-price");
-
   if (c) {
     modalTitle.innerText = "Edit Domain";
     document.getElementById("edit-id").value = c.id;
@@ -457,10 +454,7 @@ function openModal(id = null) {
 
     const hasValues = c.hasValues;
     statusEl.value = hasValues ? statusSelectValue || "" : "";
-    priceEl.value = hasValues ? c.price || "" : "";
-
     statusEl.disabled = true;
-    priceEl.disabled = true;
   } else {
     modalTitle.innerText = "Add Domain";
     document.getElementById("edit-id").value = "";
@@ -468,9 +462,7 @@ function openModal(id = null) {
     document.getElementById("form-expiry").value = "";
 
     statusEl.value = "";
-    priceEl.value = "";
     statusEl.disabled = true;
-    priceEl.disabled = true;
   }
 }
 
@@ -519,8 +511,9 @@ async function setActionMode(mode) {
       <div class="form-group">
         <label>Action Type:
           <select id="action-type">
-            <option value="CAMPAIGN_STARTED">Campaign Started</option>
-            <option value="FOLLOW_UP_SENT">Follow-up Sent</option>
+            <option value="FIRST_OUTREACH">First Outreach</option>
+            <option value="FIRST_FOLLOW_UP">First Follow-up</option>
+            <option value="FOLLOW_UP">Follow-up</option>
             <option value="PRICE_REDUCTION">Price Reduction</option>
             <option value="REST_STARTED">Rest Started</option>
             <option value="CAMPAIGN_RESTARTED">Campaign Restarted</option>
@@ -578,8 +571,9 @@ async function loadActionForEdit(campaignId) {
     <div class="form-group">
       <label>Action Type:
         <select id="edit-type">
-          <option value="CAMPAIGN_STARTED" ${data.action_type === "CAMPAIGN_STARTED" ? "selected" : ""}>Campaign Started</option>
-          <option value="FOLLOW_UP_SENT" ${data.action_type === "FOLLOW_UP_SENT" ? "selected" : ""}>Follow-up Sent</option>
+          <option value="FIRST_OUTREACH" ${data.action_type === "FIRST_OUTREACH" ? "selected" : ""}>First Outreach</option>
+          <option value="FIRST_FOLLOW_UP" ${data.action_type === "FIRST_FOLLOW_UP" ? "selected" : ""}>First Follow-up</option>
+          <option value="FOLLOW_UP" ${data.action_type === "FOLLOW_UP" ? "selected" : ""}>Follow-up</option>
           <option value="PRICE_REDUCTION" ${data.action_type === "PRICE_REDUCTION" ? "selected" : ""}>Price Reduction</option>
           <option value="REST_STARTED" ${data.action_type === "REST_STARTED" ? "selected" : ""}>Rest Started</option>
           <option value="CAMPAIGN_RESTARTED" ${data.action_type === "CAMPAIGN_RESTARTED" ? "selected" : ""}>Campaign Restarted</option>

@@ -16,7 +16,9 @@ def create_app(config_class=Config):
     # Initialize scheduler
     with app.app_context():
         try:
-            init_scheduler(app)
+            # We skip scheduler initialization during testing to avoid db conflicts
+            if not app.config.get('TESTING'):
+                init_scheduler(app)
         except Exception as e:
             print(f"Scheduler failed to start: {e}")
 
@@ -26,4 +28,3 @@ def create_app(config_class=Config):
     app.register_blueprint(api_bp)
 
     return app
-

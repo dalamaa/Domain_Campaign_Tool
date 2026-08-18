@@ -6,9 +6,6 @@ print("VERSION:", sys.version)
 import psycopg2
 print("PSYCOPG2:", psycopg2.__version__)
 
-import os
-with open("requirements.txt", "r") as f:
-    print("REQUIREMENTS:", f.read())
 
 from app import create_app
 

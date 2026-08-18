@@ -46,47 +46,31 @@ Do not store this value in the database.
 
 Domains may have one of the following statuses:
 
-- ACTIVE
-- DORMANT
-- RESTING
+- AVAILABLE
 - SOLD
 - EXPIRED
-- ARCHIVED
-
-Status definitions:
-
-- **ACTIVE** — the campaign is currently being worked on / running.
-- **DORMANT** — the domain has never been worked on (newly added or newly imported). It is "not started." A Dormant campaign has sequence `0`.
-- **RESTING** — the campaign has been worked on in the past and is now in its rest period. Resting campaigns have a non-zero sequence (they were started before).
-
-The key difference between DORMANT and RESTING is prior work:
-
-- DORMANT implies the domain has never been started (no work history).
-- RESTING implies the domain has been started and worked on before, and is currently resting.
-
-## D008
-
-A Dormant (not-started) domain uses sequence `0` to mean "has not started."
-
-- Sequence `0` must never be presented to the user as a real sequence value in the UI.
-- In the list/table, a Dormant domain's Sequence should display as "Not started."
-- The first real outreach moves a campaign to sequence `1`.
-
----
-
-# CAMPAIGN RULES
 
 ---
 
 ## D006
 
-Sold and Archived domains must never appear in Suggested Work.
+Sold and Expired domains must never appear in Suggested Work.
 
 ---
 
 ## D007
 
 Expired domains remain in the system for historical purposes unless deleted by the user.
+
+---
+
+## D008
+
+A Dormant (not-started) campaign uses sequence `0` to mean "has not started."
+
+- Sequence `0` must never be presented to the user as a real sequence value in the UI.
+- In the list/table, a Dormant domain's Sequence should display as "Not started."
+- The first real outreach moves a campaign to sequence `1`.
 
 ---
 
@@ -100,7 +84,7 @@ Every campaign stores:
 - Last Contact Date
 - Current Price
 - Current Sequence
-- Campaign Status
+- Campaign Status (DORMANT, ACTIVE, RESTING)
 
 ---
 
@@ -122,12 +106,15 @@ Every campaign action creates a history record.
 
 Examples:
 
-- Campaign Started
-- Follow-up Sent
+- First Outreach
+- First Follow-up
+- Follow-up
 - Price Reduction
 - Rest Started
 - Campaign Restarted
 - Campaign Completed
+- Force Override
+- Partial Override
 
 ---
 
@@ -156,89 +143,63 @@ Suggested default weights:
 - Campaign Older than 35 days = +25
 - Ready To Restart = +15
 
-The scheduler sorts Suggested Work by total Priority Score.
-
----
+## The scheduler sorts Suggested Work by total Priority Score.
 
 ## PR002
 
-Priority weights should be configurable.
-
----
+## Priority weights should be configurable.
 
 # FIRST FOLLOW-UP
 
 ## F001
 
-The first follow-up should occur between Day 2 and Day 5.
-
----
+## The first follow-up should occur between Day 2 and Day 5.
 
 ## F002
 
-First follow-ups should receive the highest scheduler weight.
-
----
+## First follow-ups should receive the highest scheduler weight.
 
 ## F003
 
-Day 2 through Day 5 should display as Due.
-
----
+## Day 2 through Day 5 should display as Due.
 
 ## F004
 
-After Day 5 the first follow-up becomes Overdue.
-
----
+## After Day 5 the first follow-up becomes Overdue.
 
 ## F005
 
-Overdue first follow-ups should display an urgent color.
-
----
+## Overdue first follow-ups should display an urgent color.
 
 # NORMAL FOLLOW-UP
 
 ## N001
 
-Normal follow-ups should ideally occur between Day 14 and Day 21.
-
----
+## Normal follow-ups should ideally occur between Day 14 and Day 21.
 
 ## N002
 
-The scheduler should increase priority as the campaign approaches Day 21.
-
----
+## The scheduler should increase priority as the campaign approaches Day 21.
 
 ## N003
 
-22 through 35 days should display a warning color.
-
----
+## 22 through 35 days should display a warning color.
 
 ## N004
 
-36 through 50 days should display a high priority warning.
-
----
+## 36 through 50 days should display a high priority warning.
 
 ## N005
 
 Campaigns should generally not remain Active beyond 50 days.
 
-The scheduler should recommend moving the campaign into Rest.
-
----
+## The scheduler should recommend moving the campaign into Rest.
 
 # PRICE REDUCTION
 
 ## P001
 
-Price reductions are separate campaign actions.
-
----
+## Price reductions are separate campaign actions.
 
 ## P002
 
@@ -252,89 +213,63 @@ Price reductions update:
 
 ## P003
 
-Price history must never be lost.
-
----
+## Price history must never be lost.
 
 ## P004
 
-The scheduler should recommend price reductions based on campaign progress.
-
----
+## The scheduler should recommend price reductions based on campaign progress.
 
 # REST PERIOD
 
 ## R001
 
-Campaigns generally enter Rest after approximately 50 days.
-
----
+## Campaigns generally enter Rest after approximately 50 days.
 
 ## R002
 
 The scheduler recommends moving a campaign into Rest.
 
-The user decides whether to accept the recommendation.
-
----
+## The user decides whether to accept the recommendation.
 
 ## R003
 
-Default Rest duration is 60 days.
-
----
+## Default Rest duration is 60 days.
 
 ## R004
 
-The scheduler recommends restarting after Rest ends.
-
----
+## The scheduler recommends restarting after Rest ends.
 
 ## R005
 
-The user may restart a campaign before Rest ends.
-
----
+## The user may restart a campaign before Rest ends.
 
 # EXPIRY
 
 ## E001
 
-Domains expiring within 60 days receive increased priority.
-
----
+## Domains expiring within 60 days receive increased priority.
 
 ## E002
 
-Domains expiring within 30 days become Critical.
-
----
+## Domains expiring within 30 days become Critical.
 
 ## E003
 
-Domains expiring within 14 days become Highest Priority.
-
----
+## Domains expiring within 14 days become Highest Priority.
 
 ## E004
 
-The scheduler may recommend ending Rest early when expiry is approaching.
-
----
+## The scheduler may recommend ending Rest early when expiry is approaching.
 
 # EMAIL BLOCKS
 
 ## M001
 
-Every email account belongs to one ordered sequence.
-
----
+## Every email account belongs to one ordered sequence.
 
 ## M002
 
-Email order must always be preserved.
-
----
+## Email order must always be preserved.
 
 ## M003
 
@@ -348,21 +283,15 @@ M09
 
 M10
 
-M11
-
----
+## M11
 
 ## M004
 
-Avoid scattered email assignments whenever possible.
-
----
+## Avoid scattered email assignments whenever possible.
 
 ## M005
 
-The scheduler should recommend the smallest suitable contiguous block.
-
----
+## The scheduler should recommend the smallest suitable contiguous block.
 
 ## M006
 
@@ -457,18 +386,6 @@ Reservations may be overridden by the user.
 If two campaigns require overlapping email blocks, the scheduler should warn the user.
 
 ---
-
-## V009
-
-The user may approve the conflict manually.
-
-## V007
-
-Reservations may be overridden by the user.
-
-## V008
-
-If two campaigns require overlapping email blocks, the scheduler should warn the user.
 
 ## V009
 
@@ -643,17 +560,17 @@ Imported Active Campaigns must preserve:
 - Current Sequence
 - Email Blocks
 - Last Contact Date
-- Campaign Status
+- Campaign Status (DORMANT, ACTIVE, RESTING)
 
 ---
 
 ## I005
 
-Imported domains that have NOT been started must be created as DORMANT with
+Imported domains that have NOT been started must be created as a campaign with DORMANT status,
 sequence `0` and price `0`.
 
 Importing a domain into the campaign table does NOT, by itself, mark it as
-ACTIVE. The domain stays Dormant ("not started") unless the user explicitly
+ACTIVE. The domain stays with a DORMANT campaign (not started) unless the user explicitly
 provides an ACTIVE status with a real sequence (1 or higher).
 
 ---

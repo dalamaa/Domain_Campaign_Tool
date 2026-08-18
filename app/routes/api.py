@@ -137,28 +137,36 @@ def fix_order():
 
 @bp.route('/domains', methods=['GET'])
 def get_domains():
-    from app.models.models import Domain, Campaign, CampaignStatus
+    from app.models.models import Domain, Campaign, CampaignStatus, CampaignHistory
     domains = Domain.query.all()
     results = []
+    action_mapping = {
+        'FIRST_OUTREACH': 'First Outreach',
+        'FIRST_FOLLOW_UP': 'First Follow-up',
+        'FOLLOW_UP': 'Follow-up',
+        'PRICE_REDUCTION': 'Price Reduction',
+        'REST_STARTED': 'Rest Started',
+        'CAMPAIGN_RESTARTED': 'Campaign Restarted',
+        'CAMPAIGN_COMPLETED': 'Campaign Completed',
+        'FORCE_OVERRIDE': 'Force Override',
+        'PARTIAL_OVERRIDE': 'Partial Override'
+    }
     for d in domains:
         c = Campaign.query.filter_by(domain_id=d.id).first()
-        # A domain "has values" (i.e. has been started/worked on) only when its
-        # campaign is not Dormant and its sequence is 1 or higher. Dormant/not
-        # started domains (sequence 0) have no genuine campaign values yet.
-        has_values = bool(
-            c
-            and c.status != CampaignStatus.DORMANT
-            and c.current_sequence > 0
-        )
+        has_history = bool(c and CampaignHistory.query.filter_by(campaign_id=c.id).first())
+        has_values = has_history
+
+        raw_action = c.last_action if c else ''
+        friendly_action = action_mapping.get(str(raw_action), raw_action)
         results.append({
             'id': d.id,
             'domain': d.domain_name,
             'expiry': d.expiry_date.isoformat() if d.expiry_date else '',
             'status': c.status.value if c else '',
             'price': c.current_price if c else '',
-            'seq': c.current_sequence if c else '',
+            'seq': c.current_sequence if has_history else '',
             'lastContact': c.last_contact_date.isoformat() if c and c.last_contact_date else '',
-            'lastAction': c.last_action if c else '',
+            'lastAction': friendly_action if has_history else '',
             'hasValues': has_values
         })
     return jsonify(results)

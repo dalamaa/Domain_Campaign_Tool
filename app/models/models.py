@@ -9,17 +9,20 @@ class Base(DeclarativeBase):
 
 db = SQLAlchemy(model_class=Base)
 
-class CampaignStatus(enum.Enum):
-    ACTIVE = "ACTIVE"
-    RESTING = "RESTING"
+class DomainStatus(enum.Enum):
+    AVAILABLE = "AVAILABLE"
     SOLD = "SOLD"
     EXPIRED = "EXPIRED"
-    ARCHIVED = "ARCHIVED"
+
+class CampaignStatus(enum.Enum):
     DORMANT = "DORMANT"
+    ACTIVE = "ACTIVE"
+    RESTING = "RESTING"
 
 class ActionType(enum.Enum):
-    CAMPAIGN_STARTED = "CAMPAIGN_STARTED"
-    FOLLOW_UP_SENT = "FOLLOW_UP_SENT"
+    FIRST_OUTREACH = "FIRST_OUTREACH"
+    FIRST_FOLLOW_UP = "FIRST_FOLLOW_UP"
+    FOLLOW_UP = "FOLLOW_UP"
     PRICE_REDUCTION = "PRICE_REDUCTION"
     REST_STARTED = "REST_STARTED"
     CAMPAIGN_RESTARTED = "CAMPAIGN_RESTARTED"
@@ -37,6 +40,7 @@ class Domain(db.Model):
     id = db.Column(Integer, primary_key=True)
     domain_name = db.Column(String, unique=True, nullable=False, index=True)
     expiry_date = db.Column(Date)
+    status = db.Column(String, nullable=False, default="AVAILABLE")
     notes = db.Column(db.Text)
     created_at = db.Column(DateTime, default=datetime.utcnow)
     campaigns = relationship("Campaign", back_populates="domain")
