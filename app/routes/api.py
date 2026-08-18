@@ -289,6 +289,14 @@ def manage_domain(id):
         db.session.commit()
         return jsonify({'success': True})
 
+@bp.route('/domains/<int:id>/campaign-status', methods=['GET'])
+def get_campaign_status(id):
+    from app.models.models import Campaign
+    camp = Campaign.query.filter_by(domain_id=id).first()
+    if not camp:
+        return jsonify({'error': 'Campaign not found'}), 404
+    return jsonify({'status': camp.status.value})
+
 @bp.route('/domains/<int:id>/history', methods=['GET'])
 def get_campaign_history(id):
     from app.models.models import Campaign, CampaignHistory
@@ -483,7 +491,7 @@ def get_campaign_action(campaign_id, sequence):
 @bp.route('/campaigns/<int:campaign_id>/actions/<int:sequence>', methods=['PUT'])
 def edit_campaign_action(campaign_id, sequence):
     from app.services.campaign_service import update_existing_action
-    from app.models.models import ActionType
+    from app.models.models import ActionType, Campaign, CampaignStatus
     from datetime import datetime
     data = request.json
     try:
@@ -495,6 +503,12 @@ def edit_campaign_action(campaign_id, sequence):
         hist = update_existing_action(campaign_id, sequence, action_type, action_date, price, notes)
         if not hist:
             return jsonify({'error': 'Not found'}), 404
+            
+        # Update campaign status
+        camp = Campaign.query.get(campaign_id)
+        if camp and 'campaign_status' in data:
+            camp.status = CampaignStatus(data['campaign_status'])
+            db.session.commit()
 
         return jsonify({'success': True, 'action': {
             'sequence': hist.sequence,

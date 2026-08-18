@@ -560,6 +560,24 @@ async function loadActionForEdit(campaignId) {
   const res = await fetch(`/api/campaigns/${campaignId}/actions/${seq}`);
   const data = await res.json();
 
+  // Campaign status is attached to the domain/campaign data or fetched separately.
+  // The current API already has a route for domain status but we need the campaign status.
+  // Actually, wait, Campaign Status is on Campaign, and the original code I see here
+  // was fetching it from `/api/domains/${campaignId}/campaign-status` which doesn't seem to exist
+  // in the routes I read, let's look at `get_domains`?
+  // Let me re-read `app/routes/api.py`.
+  // Wait, I see get_domains returns `status` which is `c.status.value`.
+  // I should check if I can fetch the campaign directly.
+
+  // Ah, the original code had:
+  // const campRes = await fetch(`/api/domains/${campaignId}/campaign-status`);
+  // But wait, there is no such route in `app/routes/api.py`.
+  // Let's add a quick route or just use the domain data.
+  // Wait, I see I have access to `domains` array in scope!
+
+  const campaign = domains.find((d) => d.id == campaignId);
+  const currentStatus = campaign ? campaign.status : "DORMANT";
+
   const container = document.getElementById("edit-action-fields");
   container.innerHTML = `
     <div class="form-group">
@@ -569,6 +587,15 @@ async function loadActionForEdit(campaignId) {
           <option value="FIRST_FOLLOW_UP" ${data.action_type === "FIRST_FOLLOW_UP" ? "selected" : ""}>First Follow-up</option>
           <option value="FOLLOW_UP" ${data.action_type === "FOLLOW_UP" ? "selected" : ""}>Follow-up</option>
           <option value="PRICE_REDUCTION" ${data.action_type === "PRICE_REDUCTION" ? "selected" : ""}>Price Reduction</option>
+        </select>
+      </label>
+    </div>
+    <div class="form-group">
+      <label>Campaign Status:
+        <select id="edit-status">
+          <option value="DORMANT" ${currentStatus === "DORMANT" ? "selected" : ""}>Dormant</option>
+          <option value="ACTIVE" ${currentStatus === "ACTIVE" ? "selected" : ""}>Active</option>
+          <option value="RESTING" ${currentStatus === "RESTING" ? "selected" : ""}>Resting</option>
         </select>
       </label>
     </div>
@@ -615,6 +642,7 @@ async function saveEditAction(campaignId, seq) {
     action_date: document.getElementById("edit-date").value,
     price_after: document.getElementById("edit-price").value,
     notes: document.getElementById("edit-notes").value,
+    campaign_status: document.getElementById("edit-status").value,
   };
 
   const res = await fetch(`/api/campaigns/${campaignId}/actions/${seq}`, {
@@ -626,7 +654,8 @@ async function saveEditAction(campaignId, seq) {
   if (res.ok) {
     alert("Changes saved!");
     closeActionModal();
-    renderDomainTable();
+    // Re-fetch domain table to update status, cache-bust
+    await renderDomainTable();
   } else {
     alert("Failed to save changes");
   }
