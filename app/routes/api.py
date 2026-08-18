@@ -144,12 +144,7 @@ def get_domains():
         'FIRST_OUTREACH': 'First Outreach',
         'FIRST_FOLLOW_UP': 'First Follow-up',
         'FOLLOW_UP': 'Follow-up',
-        'PRICE_REDUCTION': 'Price Reduction',
-        'REST_STARTED': 'Rest Started',
-        'CAMPAIGN_RESTARTED': 'Campaign Restarted',
-        'CAMPAIGN_COMPLETED': 'Campaign Completed',
-        'FORCE_OVERRIDE': 'Force Override',
-        'PARTIAL_OVERRIDE': 'Partial Override'
+        'PRICE_REDUCTION': 'Price Reduction'
     }
     for d in domains:
         c = Campaign.query.filter_by(domain_id=d.id).first()
@@ -339,7 +334,7 @@ def update_campaign_history(id):
     data = request.json
     seq = int(data.get('seq'))
 
-    camp = Campaign.query.filter_by(domain_id=id).first()
+    camp = Campaign.query.filter_by(domain_id=camp.id).first()
     if not camp:
         return jsonify({'error': 'Campaign not found'}), 404
 
@@ -354,7 +349,7 @@ def update_campaign_history(id):
         hist = CampaignHistory(
             campaign_id=camp.id,
             sequence=seq,
-            action_type=data.get('action_type', 'FORCE_OVERRIDE'),
+            action_type=data.get('action_type', 'FIRST_OUTREACH'),
             price_before=prev.price_after if prev else 0,
             price_after=int(data.get('price')),
             notes=data.get('notes')
@@ -446,7 +441,7 @@ def get_campaign_actions(campaign_id):
 @bp.route('/campaigns/<int:campaign_id>/actions', methods=['POST'])
 def add_campaign_action(campaign_id):
     from app.services.campaign_service import create_new_action, sync_campaign_state
-    from app.models.models import db, ActionType
+    from app.models.models import db, ActionType, Campaign
     data = request.json
     try:
         action_type = ActionType(data['action_type'])
@@ -455,6 +450,11 @@ def add_campaign_action(campaign_id):
         notes = data.get('notes', '')
 
         new_hist = create_new_action(campaign_id, action_type, action_date, price, notes)
+        # Also update campaign status
+        from app.models.models import CampaignStatus
+        camp = Campaign.query.get(campaign_id)
+        camp.status = CampaignStatus(data['campaign_status'])
+
         db.session.commit()
         sync_campaign_state(campaign_id)
 

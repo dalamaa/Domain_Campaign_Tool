@@ -443,17 +443,7 @@ function openModal(id = null) {
     document.getElementById("form-domain").value = c.domain;
     document.getElementById("form-expiry").value = c.expiry || "";
 
-    const statusSelectValue = {
-      ACTIVE: "Active",
-      RESTING: "Resting",
-      SOLD: "Sold",
-      EXPIRED: "Expired",
-      ARCHIVED: "Archived",
-      DORMANT: "Dormant",
-    }[c.status ? String(c.status).toUpperCase() : ""];
-
-    const hasValues = c.hasValues;
-    statusEl.value = hasValues ? statusSelectValue || "" : "";
+    statusEl.value = c.status || "";
     statusEl.disabled = true;
   } else {
     modalTitle.innerText = "Add Domain";
@@ -462,7 +452,7 @@ function openModal(id = null) {
     document.getElementById("form-expiry").value = "";
 
     statusEl.value = "";
-    statusEl.disabled = true;
+    statusEl.disabled = false;
   }
 }
 
@@ -515,15 +505,19 @@ async function setActionMode(mode) {
             <option value="FIRST_FOLLOW_UP">First Follow-up</option>
             <option value="FOLLOW_UP">Follow-up</option>
             <option value="PRICE_REDUCTION">Price Reduction</option>
-            <option value="REST_STARTED">Rest Started</option>
-            <option value="CAMPAIGN_RESTARTED">Campaign Restarted</option>
-            <option value="CAMPAIGN_COMPLETED">Campaign Completed</option>
-            <option value="FORCE_OVERRIDE">Force Override</option>
-            <option value="PARTIAL_OVERRIDE">Partial Override</option>
           </select>
         </label>
       </div>
       <div class="form-group">
+        <label>Campaign Status:
+          <select id="action-status">
+            <option value="DORMANT">Dormant</option>
+            <option value="ACTIVE">Active</option>
+            <option value="RESTING">Resting</option>
+          </select>
+        </label>
+      </div>
+    <div class="form-group">
         <label>Date: <input type="datetime-local" id="action-date"></label>
     </div>
     <div class="form-group">
@@ -575,11 +569,6 @@ async function loadActionForEdit(campaignId) {
           <option value="FIRST_FOLLOW_UP" ${data.action_type === "FIRST_FOLLOW_UP" ? "selected" : ""}>First Follow-up</option>
           <option value="FOLLOW_UP" ${data.action_type === "FOLLOW_UP" ? "selected" : ""}>Follow-up</option>
           <option value="PRICE_REDUCTION" ${data.action_type === "PRICE_REDUCTION" ? "selected" : ""}>Price Reduction</option>
-          <option value="REST_STARTED" ${data.action_type === "REST_STARTED" ? "selected" : ""}>Rest Started</option>
-          <option value="CAMPAIGN_RESTARTED" ${data.action_type === "CAMPAIGN_RESTARTED" ? "selected" : ""}>Campaign Restarted</option>
-          <option value="CAMPAIGN_COMPLETED" ${data.action_type === "CAMPAIGN_COMPLETED" ? "selected" : ""}>Campaign Completed</option>
-          <option value="FORCE_OVERRIDE" ${data.action_type === "FORCE_OVERRIDE" ? "selected" : ""}>Force Override</option>
-          <option value="PARTIAL_OVERRIDE" ${data.action_type === "PARTIAL_OVERRIDE" ? "selected" : ""}>Partial Override</option>
         </select>
       </label>
     </div>
@@ -602,6 +591,7 @@ async function saveNewAction(campaignId) {
     action_date: document.getElementById("action-date").value,
     price_after: document.getElementById("action-price").value,
     notes: document.getElementById("action-notes").value,
+    campaign_status: document.getElementById("action-status").value,
   };
 
   const res = await fetch(`/api/campaigns/${campaignId}/actions`, {
