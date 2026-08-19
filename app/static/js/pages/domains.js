@@ -221,7 +221,8 @@ function resetBulkModal() {
   // Map field key -> radio button mode name used in the HTML
   const fieldModeMap = {
     expiry: "expiry",
-    status: "status",
+    domainStatus: "domain-status",
+    campaignStatus: "campaign-status",
     price: "price",
     lastContact: "contact",
     seq: "seq",
@@ -258,7 +259,12 @@ async function saveBulkEdit() {
 
   const fields = [
     { id: "bulk-expiry", key: "expiry", label: "Expiry" },
-    { id: "bulk-status", key: "status", label: "Status" },
+    { id: "bulk-domainStatus", key: "domainStatus", label: "Domain Status" },
+    {
+      id: "bulk-campaignStatus",
+      key: "campaignStatus",
+      label: "Campaign Status",
+    },
     { id: "bulk-price", key: "price", label: "Price" },
     { id: "bulk-lastContact", key: "lastContact", label: "Last Contact" },
     { id: "bulk-seq", key: "seq", label: "Sequence" },
@@ -396,6 +402,7 @@ async function saveDomain() {
   const summary = [];
 
   const fields = [
+    { id: "form-domain", key: "domain" },
     { id: "form-expiry", key: "expiry" },
     { id: "form-status", key: "status" },
   ];
@@ -408,25 +415,44 @@ async function saveDomain() {
     }
   });
 
-  if (summary.length === 0) {
+  // Ensure domain is included for POST
+  if (!id) {
+    updates.domain = document.getElementById("form-domain").value;
+    if (!updates.domain) {
+      alert("Domain name is required.");
+      return;
+    }
+  }
+
+  if (summary.length === 0 && id) {
     alert("No changes made.");
     return;
   }
 
+  // Determine method/URL
+  const method = id ? "PUT" : "POST";
+  const url = id ? `/api/domains/${id}` : "/api/domains";
+
   // Update Domain / Campaign
-  const res = await fetch(`/api/domains/${id}`, {
-    method: "PUT",
+  const res = await fetch(url, {
+    method: method,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(updates),
   });
 
   if (res.ok) {
-    alert("Domain updated successfully.");
+    alert(`Domain ${id ? "updated" : "added"} successfully.`);
     renderDomainTable();
     closeModal();
   } else {
-    const err = await res.json();
-    alert("Update failed: " + (err.error || "Unknown error"));
+    let errorMsg = "Unknown error";
+    try {
+      const err = await res.json();
+      errorMsg = err.error || errorMsg;
+    } catch (e) {
+      // Fallback if not JSON
+    }
+    alert("Save failed: " + errorMsg);
   }
 }
 
@@ -434,13 +460,15 @@ async function saveDomain() {
 function openModal(id = null) {
   document.getElementById("domain-modal").style.display = "block";
   const modalTitle = document.getElementById("modal-title");
+  const domainInput = document.getElementById("form-domain");
   const c = domains.find((x) => x.id === id);
 
   const statusEl = document.getElementById("form-status");
   if (c) {
     modalTitle.innerText = "Edit Domain";
     document.getElementById("edit-id").value = c.id;
-    document.getElementById("form-domain").value = c.domain;
+    domainInput.value = c.domain;
+    domainInput.readOnly = true;
     document.getElementById("form-expiry").value = c.expiry || "";
 
     statusEl.value = c.status || "";
@@ -448,7 +476,8 @@ function openModal(id = null) {
   } else {
     modalTitle.innerText = "Add Domain";
     document.getElementById("edit-id").value = "";
-    document.getElementById("form-domain").value = "";
+    domainInput.value = "";
+    domainInput.readOnly = false;
     document.getElementById("form-expiry").value = "";
 
     statusEl.value = "";
@@ -559,21 +588,6 @@ async function loadActionForEdit(campaignId) {
   if (!seq) return;
   const res = await fetch(`/api/campaigns/${campaignId}/actions/${seq}`);
   const data = await res.json();
-
-  // Campaign status is attached to the domain/campaign data or fetched separately.
-  // The current API already has a route for domain status but we need the campaign status.
-  // Actually, wait, Campaign Status is on Campaign, and the original code I see here
-  // was fetching it from `/api/domains/${campaignId}/campaign-status` which doesn't seem to exist
-  // in the routes I read, let's look at `get_domains`?
-  // Let me re-read `app/routes/api.py`.
-  // Wait, I see get_domains returns `status` which is `c.status.value`.
-  // I should check if I can fetch the campaign directly.
-
-  // Ah, the original code had:
-  // const campRes = await fetch(`/api/domains/${campaignId}/campaign-status`);
-  // But wait, there is no such route in `app/routes/api.py`.
-  // Let's add a quick route or just use the domain data.
-  // Wait, I see I have access to `domains` array in scope!
 
   const campaign = domains.find((d) => d.id == campaignId);
   const currentStatus = campaign ? campaign.status : "DORMANT";

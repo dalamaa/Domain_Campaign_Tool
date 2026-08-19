@@ -409,8 +409,10 @@ def bulk_edit_domains():
                 continue
 
             # Update Campaign fields
-            if 'status' in updates:
-                camp.status = CampaignStatus[updates['status'].upper()]
+            if 'campaignStatus' in updates:
+                camp.status = CampaignStatus[updates['campaignStatus'].upper()]
+            if 'domainStatus' in updates:
+                dom.status = updates['domainStatus'].upper()
             if 'price' in updates:
                 camp.current_price = int(updates['price'])
             if 'seq' in updates:
