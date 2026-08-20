@@ -76,7 +76,7 @@ function applyCurrentSort() {
 async function renderDomainTable() {
   // 1. Fetch
   domains = await fetchDomains();
-  console.log("Domains data loaded:", domains);
+  // console.log("Domains data loaded:", domains);
 
   // Apply current sort
   if (currentSort.key) {
@@ -222,11 +222,7 @@ function resetBulkModal() {
   const fieldModeMap = {
     expiry: "expiry",
     domainStatus: "domain-status",
-    campaignStatus: "campaign-status",
     price: "price",
-    lastContact: "contact",
-    seq: "seq",
-    lastAction: "action",
   };
 
   for (const [field, mode] of Object.entries(fieldModeMap)) {
@@ -260,15 +256,7 @@ async function saveBulkEdit() {
   const fields = [
     { id: "bulk-expiry", key: "expiry", label: "Expiry" },
     { id: "bulk-domainStatus", key: "domainStatus", label: "Domain Status" },
-    {
-      id: "bulk-campaignStatus",
-      key: "campaignStatus",
-      label: "Campaign Status",
-    },
     { id: "bulk-price", key: "price", label: "Price" },
-    { id: "bulk-lastContact", key: "lastContact", label: "Last Contact" },
-    { id: "bulk-seq", key: "seq", label: "Sequence" },
-    { id: "bulk-lastAction", key: "lastAction", label: "Last Action" },
   ];
 
   fields.forEach((f) => {
@@ -307,8 +295,30 @@ async function saveBulkEdit() {
 }
 
 async function bulkDeleteDomains() {
-  for (let id of selectedDomains) {
-    await fetch(`/api/domains/${id}`, { method: "DELETE" });
+  const selected = Array.from(selectedDomains);
+  if (selected.length === 0) return;
+
+  const names = domains
+    .filter((d) => selectedDomains.has(d.id))
+    .map((d) => d.domain)
+    .join(", ");
+
+  if (
+    !confirm(
+      `Delete domains?\n\nAre you sure you want to delete:\n${names}\n\nThis action cannot be undone.`,
+    )
+  ) {
+    return;
+  }
+
+  for (let id of selected) {
+    const res = await fetch(`/api/domains/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const err = await res.json();
+      alert(
+        `Failed to delete domain ID ${id}: ${err.error || "Unknown error"}`,
+      );
+    }
   }
   selectedDomains.clear();
   updateDomainActionBar();
@@ -339,7 +349,6 @@ async function handleCSVImport(event) {
     const headers = firstLine
       .split(delimiter)
       .map((h) => h.trim().toLowerCase());
-
     const fieldMap = {
       domain: headers.findIndex((h) => h === "domain"),
       expiry: headers.findIndex((h) => h === "expiry"),

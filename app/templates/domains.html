@@ -269,30 +269,6 @@
   ><br />
 
   <label
-    >Campaign Status:
-    <input
-      type="radio"
-      name="campaign-status-mode"
-      value="nochange"
-      checked
-      onchange="toggleField('bulk-campaign-status', false)"
-    />
-    No Change
-    <input
-      type="radio"
-      name="campaign-status-mode"
-      value="edit"
-      onchange="toggleField('bulk-campaign-status', true)"
-    />
-    Edit
-    <select id="bulk-campaign-status" disabled>
-      <option value="DORMANT">Dormant</option>
-      <option value="ACTIVE">Active</option>
-      <option value="RESTING">Resting</option>
-    </select> </label
-  ><br />
-
-  <label
     >Price:
     <input
       type="radio"
@@ -310,81 +286,6 @@
     />
     Edit
     <input type="number" id="bulk-price" disabled /> </label
-  ><br />
-
-  <label
-    >Last Contact:
-    <input
-      type="radio"
-      name="contact-mode"
-      value="nochange"
-      checked
-      onchange="toggleField('bulk-lastContact', false)"
-    />
-    No Change
-    <input
-      type="radio"
-      name="contact-mode"
-      value="edit"
-      onchange="toggleField('bulk-lastContact', true)"
-    />
-    Edit
-    <input type="date" id="bulk-lastContact" disabled /> </label
-  ><br />
-
-  <label
-    >Sequence:
-    <input
-      type="radio"
-      name="seq-mode"
-      value="nochange"
-      checked
-      onchange="toggleField('bulk-seq', false)"
-    />
-    No Change
-    <input
-      type="radio"
-      name="seq-mode"
-      value="edit"
-      onchange="toggleField('bulk-seq', true)"
-    />
-    Edit
-    <select id="bulk-seq" disabled>
-      <option value="0">Not Started (0)</option>
-      <option value="1">1</option>
-      <option value="2">2</option>
-      <option value="3">3</option>
-      <option value="4">4</option>
-      <option value="5">5</option>
-      <option value="6">6</option>
-      <option value="7">7</option>
-      <option value="8">8</option>
-    </select> </label
-  ><br />
-
-  <label
-    >Last Action:
-    <input
-      type="radio"
-      name="action-mode"
-      value="nochange"
-      checked
-      onchange="toggleField('bulk-lastAction', false)"
-    />
-    No Change
-    <input
-      type="radio"
-      name="action-mode"
-      value="edit"
-      onchange="toggleField('bulk-lastAction', true)"
-    />
-    Edit
-    <select id="bulk-lastAction" disabled>
-      <option value="FIRST_OUTREACH">First Outreach</option>
-      <option value="FIRST_FOLLOW_UP">First Follow-up</option>
-      <option value="FOLLOW_UP">Follow-up</option>
-      <option value="PRICE_REDUCTION">Price Reduction</option>
-    </select> </label
   ><br />
   <button onclick="saveBulkEdit()">Save Bulk Update</button>
   <button onclick="closeBulkModal()">Cancel</button>
