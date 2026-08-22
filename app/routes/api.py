@@ -160,6 +160,56 @@ def get_dashboard_overview():
         'expiring_count': expiring_count
     })
 
+@bp.route('/dashboard/reservation-board', methods=['GET'])
+def get_reservation_board():
+    from app.models.models import EmailAccount, Reservation, Campaign, ReservationStatus
+    from sqlalchemy import and_
+
+    today = datetime.utcnow().date()
+    accounts = EmailAccount.query.order_by(EmailAccount.profile_order).all()
+    results = []
+
+    for acc in accounts:
+        state = "AVAILABLE"
+        reserved_domain = None
+
+        if not acc.enabled:
+            state = "DISABLED"
+        else:
+            # Actually, simplify: use ReservationEmailLink directly
+            from app.models.models import ReservationEmailLink
+            link = ReservationEmailLink.query.join(Reservation).filter(
+                and_(
+                    ReservationEmailLink.email_code == acc.code,
+                    Reservation.date == today,
+                    Reservation.status == ReservationStatus.RESERVED
+                )
+                ).first()
+
+            if link:
+                state = "RESERVED"
+                reserved_domain = link.reservation.campaign.domain.domain_name
+            else:
+                # Check for completed
+                completed = ReservationEmailLink.query.join(Reservation).filter(
+                    and_(
+                        ReservationEmailLink.email_code == acc.code,
+                        Reservation.date == today,
+                        Reservation.status == ReservationStatus.COMPLETED
+                        )
+                ).first()
+                if completed:
+                    state = "COMPLETED_TODAY"
+
+        results.append({
+            'code': acc.code,
+            'profile_order': acc.profile_order,
+            'group': acc.group,
+            'state': state,
+            'reserved_domain': reserved_domain
+        })
+    return jsonify(results)
+
 @bp.route('/domains', methods=['GET'])
 def get_domains():
     from app.models.models import Domain, Campaign, CampaignStatus, CampaignHistory

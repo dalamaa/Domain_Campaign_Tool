@@ -29,22 +29,24 @@ async function refreshDashboard() {
   renderSuggestedWork();
 }
 
-function updateReservationBoard() {
+async function updateReservationBoard() {
+  const res = await fetch("/api/dashboard/reservation-board");
+  const data = await res.json();
   const list = document.getElementById("email-accounts-list");
   if (!list) return;
-  list.innerHTML = getSortedAccounts()
+  list.innerHTML = data
     .map((acc) => {
       let stateClass = "";
-      let stateLabel = acc.state;
+      let stateLabel = acc.state.replace("_", " ");
       let domainLabel = "";
 
-      if (acc.state === "Available") stateClass = "available";
-      else if (acc.state === "Reserved") {
+      if (acc.state === "AVAILABLE") stateClass = "available";
+      else if (acc.state === "RESERVED") {
         stateClass = "reserved";
-        domainLabel = `<br><small>${acc.reservedFor || ""}</small>`;
-      } else if (acc.state === "Completed Today")
+        domainLabel = `<br><small>${acc.reserved_domain || ""}</small>`;
+      } else if (acc.state === "COMPLETED_TODAY")
         stateClass = "completed-today";
-      else if (acc.state === "Disabled") stateClass = "disabled";
+      else if (acc.state === "DISABLED") stateClass = "disabled";
 
       return `
         <div class="acc-item ${stateClass}">
