@@ -67,6 +67,12 @@ def update_existing_action(campaign_id, sequence, action_type, action_date, pric
     if not hist:
         return None
 
+    # Before modifying, perform validation if email_codes provided
+    if email_codes is not None:
+        for code in email_codes:
+            if not EmailAccount.query.get(code):
+                raise ValueError(f"Email account {code} not found")
+
     hist.action_type = action_type
     hist.action_date = action_date
     hist.price_after = price
@@ -77,8 +83,6 @@ def update_existing_action(campaign_id, sequence, action_type, action_date, pric
         # Clear existing
         HistoryEmailUsed.query.filter_by(history_id=hist.id).delete()
         for code in email_codes:
-            if not EmailAccount.query.get(code):
-                raise ValueError(f"Email account {code} not found")
             db.session.add(HistoryEmailUsed(history_id=hist.id, email_code=code))
 
     db.session.commit()
