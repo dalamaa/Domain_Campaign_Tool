@@ -1,4 +1,4 @@
-from app.models.models import db, Campaign, CampaignHistory, Setting, CampaignEmailBlock, EmailAccount, HistoryEmailUsed
+from app.models.models import db, Campaign, CampaignHistory, Setting, CampaignEmailBlock, EmailAccount, HistoryEmailUsed, ActionType
 from datetime import datetime, timedelta
 
 def sync_campaign_state(campaign_id):
@@ -103,6 +103,31 @@ def get_configured_interval(interval_type):
     setting = Setting.query.filter_by(key=interval_type).first()
     # Default to 7 days if not set, or handle as needed per existing app convention
     return int(setting.value) if setting and setting.value else 7
+
+def get_first_follow_up_window(campaign):
+    """
+    Calculate the first follow-up window (earliest and latest due dates)
+    based on the FIRST_OUTREACH action.
+    Returns (earliest_date, latest_date) or (None, None) if no FIRST_OUTREACH found.
+    """
+    first_outreach = CampaignHistory.query.filter_by(
+        campaign_id=campaign.id,
+        action_type=ActionType.FIRST_OUTREACH
+    ).order_by(CampaignHistory.sequence.asc()).first()
+
+    if not first_outreach:
+        return None, None
+
+    min_days = get_setting('FIRST_FOLLOW_UP_MIN_DAYS', 2)
+    max_days = get_setting('FIRST_FOLLOW_UP_MAX_DAYS', 5)
+
+    outreach_date = first_outreach.action_date.date()
+    return outreach_date + timedelta(days=min_days), outreach_date + timedelta(days=max_days)
+
+def get_setting(key, default):
+    """Helper to retrieve a setting or return a default."""
+    setting = Setting.query.filter_by(key=key).first()
+    return int(setting.value) if setting and setting.value is not None else default
 
 def get_next_due_date(campaign):
     """Calculate the next touch due date based on history count. Returns None if no history."""
