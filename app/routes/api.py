@@ -173,7 +173,11 @@ def add_domain():
     if Domain.query.filter_by(domain_name=data['domain']).first():
         return jsonify({'error': 'Domain exists'}), 400
 
-    new_dom = Domain(domain_name=data['domain'], expiry_date=data['expiry'])
+    expiry_date = None
+    if data.get('expiry'):
+        expiry_date = datetime.strptime(data['expiry'], '%Y-%m-%d').date()
+
+    new_dom = Domain(domain_name=data['domain'], expiry_date=expiry_date)
     db.session.add(new_dom)
     db.session.flush()
 
@@ -194,7 +198,6 @@ def add_domain():
     db.session.add(new_camp)
     db.session.commit()
     return jsonify({'success': True})
-
 
 @bp.route('/domains/import', methods=['POST'])
 def import_domains():
@@ -289,6 +292,9 @@ def manage_domain(id):
         db.session.commit()
         return jsonify({'success': True})
 
+    db.session.commit()
+    return jsonify({'success': True})
+
 @bp.route('/domains/<int:id>/campaign-status', methods=['GET'])
 def get_campaign_status(id):
     from app.models.models import Campaign
@@ -380,25 +386,25 @@ def bulk_edit_domains():
         # and avoid partial/silent failures.
         if 'seq' in updates and int(updates['seq']) > 1:
             missing_history = []
-        for domain_id in ids:
-            camp = Campaign.query.filter_by(domain_id=domain_id).first()
-            if not camp:
-                continue
-            has_history = CampaignHistory.query.filter_by(
-                campaign_id=camp.id
-            ).first()
-            if not has_history:
-                dom = Domain.query.get(domain_id)
-                missing_history.append(dom.domain_name if dom else f"ID {domain_id}")
-            if missing_history:
-                return jsonify({
-                    'error': (
-                        'No campaign history has been recorded for the following '
-                        f'domain(s): {", ".join(missing_history)}. '
-                        'A first outreach (sequence 1) must be recorded before '
-                        'setting a higher sequence.'
-                    )
-                }), 400
+            for domain_id in ids:
+                camp = Campaign.query.filter_by(domain_id=domain_id).first()
+                if not camp:
+                    continue
+                has_history = CampaignHistory.query.filter_by(
+                    campaign_id=camp.id
+                ).first()
+                if not has_history:
+                    dom = Domain.query.get(domain_id)
+                    missing_history.append(dom.domain_name if dom else f"ID {domain_id}")
+                if missing_history:
+                    return jsonify({
+                        'error': (
+                            'No campaign history has been recorded for the following '
+                            f'domain(s): {", ".join(missing_history)}. '
+                            'A first outreach (sequence 1) must be recorded before '
+                            'setting a higher sequence.'
+                        )
+                    }), 400
 
         # Apply updates (validation already passed)
         for domain_id in ids:
