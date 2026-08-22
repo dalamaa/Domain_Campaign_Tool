@@ -100,7 +100,6 @@ class ReservationEmailLink(db.Model):
     email_code = db.Column(String, ForeignKey('email_accounts.code'), nullable=False)
     
     reservation = relationship("Reservation", back_populates="email_links")
-    
     __table_args__ = (UniqueConstraint('reservation_id', 'email_code', name='uix_reservation_email'),)
 
 class CampaignHistory(db.Model):
@@ -116,9 +115,20 @@ class CampaignHistory(db.Model):
     sequence_before = db.Column(Integer)
     sequence_after = db.Column(Integer)
     notes = db.Column(db.Text)
-    
+
     campaign = relationship("Campaign", back_populates="history")
+    history_email_used = relationship("HistoryEmailUsed", back_populates="history")
     __table_args__ = (UniqueConstraint('campaign_id', 'sequence', name='uix_campaign_sequence'),)
+
+class HistoryEmailUsed(db.Model):
+    __tablename__ = 'history_email_used'
+    id = db.Column(Integer, primary_key=True)
+    history_id = db.Column(Integer, ForeignKey('campaign_history.id'), nullable=False)
+    email_code = db.Column(String, ForeignKey('email_accounts.code'), nullable=False)
+
+    history = relationship("CampaignHistory", back_populates="history_email_used")
+
+    __table_args__ = (UniqueConstraint('history_id', 'email_code', name='uix_history_email'),)
 
 class Setting(db.Model):
     __tablename__ = 'settings'

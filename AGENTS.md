@@ -170,3 +170,19 @@ When a test fails:
 11. Never change a test merely to make an application bug disappear.
 12. Do not weaken an assertion simply because the application currently returns an unexpected result.
 13. Do not modify production code to fix a failing test without approval.
+
+## ENVIRONMENT RULE:
+
+Before running ANY Python, Flask, pytest, migration, or project command:
+
+1. Check whether `.venv` exists.
+2. Use the project's `.venv` executables explicitly.
+3. Prefer:
+   `.venv/bin/python -m ...`
+   over calling globally installed commands.
+4. For pytest use:
+   `PYTHONPATH=. .venv/bin/pytest ...`
+5. For Flask use:
+   `.venv/bin/python -m flask ...`
+6. Do NOT run `pip install -r requirements.txt` merely because a package or command is missing from the system Python.
+7. If a required package is missing from `.venv`, report that first. Do not reinstall the project environment without explicit approval.
