@@ -37,9 +37,10 @@ def campaign_id(app):
 def test_new_action_api(client, campaign_id):
     # POST new action
     response = client.post(f'/api/campaigns/{campaign_id}/actions', json={
-        'action_type': 'CAMPAIGN_STARTED',
+        'action_type': 'FIRST_OUTREACH',
         'action_date': '2026-01-01T10:00:00',
-        'price_after': 200
+        'price_after': 200,
+        'campaign_status': 'ACTIVE'
     })
     assert response.status_code == 201
     data = response.get_json()
@@ -47,9 +48,10 @@ def test_new_action_api(client, campaign_id):
 
     # POST second action
     response = client.post(f'/api/campaigns/{campaign_id}/actions', json={
-        'action_type': 'FOLLOW_UP_SENT',
+        'action_type': 'FIRST_FOLLOW_UP',
         'action_date': '2026-01-05T10:00:00',
-        'price_after': 200
+        'price_after': 200,
+        'campaign_status': 'ACTIVE'
     })
     assert response.status_code == 201
     data = response.get_json()
@@ -57,8 +59,8 @@ def test_new_action_api(client, campaign_id):
 
 def test_get_actions_list(client, campaign_id):
     # Create 2 actions
-    client.post(f'/api/campaigns/{campaign_id}/actions', json={'action_type': 'CAMPAIGN_STARTED', 'action_date': '2026-01-01T10:00:00', 'price_after': 200})
-    client.post(f'/api/campaigns/{campaign_id}/actions', json={'action_type': 'FOLLOW_UP_SENT', 'action_date': '2026-01-05T10:00:00', 'price_after': 200})
+    client.post(f'/api/campaigns/{campaign_id}/actions', json={'action_type': 'FIRST_OUTREACH', 'action_date': '2026-01-01T10:00:00', 'price_after': 200, 'campaign_status': 'ACTIVE'})
+    client.post(f'/api/campaigns/{campaign_id}/actions', json={'action_type': 'FIRST_FOLLOW_UP', 'action_date': '2026-01-05T10:00:00', 'price_after': 200, 'campaign_status': 'ACTIVE'})
     
     response = client.get(f'/api/campaigns/{campaign_id}/actions')
     assert response.status_code == 200
@@ -67,12 +69,13 @@ def test_get_actions_list(client, campaign_id):
     assert data[0]['sequence'] == 1
 
 def test_edit_action_api(client, campaign_id):
-    client.post(f'/api/campaigns/{campaign_id}/actions', json={'action_type': 'CAMPAIGN_STARTED', 'action_date': '2026-01-01T10:00:00', 'price_after': 200})
+    client.post(f'/api/campaigns/{campaign_id}/actions', json={'action_type': 'FIRST_OUTREACH', 'action_date': '2026-01-01T10:00:00', 'price_after': 200, 'campaign_status': 'ACTIVE'})
     
     response = client.put(f'/api/campaigns/{campaign_id}/actions/1', json={
         'action_type': 'PRICE_REDUCTION',
         'action_date': '2026-01-02T10:00:00',
-        'price_after': 150
+        'price_after': 150,
+        'campaign_status': 'ACTIVE'
     })
     assert response.status_code == 200
     
@@ -81,3 +84,4 @@ def test_edit_action_api(client, campaign_id):
     data = get_response.get_json()
     assert data['action_type'] == 'PRICE_REDUCTION'
     assert data['price_after'] == 150
+

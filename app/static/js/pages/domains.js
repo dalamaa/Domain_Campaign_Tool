@@ -192,11 +192,17 @@ function updateDomainActionBar() {
   const bulkEditBtn = document.getElementById("bulk-edit-btn");
   const actionBtn = document.getElementById("action-btn");
 
-  // Enable buttons if anything is selected
-  if (editBtn) editBtn.disabled = count === 0;
+  // Edit button: enabled exactly 1 record selected
+  if (editBtn) editBtn.disabled = count !== 1;
+
+  // Bulk Edit button: enabled 2 or more records selected
+  if (bulkEditBtn) bulkEditBtn.disabled = count < 2;
+
+  // Action button: enabled exactly 1 record selected
+  if (actionBtn) actionBtn.disabled = count !== 1;
+
+  // Delete button: enabled if anything is selected
   if (delBtn) delBtn.disabled = count === 0;
-  if (bulkEditBtn) bulkEditBtn.disabled = count === 0;
-  if (actionBtn) actionBtn.disabled = count !== 1; // Only allow for single selection
 }
 
 // 2. Add bulkEditSelected function

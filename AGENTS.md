@@ -121,7 +121,6 @@ Do not use system Python or a different virtual environment for this project.
 
 If `.venv` does not exist, stop and report it. Do not create a replacement environment without approval.
 
-
 ## Git Safety
 
 Before making changes, check the current Git status and preserve existing uncommitted work.
