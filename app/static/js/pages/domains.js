@@ -3,6 +3,7 @@ let selectedDomains = new Set();
 let searchTerm = "";
 let currentSort = { key: "daysSince", direction: "asc" };
 let domains = [];
+let allEmailAccounts = [];
 
 async function fetchDomains() {
   const res = await fetch(`/api/domains?t=${Date.now()}`);
@@ -76,8 +77,9 @@ function applyCurrentSort() {
 async function renderDomainTable() {
   // 1. Fetch
   domains = await fetchDomains();
-  // console.log("Domains data loaded:", domains);
-
+  // Fetch email accounts for validation
+  const accRes = await fetch("/api/email-accounts");
+  allEmailAccounts = await accRes.json();
   // Apply current sort
   if (currentSort.key) {
     applyCurrentSort();
@@ -420,12 +422,20 @@ async function saveDomain() {
     { id: "form-domain", key: "domain" },
     { id: "form-expiry", key: "expiry" },
     { id: "form-status", key: "status" },
+    { id: "form-email-accounts", key: "email_accounts" },
   ];
 
   fields.forEach((f) => {
     const input = document.getElementById(f.id);
-    if (!input.disabled) {
-      updates[f.key] = input.value;
+    if (!input.disabled || f.id === "form-email-accounts") {
+      if (f.id === "form-email-accounts") {
+        const codes = input.value
+          .split(/[,\s\n]+/)
+          .filter((c) => c.trim() !== "");
+        updates[f.key] = [...new Set(codes.map((c) => c.toUpperCase()))];
+      } else {
+        updates[f.key] = input.value;
+      }
       summary.push(`${f.key}: ${input.value}`);
     }
   });
@@ -479,6 +489,10 @@ function openModal(id = null) {
   const c = domains.find((x) => x.id === id);
 
   const statusEl = document.getElementById("form-status");
+  const emailInput = document.getElementById("form-email-accounts");
+  const validationDiv = document.getElementById("email-validation-messages");
+  validationDiv.innerHTML = "";
+
   if (c) {
     modalTitle.innerText = "Edit Domain";
     document.getElementById("edit-id").value = c.id;
@@ -488,6 +502,14 @@ function openModal(id = null) {
 
     statusEl.value = c.status || "";
     statusEl.disabled = true;
+
+    // Fetch and populate assigned accounts
+    fetch(`/api/domains/${c.id}/email-accounts`)
+      .then((res) => res.json())
+      .then((assigned) => {
+        emailInput.value = assigned.map((a) => a.code).join(", ");
+        validateEmailAccounts();
+      });
   } else {
     modalTitle.innerText = "Add Domain";
     document.getElementById("edit-id").value = "";
@@ -497,7 +519,48 @@ function openModal(id = null) {
 
     statusEl.value = "";
     statusEl.disabled = false;
+    emailInput.value = "";
   }
+  emailInput.onblur = validateEmailAccounts;
+}
+
+function validateEmailAccounts() {
+  const input = document.getElementById("form-email-accounts");
+  const val = input.value;
+  const codes = val.split(/[,\s\n]+/).filter((c) => c.trim() !== "");
+  const uniqueCodes = [...new Set(codes.map((c) => c.toUpperCase()))];
+
+  const messages = document.getElementById("email-validation-messages");
+  messages.innerHTML = "";
+  let isValid = true;
+
+  uniqueCodes.forEach((code) => {
+    const acc = allEmailAccounts.find((a) => a.code === code);
+    const div = document.createElement("div");
+    if (!acc) {
+      div.innerHTML = `${code} ✕ <br><small style="color:red">Not found. Check Email Accounts page.</small>`;
+      isValid = false;
+    } else if (!acc.enabled) {
+      div.innerHTML = `${code} ⚠️ <br><small style="color:orange">Exists but is disabled.</small>`;
+    } else {
+      div.innerHTML = `${code} ✓`;
+    }
+    messages.appendChild(div);
+  });
+  return isValid;
+}
+
+async function recheckAccounts() {
+  const btn = document.getElementById("recheck-accounts");
+  btn.disabled = true;
+
+  const res = await fetch("/api/email-accounts");
+  allEmailAccounts = await res.json();
+  validateEmailAccounts();
+
+  setTimeout(() => {
+    btn.disabled = false;
+  }, 3000);
 }
 
 function closeModal() {
@@ -518,6 +581,7 @@ function closeActionModal() {
 async function setActionMode(mode) {
   const container = document.getElementById("action-mode-content");
   const campaignId = Array.from(selectedDomains)[0];
+  const campaign = domains.find((d) => d.id == campaignId);
 
   const tabNew = document.getElementById("tab-new");
   const tabEdit = document.getElementById("tab-edit");
@@ -541,26 +605,45 @@ async function setActionMode(mode) {
   }
 
   if (mode === "new") {
-    container.innerHTML = `
+    let emailInput = "";
+    if (campaign && campaign.hasValues) {
+      // Fetch current assignments for existing campaign
+      const res = await fetch(`/api/domains/${campaignId}/email-accounts`);
+      const assigned = await res.json();
+      const codes = assigned.map((a) => a.code).join(", ");
+      emailInput = `
       <div class="form-group">
-        <label>Action Type:
+                <label>Emails Used: <input type="text" id="action-email-codes" value="${codes}"></label>
+      </div>
+    `;
+    } else {
+      emailInput = `
+      <div class="form-group">
+                <label>Use Email Accounts: <input type="text" id="action-email-codes" placeholder="M01, M02..."></label>
+      </div>
+    `;
+    }
+    container.innerHTML = `
+      ${emailInput}
+    <div class="form-group">
+      <label>Action Type:
           <select id="action-type">
             <option value="FIRST_OUTREACH">First Outreach</option>
             <option value="FIRST_FOLLOW_UP">First Follow-up</option>
             <option value="FOLLOW_UP">Follow-up</option>
             <option value="PRICE_REDUCTION">Price Reduction</option>
-          </select>
-        </label>
-      </div>
-      <div class="form-group">
-        <label>Campaign Status:
+        </select>
+      </label>
+    </div>
+    <div class="form-group">
+      <label>Campaign Status:
           <select id="action-status">
             <option value="DORMANT">Dormant</option>
             <option value="ACTIVE">Active</option>
             <option value="RESTING">Resting</option>
-          </select>
-        </label>
-      </div>
+        </select>
+      </label>
+    </div>
     <div class="form-group">
         <label>Date: <input type="datetime-local" id="action-date"></label>
     </div>
@@ -642,12 +725,18 @@ async function loadActionForEdit(campaignId) {
 }
 
 async function saveNewAction(campaignId) {
+  const emailInput = document.getElementById("action-email-codes");
+  const email_codes = emailInput
+    ? emailInput.value.split(/[,\s]+/).filter((c) => c.trim() !== "")
+    : [];
+
   const payload = {
     action_type: document.getElementById("action-type").value,
     action_date: document.getElementById("action-date").value,
     price_after: document.getElementById("action-price").value,
     notes: document.getElementById("action-notes").value,
     campaign_status: document.getElementById("action-status").value,
+    email_codes: email_codes,
   };
 
   const res = await fetch(`/api/campaigns/${campaignId}/actions`, {

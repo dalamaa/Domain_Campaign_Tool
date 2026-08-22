@@ -168,7 +168,7 @@ def get_domains():
 
 @bp.route('/domains', methods=['POST'])
 def add_domain():
-    from app.models.models import Domain, Campaign, CampaignStatus
+    from app.models.models import Domain, Campaign, CampaignStatus, CampaignEmailBlock, EmailAccount
     data = request.json
     if Domain.query.filter_by(domain_name=data['domain']).first():
         return jsonify({'error': 'Domain exists'}), 400
@@ -182,7 +182,6 @@ def add_domain():
     db.session.flush()
 
     # A new domain starts Dormant (never worked on) unless explicitly started.
-    # Sequence 0 means "not started"; the price defaults to 0.
     status = getattr(
         CampaignStatus,
         str(data.get('status', 'DORMANT')).upper(),
@@ -196,6 +195,42 @@ def add_domain():
         current_sequence=seq
     )
     db.session.add(new_camp)
+    db.session.flush()
+
+    # Save email accounts if provided
+    if 'email_accounts' in data:
+        for code in data['email_accounts']:
+            if not EmailAccount.query.get(code):
+                return jsonify({'error': f'Email account {code} not found'}), 400
+            db.session.add(CampaignEmailBlock(campaign_id=new_camp.id, email_code=code))
+
+    db.session.commit()
+    return jsonify({'success': True})
+
+@bp.route('/domains/<int:id>/email-accounts', methods=['GET'])
+def get_domain_email_accounts(id):
+    from app.models.models import Campaign, CampaignEmailBlock
+    camp = Campaign.query.filter_by(domain_id=id).first()
+    if not camp: return jsonify([])
+    return jsonify([{'code': b.email_code} for b in camp.email_blocks])
+
+@bp.route('/domains/<int:id>', methods=['PUT'])
+def edit_domain(id):
+    from app.models.models import Domain, Campaign, CampaignStatus
+    data = request.json
+    dom = Domain.query.get_or_404(id)
+    dom.domain_name = data.get('domain', dom.domain_name)
+    if data.get('expiry'):
+        dom.expiry_date = datetime.strptime(data['expiry'], '%Y-%m-%d').date()
+        db.session.commit()
+        return jsonify({'success': True})
+
+@bp.route('/domains/<int:id>', methods=['DELETE'])
+def delete_domain(id):
+    from app.models.models import Domain, Campaign
+    dom = Domain.query.get_or_404(id)
+    # This assumes cascading deletes are handled by models
+    db.session.delete(dom)
     db.session.commit()
     return jsonify({'success': True})
 
@@ -255,45 +290,6 @@ def import_domains():
         db.session.rollback()
         print(f"Import Error: {e}")
         return jsonify({'error': str(e)}), 500
-
-@bp.route('/domains/<int:id>', methods=['PUT', 'DELETE'])
-def manage_domain(id):
-    from app.models.models import Domain, Campaign, CampaignStatus
-    dom = Domain.query.get_or_404(id)
-
-    if request.method == 'DELETE':
-        db.session.delete(dom)
-        db.session.commit()
-        return jsonify({'success': True})
-
-    # Handle PUT (Edit)
-    data = request.json
-
-    # Update Domain
-    if 'domain' in data:
-        dom.domain_name = data['domain']
-    if data.get('expiry'):
-        dom.expiry_date = datetime.strptime(data['expiry'], '%Y-%m-%d').date()
-
-    # Update Campaign
-    camp = Campaign.query.filter_by(domain_id=dom.id).first()
-    if camp:
-        if 'price' in data:
-            camp.current_price = int(data['price'])
-        if 'status' in data:
-            camp.status = getattr(CampaignStatus, str(data['status']).upper(), camp.status)
-        if 'seq' in data:
-            camp.current_sequence = int(data['seq'])
-        if 'lastContact' in data and data['lastContact']:
-            camp.last_contact_date = datetime.strptime(data['lastContact'], '%Y-%m-%d').date()
-        if 'lastAction' in data:
-            camp.last_action = data['lastAction']
-        camp.updated_at = datetime.utcnow()
-        db.session.commit()
-        return jsonify({'success': True})
-
-    db.session.commit()
-    return jsonify({'success': True})
 
 @bp.route('/domains/<int:id>/campaign-status', methods=['GET'])
 def get_campaign_status(id):
@@ -464,8 +460,9 @@ def add_campaign_action(campaign_id):
         action_date = datetime.fromisoformat(data['action_date'].replace('Z', ''))
         price = int(data['price_after'])
         notes = data.get('notes', '')
+        email_codes = data.get('email_codes', [])
 
-        new_hist = create_new_action(campaign_id, action_type, action_date, price, notes)
+        new_hist = create_new_action(campaign_id, action_type, action_date, price, notes, email_codes)
         # Also update campaign status
         from app.models.models import CampaignStatus
         camp = Campaign.query.get(campaign_id)
@@ -507,8 +504,9 @@ def edit_campaign_action(campaign_id, sequence):
         action_date = datetime.fromisoformat(data['action_date'].replace('Z', ''))
         price = int(data['price_after'])
         notes = data.get('notes', '')
+        email_codes = data.get('email_codes', [])
 
-        hist = update_existing_action(campaign_id, sequence, action_type, action_date, price, notes)
+        hist = update_existing_action(campaign_id, sequence, action_type, action_date, price, notes, email_codes)
         if not hist:
             return jsonify({'error': 'Not found'}), 404
             

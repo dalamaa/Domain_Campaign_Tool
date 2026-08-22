@@ -1,4 +1,4 @@
-from app.models.models import db, Campaign, CampaignHistory, Setting
+from app.models.models import db, Campaign, CampaignHistory, Setting, CampaignEmailBlock, EmailAccount, HistoryEmailUsed
 from datetime import datetime, timedelta
 
 def sync_campaign_state(campaign_id):
@@ -24,8 +24,8 @@ def sync_campaign_state(campaign_id):
         
     db.session.commit()
 
-def create_new_action(campaign_id, action_type, action_date, price, notes):
-    """Create a new CampaignHistory record for a new action."""
+def create_new_action(campaign_id, action_type, action_date, price, notes, email_codes=None):
+    """Create a new CampaignHistory record and associate used email accounts."""
     prev_max = CampaignHistory.query.filter_by(campaign_id=campaign_id).order_by(CampaignHistory.sequence.desc()).first()
 
     new_sequence = (prev_max.sequence if prev_max else 0) + 1
@@ -43,9 +43,25 @@ def create_new_action(campaign_id, action_type, action_date, price, notes):
         notes=notes
     )
     db.session.add(new_hist)
+    db.session.flush() # Ensure ID is generated
+
+    if email_codes:
+        for code in email_codes:
+            if not EmailAccount.query.get(code):
+                raise ValueError(f"Email account {code} not found")
+
+            # If sequence 1, update campaign default assigned accounts
+            if new_sequence == 1:
+                if not CampaignEmailBlock.query.filter_by(campaign_id=campaign_id, email_code=code).first():
+                    db.session.add(CampaignEmailBlock(campaign_id=campaign_id, email_code=code))
+
+            # Record historical usage
+            if not HistoryEmailUsed.query.filter_by(history_id=new_hist.id, email_code=code).first():
+                db.session.add(HistoryEmailUsed(history_id=new_hist.id, email_code=code))
+
     return new_hist
 
-def update_existing_action(campaign_id, sequence, action_type, action_date, price, notes):
+def update_existing_action(campaign_id, sequence, action_type, action_date, price, notes, email_codes=None):
     """Update fields of an existing CampaignHistory record."""
     hist = CampaignHistory.query.filter_by(campaign_id=campaign_id, sequence=sequence).first()
     if not hist:
@@ -56,6 +72,14 @@ def update_existing_action(campaign_id, sequence, action_type, action_date, pric
     hist.price_after = price
     hist.notes = notes
     hist.edited_at = datetime.utcnow()
+
+    if email_codes is not None:
+        # Clear existing
+        HistoryEmailUsed.query.filter_by(history_id=hist.id).delete()
+        for code in email_codes:
+            if not EmailAccount.query.get(code):
+                raise ValueError(f"Email account {code} not found")
+            db.session.add(HistoryEmailUsed(history_id=hist.id, email_code=code))
 
     db.session.commit()
     sync_campaign_state(campaign_id)
