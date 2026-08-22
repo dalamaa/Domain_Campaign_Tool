@@ -450,35 +450,6 @@ def get_campaign_actions(campaign_id):
         'edited_at': h.edited_at.isoformat() if h.edited_at else None
     } for h in history])
 
-@bp.route('/campaigns/<int:campaign_id>/actions', methods=['POST'])
-def add_campaign_action(campaign_id):
-    from app.services.campaign_service import create_new_action, sync_campaign_state
-    from app.models.models import db, ActionType, Campaign
-    data = request.json
-    try:
-        action_type = ActionType(data['action_type'])
-        action_date = datetime.fromisoformat(data['action_date'].replace('Z', ''))
-        price = int(data['price_after'])
-        notes = data.get('notes', '')
-        email_codes = data.get('email_codes', [])
-
-        new_hist = create_new_action(campaign_id, action_type, action_date, price, notes, email_codes)
-        # Also update campaign status
-        from app.models.models import CampaignStatus
-        camp = Campaign.query.get(campaign_id)
-        camp.status = CampaignStatus(data['campaign_status'])
-
-        db.session.commit()
-        sync_campaign_state(campaign_id)
-
-        return jsonify({'success': True, 'action': {
-            'sequence': new_hist.sequence,
-            'action_type': new_hist.action_type.value
-        }}), 201
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 400
-
 @bp.route('/campaigns/<int:campaign_id>/actions/<int:sequence>', methods=['GET'])
 def get_campaign_action(campaign_id, sequence):
     from app.services.campaign_service import get_history_by_sequence
@@ -492,6 +463,14 @@ def get_campaign_action(campaign_id, sequence):
         'price_after': hist.price_after,
         'notes': hist.notes
     })
+
+@bp.route('/campaigns/<int:campaign_id>/actions/<int:sequence>/emails', methods=['GET'])
+def get_campaign_action_emails(campaign_id, sequence):
+    from app.models.models import CampaignHistory, HistoryEmailUsed
+    hist = CampaignHistory.query.filter_by(campaign_id=campaign_id, sequence=sequence).first()
+    if not hist:
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify([h.email_code for h in hist.history_email_used])
 
 @bp.route('/campaigns/<int:campaign_id>/actions/<int:sequence>', methods=['PUT'])
 def edit_campaign_action(campaign_id, sequence):

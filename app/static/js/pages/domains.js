@@ -706,6 +706,11 @@ async function loadActionForEdit(campaignId) {
   const res = await fetch(`/api/campaigns/${campaignId}/actions/${seq}`);
   const data = await res.json();
 
+  // Fetch HistoryEmailUsed for this record
+  const emailRes = await fetch(`/api/campaigns/${campaignId}/actions/${seq}/emails`);
+  const usedEmails = await emailRes.json();
+  const emailCodes = usedEmails.join(", ");
+
   const campaign = domains.find((d) => d.id == campaignId);
   const currentStatus = campaign ? campaign.status : "DORMANT";
 
@@ -735,6 +740,12 @@ async function loadActionForEdit(campaignId) {
     </div>
     <div class="form-group">
       <label>Price: <input type="number" id="edit-price" value="${data.price_after}"></label>
+    </div>
+    <div class="form-group">
+      <label>Emails Used:
+          <input type="text" id="edit-email-codes" value="${emailCodes}" readonly>
+          <button type="button" onclick="document.getElementById('edit-email-codes').readOnly = false;">Change</button>
+      </label>
     </div>
     <div class="form-group">
       <label>Notes: <textarea id="edit-notes">${data.notes || ""}</textarea></label>
@@ -774,12 +785,16 @@ async function saveNewAction(campaignId) {
 }
 
 async function saveEditAction(campaignId, seq) {
+  const emailInput = document.getElementById("edit-email-codes");
+  const email_codes = emailInput ? emailInput.value.split(/[,\s]+/).filter(c => c.trim() !== "") : [];
+
   const payload = {
     action_type: document.getElementById("edit-type").value,
     action_date: document.getElementById("edit-date").value,
     price_after: document.getElementById("edit-price").value,
     notes: document.getElementById("edit-notes").value,
     campaign_status: document.getElementById("edit-status").value,
+    email_codes: email_codes
   };
 
   const res = await fetch(`/api/campaigns/${campaignId}/actions/${seq}`, {
@@ -800,3 +815,4 @@ async function saveEditAction(campaignId, seq) {
 
 // Render the table on page load
 document.addEventListener("DOMContentLoaded", renderDomainTable);
+
