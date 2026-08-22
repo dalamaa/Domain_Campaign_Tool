@@ -586,6 +586,12 @@ async function setActionMode(mode) {
   const tabNew = document.getElementById("tab-new");
   const tabEdit = document.getElementById("tab-edit");
 
+  // Add Domain Header
+  const modalHeader = document.querySelector("#action-modal h3");
+  if (campaign) {
+    modalHeader.innerHTML = `<div>${campaign.domain}</div><div style="font-size: 0.8em; font-weight: normal;">Campaign Action</div>`;
+  }
+
   if (tabNew && tabEdit) {
     if (mode === "new") {
       tabNew.style.background = "#007bff";
@@ -623,23 +629,36 @@ async function setActionMode(mode) {
       </div>
     `;
     }
+
+    let actionOptions = "";
+    if (campaign && campaign.hasValues) {
+      // Sequence > 0: No FIRST_OUTREACH
+      actionOptions = `
+            <option value="">-- Select Action --</option>
+            <option value="FIRST_FOLLOW_UP">First Follow-up</option>
+            <option value="FOLLOW_UP">Follow-up</option>
+            <option value="PRICE_REDUCTION">Price Reduction</option>
+    `;
+    } else {
+      // Sequence 0: Only FIRST_OUTREACH
+      actionOptions = `
+            <option value="FIRST_OUTREACH">First Outreach</option>
+    `;
+    }
     container.innerHTML = `
       ${emailInput}
     <div class="form-group">
       <label>Action Type:
           <select id="action-type">
-            <option value="FIRST_OUTREACH">First Outreach</option>
-            <option value="FIRST_FOLLOW_UP">First Follow-up</option>
-            <option value="FOLLOW_UP">Follow-up</option>
-            <option value="PRICE_REDUCTION">Price Reduction</option>
+            ${actionOptions}
         </select>
       </label>
     </div>
     <div class="form-group">
       <label>Campaign Status:
           <select id="action-status">
+            <option value="ACTIVE" selected>Active</option>
             <option value="DORMANT">Dormant</option>
-            <option value="ACTIVE">Active</option>
             <option value="RESTING">Resting</option>
         </select>
       </label>
