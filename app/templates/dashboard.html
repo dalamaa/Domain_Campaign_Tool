@@ -10,6 +10,9 @@
       Resting Campaigns: <span id="resting-campaigns"></span>
     </div>
     <div class="card">
+      Dormant Campaigns: <span id="dormant-campaigns"></span>
+    </div>
+    <div class="card">
       Expiring:
       <select id="expiry-filter" onchange="refreshDashboard()">
         <option value="30">30 Days</option>
@@ -44,6 +47,12 @@
   <!-- Reservation Board -->
   <section id="reservation-board">
     <h2>Reservation Board</h2>
+    <div class="legend" style="margin-bottom: 10px; font-size: 0.8em;">
+      <span style="color: #28a745">●</span> Available
+      <span style="color: #ffc107">●</span> Reserved
+      <span style="color: #6c757d">●</span> Completed Today
+      <span style="color: #dc3545">●</span> Disabled
+    </div>
     <div id="email-accounts-list" class="grid-board"></div>
   </section>
 </div>
@@ -56,3 +65,4 @@
 <script src="{{ url_for('static', filename='js/shared.js') }}"></script>
 <script src="{{ url_for('static', filename='js/pages/dashboard.js') }}"></script>
 {% endblock %}
+

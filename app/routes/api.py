@@ -3,7 +3,7 @@ from app.models.models import db, EmailAccount
 from sqlalchemy import asc
 import re
 from sqlalchemy import desc
-from datetime import datetime
+from datetime import datetime, timedelta
 
 bp = Blueprint('api', __name__, url_prefix='/api')
 
@@ -135,6 +135,31 @@ def fix_order():
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
+@bp.route('/dashboard/overview', methods=['GET'])
+def get_dashboard_overview():
+    from app.models.models import Domain, Campaign, CampaignStatus
+    from datetime import timedelta
+    expiry_days = int(request.args.get('expiry_days', 30))
+    today = datetime.utcnow().date()
+
+    total_domains = Domain.query.count()
+    active_campaigns = Campaign.query.filter_by(status=CampaignStatus.ACTIVE).count()
+    resting_campaigns = Campaign.query.filter_by(status=CampaignStatus.RESTING).count()
+    dormant_campaigns = Campaign.query.filter_by(status=CampaignStatus.DORMANT).count()
+
+    expiring_count = Domain.query.filter(
+        Domain.expiry_date.isnot(None),
+        Domain.expiry_date <= today + timedelta(days=expiry_days),
+        Domain.expiry_date >= today
+    ).count()
+    return jsonify({
+        'total_domains': total_domains,
+        'active_campaigns': active_campaigns,
+        'resting_campaigns': resting_campaigns,
+        'dormant_campaigns': dormant_campaigns,
+        'expiring_count': expiring_count
+    })
+
 @bp.route('/domains', methods=['GET'])
 def get_domains():
     from app.models.models import Domain, Campaign, CampaignStatus, CampaignHistory
@@ -203,7 +228,6 @@ def add_domain():
             if not EmailAccount.query.get(code):
                 return jsonify({'error': f'Email account {code} not found'}), 400
             db.session.add(CampaignEmailBlock(campaign_id=new_camp.id, email_code=code))
-
     db.session.commit()
     return jsonify({'success': True})
 

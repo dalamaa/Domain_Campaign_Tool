@@ -9,23 +9,22 @@ function syncCampaignStates() {
   });
 }
 
-function refreshDashboard() {
+async function refreshDashboard() {
+  const expiryDays = document.getElementById("expiry-filter").value;
+  const res = await fetch(`/api/dashboard/overview?expiry_days=${expiryDays}`);
+  const data = await res.json();
+
+  document.getElementById("total-domains").textContent = data.total_domains;
+  document.getElementById("active-campaigns").textContent =
+    data.active_campaigns;
+  document.getElementById("resting-campaigns").textContent =
+    data.resting_campaigns;
+  document.getElementById("dormant-campaigns").textContent =
+    data.dormant_campaigns;
+  document.getElementById("expiring-count").textContent = data.expiring_count;
+
+  // Preserve mock logic for the rest of the board
   syncCampaignStates();
-  const totalDomainsEl = document.getElementById("total-domains");
-  if (totalDomainsEl) totalDomainsEl.textContent = mockCampaigns.length;
-
-  const activeCampaignsEl = document.getElementById("active-campaigns");
-  if (activeCampaignsEl)
-    activeCampaignsEl.textContent = mockCampaigns.filter(
-      (c) => c.status === "Active",
-    ).length;
-
-  const restingCampaignsEl = document.getElementById("resting-campaigns");
-  if (restingCampaignsEl)
-    restingCampaignsEl.textContent = mockCampaigns.filter(
-      (c) => c.status === "Resting",
-    ).length;
-
   updateReservationBoard();
   renderSuggestedWork();
 }
@@ -34,10 +33,25 @@ function updateReservationBoard() {
   const list = document.getElementById("email-accounts-list");
   if (!list) return;
   list.innerHTML = getSortedAccounts()
-    .map(
-      (acc) =>
-        `<div class="acc-item ${acc.state.toLowerCase()}"><strong>${acc.code}</strong><br><small>${acc.reservedFor || acc.state}</small></div>`,
-    )
+    .map((acc) => {
+      let stateClass = "";
+      let stateLabel = acc.state;
+      let domainLabel = "";
+
+      if (acc.state === "Available") stateClass = "available";
+      else if (acc.state === "Reserved") {
+        stateClass = "reserved";
+        domainLabel = `<br><small>${acc.reservedFor || ""}</small>`;
+      } else if (acc.state === "Completed Today")
+        stateClass = "completed-today";
+      else if (acc.state === "Disabled") stateClass = "disabled";
+
+      return `
+        <div class="acc-item ${stateClass}">
+          <strong>${acc.code}</strong>${domainLabel}
+          <br><small>${stateLabel}</small>
+        </div>`;
+    })
     .join("");
 }
 

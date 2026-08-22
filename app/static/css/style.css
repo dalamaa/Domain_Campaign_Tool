@@ -41,12 +41,24 @@ body {
   padding: 10px;
   border: 1px solid #ccc;
   font-size: 0.8em;
+  text-align: center;
+  border-radius: 4px;
 }
 .available {
   background: #d4edda;
+  border-color: #c3e6cb;
 }
 .reserved {
   background: #fff3cd;
+  border-color: #ffeeba;
+}
+.completed-today {
+  background: #e2e3e5;
+  border-color: #d6d8db;
+}
+.disabled {
+  background: #f8d7da;
+  border-color: #f5c6cb;
 }
 #side-panel {
   position: fixed;
@@ -106,3 +118,4 @@ tr:active {
 .action-bar button {
   margin-right: 5px;
 }
+
