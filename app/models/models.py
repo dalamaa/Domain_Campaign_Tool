@@ -89,7 +89,7 @@ class Reservation(db.Model):
     updated_at = db.Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     campaign = relationship("Campaign", back_populates="reservations")
-    email_links = relationship("ReservationEmailLink", back_populates="reservation")
+    email_links = relationship("ReservationEmailLink", back_populates="reservation", cascade="all, delete-orphan")
 
     __table_args__ = (UniqueConstraint('date', 'campaign_id', name='uix_date_campaign'),)
 

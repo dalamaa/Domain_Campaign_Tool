@@ -160,11 +160,28 @@ def get_dashboard_overview():
         'expiring_count': expiring_count
     })
 
+@bp.route('/settings/reset-config', methods=['GET'])
+def get_reset_config():
+    from app.services.settings_service import get_setting
+    return jsonify({
+        'timezone': get_setting('EMAIL_ACCOUNT_RESET_TIMEZONE', 'America/Denver'),
+        'time': get_setting('EMAIL_ACCOUNT_RESET_TIME', '08:00')
+    })
+
+@bp.route('/settings/reset-config', methods=['POST'])
+def update_reset_config_route():
+    from app.services.settings_service import update_reset_config
+    data = request.json
+    try:
+        update_reset_config(data.get('timezone', 'America/Denver'), data.get('time', '08:00'))
+        return jsonify({'success': True})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
 @bp.route('/dashboard/reservation-board', methods=['GET'])
 def get_reservation_board():
     from app.models.models import EmailAccount, Reservation, Campaign, ReservationStatus
     from sqlalchemy import and_
-
     today = datetime.utcnow().date()
     accounts = EmailAccount.query.order_by(EmailAccount.profile_order).all()
     results = []
@@ -184,8 +201,7 @@ def get_reservation_board():
                     Reservation.date == today,
                     Reservation.status == ReservationStatus.RESERVED
                 )
-                ).first()
-
+        ).first()
             if link:
                 state = "RESERVED"
                 reserved_domain = link.reservation.campaign.domain.domain_name
@@ -510,6 +526,33 @@ def bulk_edit_domains():
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
+@bp.route('/campaigns/<int:campaign_id>/actions', methods=['POST'])
+def add_campaign_action(campaign_id):
+    from app.services.campaign_service import create_new_action, sync_campaign_state
+    from app.models.models import ActionType, Campaign, CampaignStatus
+    from datetime import datetime
+    data = request.json
+    try:
+        action_type = ActionType(data['action_type'])
+        action_date = datetime.fromisoformat(data['action_date'].replace('Z', ''))
+        price = int(data['price_after'])
+        notes = data.get('notes', '')
+        email_codes = data.get('email_codes', [])
+
+        new_hist = create_new_action(campaign_id, action_type, action_date, price, notes, email_codes)
+        # Synchronize campaign state
+        sync_campaign_state(campaign_id)
+        # Update campaign status
+        camp = Campaign.query.get(campaign_id)
+        if camp and 'campaign_status' in data:
+            camp.status = CampaignStatus(data['campaign_status'])
+
+            db.session.commit()
+        return jsonify({'success': True, 'sequence': new_hist.sequence}), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 400
+
 @bp.route('/campaigns/<int:campaign_id>/actions', methods=['GET'])
 def get_campaign_actions(campaign_id):
     from app.models.models import CampaignHistory
@@ -567,24 +610,26 @@ def edit_campaign_action(campaign_id, sequence):
         camp = Campaign.query.get(campaign_id)
         if camp and 'campaign_status' in data:
             camp.status = CampaignStatus(data['campaign_status'])
-            db.session.commit()
-
+        db.session.commit()
         return jsonify({'success': True, 'action': {
             'sequence': hist.sequence,
             'edited_at': hist.edited_at.isoformat()
         }})
     except Exception as e:
+        db.session.rollback()
         return jsonify({'error': str(e)}), 400
 
 @bp.route('/dashboard/first-follow-ups', methods=['GET'])
 def get_first_follow_ups():
-    from app.models.models import Campaign, CampaignStatus, CampaignHistory, ActionType
+    from app.models.models import Campaign, CampaignStatus, CampaignHistory, ActionType, Reservation, ReservationEmailLink, ReservationStatus
     from app.services.campaign_service import get_first_follow_up_window
-
+    from sqlalchemy import and_
     today = datetime.utcnow().date()
+    # Debug: Print what we are finding
     eligible_campaigns = Campaign.query.filter(
-        Campaign.status.in_([CampaignStatus.ACTIVE, CampaignStatus.RESTING])
+        Campaign.status.in_([CampaignStatus.ACTIVE, CampaignStatus.RESTING, CampaignStatus.DORMANT])
     ).all()
+    print(f"DEBUG: Found {len(eligible_campaigns)} campaigns")
 
     due = []
     past_due = []
@@ -595,8 +640,9 @@ def get_first_follow_ups():
         first_outreach = CampaignHistory.query.filter_by(
             campaign_id=camp.id,
             action_type=ActionType.FIRST_OUTREACH
-        ).first()
+        ).order_by(CampaignHistory.sequence.asc()).first()
         if not first_outreach:
+            print(f"DEBUG: Campaign {camp.id} skipped - no FIRST_OUTREACH")
             continue
 
         # Does not have a FIRST_FOLLOW_UP action
@@ -605,14 +651,57 @@ def get_first_follow_ups():
             action_type=ActionType.FIRST_FOLLOW_UP
         ).first()
         if has_follow_up:
+            print(f"DEBUG: Campaign {camp.id} skipped - has FOLLOW_UP")
             continue
 
         earliest, latest = get_first_follow_up_window(camp)
         if not earliest or not latest:
+            print(f"DEBUG: Campaign {camp.id} skipped - no window")
             continue
+        print(f"DEBUG: Campaign {camp.id} in window {earliest} - {latest}")
+
+        # Emails used
+        emails_used = [e.email_code for e in first_outreach.history_email_used]
+
+        # Reservation state
+        reservation_state = "Unreserved"
+        reserved_by = None
+
+        # Simple reservation logic
+        current_res = Reservation.query.filter_by(date=today, campaign_id=camp.id).first()
+        if current_res:
+             reservation_state = "Reserved"
+             reserved_by = camp.domain.domain_name
+        else:
+            # Check for other reservations
+            for email in emails_used:
+                link = ReservationEmailLink.query.join(Reservation).filter(
+                    and_(
+                        ReservationEmailLink.email_code == email,
+                        Reservation.date == today,
+                        Reservation.status == ReservationStatus.RESERVED
+                    )
+                ).first()
+                if link:
+                    reservation_state = "Reserved"
+                    reserved_by = link.reservation.campaign.domain.domain_name
+                    break
+
+            # Check for completed
+            if reservation_state == "Unreserved":
+                 for email in emails_used:
+                    link = ReservationEmailLink.query.join(Reservation).filter(
+                        and_(
+                            ReservationEmailLink.email_code == email,
+                            Reservation.date == today,
+                            Reservation.status == ReservationStatus.COMPLETED
+                        )
+                    ).first()
+                    if link:
+                        reservation_state = "Used"
+                        break
 
         days_since = (today - first_outreach.action_date.date()).days
-
         campaign_info = {
             'domain': camp.domain.domain_name,
             'campaign_id': camp.id,
@@ -621,13 +710,95 @@ def get_first_follow_ups():
             'first_outreach_date': first_outreach.action_date.date().isoformat(),
             'earliest_due_date': earliest.isoformat(),
             'latest_due_date': latest.isoformat(),
-            'days_since_outreach': days_since
+            'days_since_outreach': days_since,
+            'emails_used': emails_used,
+            'reservation': {
+                'state': reservation_state,
+                'reserved_by': reserved_by
+            }
         }
 
         if earliest <= today <= latest:
             due.append(campaign_info)
         elif today > latest:
             past_due.append(campaign_info)
+        else:
+            # Just add it to a catch-all or confirm why it wasn't added
+            print(f"DEBUG: Campaign {camp.id} not due yet, today={today}")
 
     return jsonify({"due": due, "past_due": past_due})
+
+@bp.route('/campaigns/<int:campaign_id>/reservation', methods=['POST'])
+def reserve_campaign(campaign_id):
+    from app.models.models import Campaign, Reservation, ReservationEmailLink, ReservationStatus
+    from app.services.settings_service import get_setting
+    from sqlalchemy import and_
+
+    limit = int(get_setting('EMAIL_ACCOUNT_DAILY_USE_LIMIT', '1'))
+    today = datetime.utcnow().date()
+    camp = Campaign.query.get_or_404(campaign_id)
+
+    # Get required emails from campaign's latest action (First Outreach for first-followups)
+    # Using the same logic as in get_first_follow_ups
+    from app.models.models import CampaignHistory, ActionType
+    first_outreach = CampaignHistory.query.filter_by(
+        campaign_id=camp.id,
+        action_type=ActionType.FIRST_OUTREACH
+    ).order_by(CampaignHistory.sequence.asc()).first()
+
+    if not first_outreach:
+        return jsonify({'error': 'No outreach found'}), 400
+
+    emails_required = [e.email_code for e in first_outreach.history_email_used]
+
+    # Check conflicts
+    conflicts = {}
+    for email in emails_required:
+        # Count reservations for this email today
+        # Exclude reservations by this campaign
+        count = ReservationEmailLink.query.join(Reservation).filter(
+            and_(
+                ReservationEmailLink.email_code == email,
+                Reservation.date == today,
+                Reservation.status == ReservationStatus.RESERVED,
+                Reservation.campaign_id != camp.id
+            )
+        ).count()
+
+        if count >= limit:
+            # Find who reserved
+            link = ReservationEmailLink.query.join(Reservation).filter(
+                and_(
+                    ReservationEmailLink.email_code == email,
+                    Reservation.date == today,
+                    Reservation.status == ReservationStatus.RESERVED
+                )
+            ).first()
+            if link:
+                conflicts[email] = f"{email} is reserved by {link.reservation.campaign.domain.domain_name}"
+            else:
+                conflicts[email] = f"{email} has reached its daily use limit of {limit}"
+
+    if conflicts:
+        return jsonify({'error': 'Conflict', 'details': list(conflicts.values())}), 409
+
+    # Create reservation
+    new_res = Reservation(campaign_id=camp.id, date=today, status=ReservationStatus.RESERVED)
+    db.session.add(new_res)
+    db.session.flush()
+    for email in emails_required:
+        db.session.add(ReservationEmailLink(reservation_id=new_res.id, email_code=email))
+
+    db.session.commit()
+    return jsonify({'success': True})
+
+@bp.route('/campaigns/<int:campaign_id>/reservation', methods=['DELETE'])
+def unreserve_campaign(campaign_id):
+    from app.models.models import Reservation, ReservationStatus
+    today = datetime.utcnow().date()
+    res = Reservation.query.filter_by(campaign_id=campaign_id, date=today, status=ReservationStatus.RESERVED).first()
+    if res:
+        db.session.delete(res)
+        db.session.commit()
+    return jsonify({'success': True})
 

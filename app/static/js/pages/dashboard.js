@@ -40,18 +40,18 @@ async function updateReservationBoard() {
       let stateLabel = acc.state.replace("_", " ");
       let domainLabel = "";
 
-      if (acc.state === "AVAILABLE") stateClass = "available";
+      if (acc.state === "UNRESERVED") stateClass = "unreserved";
       else if (acc.state === "RESERVED") {
         stateClass = "reserved";
         domainLabel = `<br><small>${acc.reserved_domain || ""}</small>`;
-      } else if (acc.state === "COMPLETED_TODAY")
-        stateClass = "completed-today";
+      } else if (acc.state === "USED") stateClass = "used";
       else if (acc.state === "DISABLED") stateClass = "disabled";
 
       return `
         <div class="acc-item ${stateClass}">
           <strong>${acc.code}</strong>${domainLabel}
           <br><small>${stateLabel}</small>
+          <br><small>0/${/* Replace 0 with real count when available */ "2"}</small>
         </div>`;
     })
     .join("");
@@ -61,7 +61,6 @@ function renderSuggestedWork() {
   const categories = [
     { id: "first-followup", action: "First Follow-up" },
     { id: "normal-followup", action: "Normal Follow-up" },
-    { id: "price-reduction", action: "Price Reduction" },
   ];
 
   // Custom renderer for first-followup to use API data
@@ -74,28 +73,87 @@ function renderSuggestedWork() {
 
     container.innerHTML = `
       <h4>Due</h4>
-      <table>
-        <tr><th>Domain</th><th>Days Since Outreach</th></tr>
-        ${data.due.map((c) => `<tr><td>${c.domain}</td><td>${c.days_since_outreach}</td></tr>`).join("")}
-      </table>
+      <div class="table-container">${renderTable(data.due)}</div>
       <h4>Past Due</h4>
-      <table>
-        <tr><th>Domain</th><th>Days Since Outreach</th></tr>
-        ${data.past_due.map((c) => `<tr><td>${c.domain}</td><td>${c.days_since_outreach}</td></tr>`).join("")}
-      </table>
+      <div class="table-container">${renderTable(data.past_due)}</div>
     `;
+
+    // Attach event delegation for Reserve/Unreserve
+    container.querySelectorAll("button[data-action]").forEach((btn) => {
+      btn.onclick = async (e) => {
+        const action = e.target.dataset.action;
+        const campId = e.target.dataset.campaignId;
+        if (action === "reserve") {
+          const resp = await fetch(`/api/campaigns/${campId}/reservation`, {
+            method: "POST",
+          });
+          if (resp.ok) refreshDashboard();
+          else {
+            const err = await resp.json();
+            alert(err.details ? err.details.join("\n") : err.error);
+          }
+        } else if (action === "unreserve") {
+          await fetch(`/api/campaigns/${campId}/reservation`, {
+            method: "DELETE",
+          });
+          refreshDashboard();
+        }
+      };
+    });
   };
+
+  const getResButtons = (c) => {
+    const res = c.reservation;
+    let buttons = "";
+
+    if (res.state === "Reserved" && res.reserved_by === c.domain) {
+      buttons = `<button data-action="reserve" data-campaign-id="${c.campaign_id}" disabled>Reserve</button>
+                     <button data-action="unreserve" data-campaign-id="${c.campaign_id}">Unreserve</button>`;
+    } else if (res.state === "Reserved") {
+      buttons = `<button data-action="reserve" data-campaign-id="${c.campaign_id}" disabled>Reserve</button>
+                     <button data-action="unreserve" data-campaign-id="${c.campaign_id}" disabled>Unreserve</button> ⚠`;
+    } else {
+      buttons = `<button data-action="reserve" data-campaign-id="${c.campaign_id}">Reserve</button>
+                     <button data-action="unreserve" data-campaign-id="${c.campaign_id}" disabled>Unreserve</button>`;
+    }
+
+    return buttons;
+  };
+
+  const renderTable = (list, isNormal = false) => `
+    <table>
+      <thead>
+        <tr><th>Domain</th><th>Days Since ${isNormal ? "Contact" : "Outreach"}</th><th>Emails Used</th><th>Reservation</th></tr>
+      </thead>
+      <tbody>
+        ${list
+          .map(
+            (c) => `
+        <tr>
+          <td>${c.domain}</td>
+          <td>${isNormal ? c.days_since_contact || "N/A" : c.days_since_outreach}</td>
+          <td>${c.emails_used.length > 0 ? c.emails_used.join(", ") : "—"}</td>
+          <td>${getResButtons(c)}</td>
+        </tr>`,
+          )
+          .join("")}
+      </tbody>
+    </table>
+  `;
 
   renderFirstFollowups();
 
-  categories.slice(1).forEach((cat) => {
-    const container = document.getElementById(cat.id);
-    if (!container) return;
-    const data = mockCampaigns.filter((c) => c.action === cat.action);
-    container.innerHTML = `<table><tr><th>Domain</th><th>Block</th><th>Action</th></tr>${data.map((c) => `<tr><td>${c.domain}</td><td>${c.suggestedBlock.join(", ")}</td><td><button onclick="reserveBlock('${c.domain}')" style="background-color: ${c.isReserved ? "#ffc107" : "#28a745"}; color: white;">${c.isReserved ? "Unreserve" : "Reserve"}</button></td></tr>`).join("")}</table>`;
-  });
+  // Prepare structure for Normal Follow-ups
+  const normalFollowupContainer = document.getElementById("normal-followup");
+  if (normalFollowupContainer) {
+    normalFollowupContainer.innerHTML = `
+      <h4>Due</h4>
+      <div class="table-container">${renderTable([], true)}</div>
+      <h4>Past Due</h4>
+      <div class="table-container">${renderTable([], true)}</div>
+    `;
+  }
 }
-
 function reserveBlock(domain) {
   const campaign = mockCampaigns.find((c) => c.domain === domain);
   if (campaign.isReserved) {

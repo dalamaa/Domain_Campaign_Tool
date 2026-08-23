@@ -37,20 +37,31 @@
       </button>
       <div id="normal-followup" class="content"></div>
     </div>
-    <div class="accordion">
-      <button onclick="toggleAccordion('price-reduction')">
-        Price Reductions
-      </button>
-      <div id="price-reduction" class="content"></div>
-    </div>
+  </section>
+  <!-- Today's Campaigns -->
+  <section id="todays-campaigns">
+    <h2>Today's Campaigns</h2>
+    <table id="todays-campaigns-table">
+      <thead>
+        <tr>
+          <th>Domain</th>
+          <th>Status</th>
+          <th>Email</th>
+          <th>Shared Email</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Placeholder for content -->
+      </tbody>
+    </table>
   </section>
   <!-- Reservation Board -->
   <section id="reservation-board">
     <h2>Reservation Board</h2>
-    <div class="legend" style="margin-bottom: 10px; font-size: 0.8em;">
-      <span style="color: #28a745">●</span> Available
+    <div class="legend" style="margin-bottom: 10px; font-size: 0.8em">
+      <span style="color: #28a745">●</span> Unreserved
       <span style="color: #ffc107">●</span> Reserved
-      <span style="color: #6c757d">●</span> Completed Today
+      <span style="color: #6c757d">●</span> Used
       <span style="color: #dc3545">●</span> Disabled
     </div>
     <div id="email-accounts-list" class="grid-board"></div>
@@ -65,4 +76,3 @@
 <script src="{{ url_for('static', filename='js/shared.js') }}"></script>
 <script src="{{ url_for('static', filename='js/pages/dashboard.js') }}"></script>
 {% endblock %}
-

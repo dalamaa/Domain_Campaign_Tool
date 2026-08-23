@@ -85,6 +85,34 @@ Repositories should handle database access.
 
 Models should represent database entities and relationships.
 
+## Implementation and Test Workflow
+
+- For feature work, establish the intended production behavior first.
+
+- Implement the smallest production change that satisfies the intended behavior.
+
+- Manually verify the behavior through the relevant UI or API workflow before writing regression tests when practical.
+
+- Write tests to capture and preserve the verified behavior.
+
+- Do not treat a failing test as proof that production code is wrong.
+
+- A test may contain an incorrect assumption, incomplete setup, or incorrect expected result.
+
+- When a test fails, first compare its expectation against the business rules and manually verified behavior.
+
+- Before changing production code because of a failing test, verify that the test expectation matches the current business rules and intended behavior.
+
+- Do not modify production code merely to make a test pass.
+
+- Do not alter production behavior solely to satisfy a newly created or newly modified test.
+
+- If the test expectation is incorrect, fix the test instead.
+
+- If the production behavior is incorrect, fix the production code.
+
+- Regression tests should represent the intended behavior, not merely the behavior of the current implementation.
+
 ## Approval Rule
 
 After completing a requested phase:
@@ -169,7 +197,10 @@ When a test fails:
 10. Never modify unrelated production code.
 11. Never change a test merely to make an application bug disappear.
 12. Do not weaken an assertion simply because the application currently returns an unexpected result.
-13. Do not modify production code to fix a failing test without approval.
+13. Do not modify production code merely to make a test pass.
+14. If a failing test exposes a regression in existing application behavior, fix the underlying application bug rather than changing the test to match the regression.
+15. Before changing production code, compare the failing behavior against existing business rules, documented behavior, and previously working behavior when available.
+16. When modifying an existing feature, preserve previously working behavior unless the task explicitly changes that behavior. Treat unexpected changes to existing behavior as possible regressions and investigate them before proceeding.
 
 ## ENVIRONMENT RULE:
 

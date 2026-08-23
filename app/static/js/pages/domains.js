@@ -4,6 +4,8 @@ let searchTerm = "";
 let currentSort = { key: "daysSince", direction: "asc" };
 let domains = [];
 let allEmailAccounts = [];
+let emailWasEdited = false;
+let originalEmailCodes = [];
 
 async function fetchDomains() {
   const res = await fetch(`/api/domains?t=${Date.now()}`);
@@ -611,50 +613,48 @@ async function setActionMode(mode) {
   }
 
   if (mode === "new") {
-    let emailInput = "";
+    // Determine default emails
+    let defaultEmails = "";
     if (campaign && campaign.hasValues) {
-      // Fetch current assignments for existing campaign
-      const res = await fetch(`/api/domains/${campaignId}/email-accounts`);
-      const assigned = await res.json();
-      const codes = assigned.map((a) => a.code).join(", ");
-      emailInput = `
-      <div class="form-group">
-                <label>Emails Used: <input type="text" id="action-email-codes" value="${codes}"></label>
-      </div>
-    `;
-    } else {
-      emailInput = `
-      <div class="form-group">
-                <label>Use Email Accounts: <input type="text" id="action-email-codes" placeholder="M01, M02..."></label>
-      </div>
-    `;
+      // Fetch last action's emails
+      const res = await fetch(`/api/campaigns/${campaignId}/actions`);
+      const history = await res.json();
+      if (history.length > 0) {
+        const lastAction = history[history.length - 1];
+        const emailRes = await fetch(
+          `/api/campaigns/${campaignId}/actions/${lastAction.sequence}/emails`,
+        );
+        const usedEmails = await emailRes.json();
+        defaultEmails = usedEmails.join(", ");
+      }
     }
 
-    let actionOptions = "";
-    if (campaign && campaign.hasValues) {
-      // Sequence > 0: No FIRST_OUTREACH
-      actionOptions = `
+    container.innerHTML = `
+    <div id="email-edit-container">
+    <div class="form-group">
+            <label>Emails Used:<br>
+              <span id="email-display-text" style="font-weight: bold; margin-right: 10px;">${defaultEmails}</span>
+          <button type="button" onclick="toggleEmailEditMode(true)">Edit</button>
+      </label>
+    </div>
+    </div>
+    <div class="form-group">
+      <label>Action Type:
+          <select id="action-type">
+            ${
+              campaign && campaign.hasValues
+                ? `
             <option value="">-- Select Action --</option>
             <option value="FIRST_FOLLOW_UP">First Follow-up</option>
             <option value="FOLLOW_UP">Follow-up</option>
             <option value="PRICE_REDUCTION">Price Reduction</option>
-    `;
-    } else {
-      // Sequence 0: Only FIRST_OUTREACH
-      actionOptions = `
-            <option value="FIRST_OUTREACH">First Outreach</option>
-    `;
-    }
-    container.innerHTML = `
-      ${emailInput}
-    <div class="form-group">
-      <label>Action Type:
-          <select id="action-type">
-            ${actionOptions}
+            `
+                : `<option value="FIRST_OUTREACH">First Outreach</option>`
+            }
         </select>
-      </label>
-    </div>
-    <div class="form-group">
+        </label>
+      </div>
+      <div class="form-group">
       <label>Campaign Status:
           <select id="action-status">
             <option value="ACTIVE" selected>Active</option>
@@ -707,13 +707,15 @@ async function loadActionForEdit(campaignId) {
   const data = await res.json();
 
   // Fetch HistoryEmailUsed for this record
-  const emailRes = await fetch(`/api/campaigns/${campaignId}/actions/${seq}/emails`);
+  const emailRes = await fetch(
+    `/api/campaigns/${campaignId}/actions/${seq}/emails`,
+  );
   const usedEmails = await emailRes.json();
+  originalEmailCodes = usedEmails; // Store original
   const emailCodes = usedEmails.join(", ");
 
   const campaign = domains.find((d) => d.id == campaignId);
   const currentStatus = campaign ? campaign.status : "DORMANT";
-
   const container = document.getElementById("edit-action-fields");
   container.innerHTML = `
     <div class="form-group">
@@ -741,11 +743,13 @@ async function loadActionForEdit(campaignId) {
     <div class="form-group">
       <label>Price: <input type="number" id="edit-price" value="${data.price_after}"></label>
     </div>
+    <div id="email-edit-container">
     <div class="form-group">
-      <label>Emails Used:
-          <input type="text" id="edit-email-codes" value="${emailCodes}" readonly>
-          <button type="button" onclick="document.getElementById('edit-email-codes').readOnly = false;">Change</button>
+        <label>Email Used:<br>
+          <span id="email-display-text" style="font-weight: bold; margin-right: 10px;">${emailCodes}</span>
+          <button type="button" onclick="toggleEmailEditMode(true)">Edit</button>
       </label>
+    </div>
     </div>
     <div class="form-group">
       <label>Notes: <textarea id="edit-notes">${data.notes || ""}</textarea></label>
@@ -754,19 +758,69 @@ async function loadActionForEdit(campaignId) {
   `;
 }
 
-async function saveNewAction(campaignId) {
-  const emailInput = document.getElementById("action-email-codes");
-  const email_codes = emailInput
-    ? emailInput.value.split(/[,\s]+/).filter((c) => c.trim() !== "")
-    : [];
+function toggleEmailEditMode(editing) {
+  const container = document.getElementById("email-edit-container");
+  const currentVal = document.getElementById("email-display-text").textContent;
 
+  if (editing) {
+    container.innerHTML = `
+      <div class="form-group">
+        <label>Email Used:<br>
+          <span style="font-weight: bold; margin-right: 10px;">${currentVal}</span>
+          <input type="text" id="edit-email-codes" value="${currentVal}">
+          <button type="button" onclick="saveEmailEdit()">Save</button>
+          <button type="button" onclick="cancelEmailEdit('${currentVal}')">Cancel</button>
+        </label>
+      </div>
+    `;
+  } else {
+    container.innerHTML = `
+      <div class="form-group">
+        <label>Email Used:<br>
+          <span id="email-display-text" style="font-weight: bold; margin-right: 10px;">${currentVal}</span>
+          <button type="button" onclick="toggleEmailEditMode(true)">Edit</button>
+        </label>
+      </div>
+    `;
+  }
+}
+
+function saveEmailEdit() {
+  const newVal = document.getElementById("edit-email-codes").value;
+  const container = document.getElementById("email-edit-container");
+  container.innerHTML = `
+    <div class="form-group">
+      <label>Email Used:<br>
+        <span id="email-display-text" style="font-weight: bold; margin-right: 10px;">${newVal}</span>
+        <button type="button" onclick="toggleEmailEditMode(true)">Edit</button>
+      </label>
+    </div>
+  `;
+}
+
+function cancelEmailEdit(originalVal) {
+  const container = document.getElementById("email-edit-container");
+  container.innerHTML = `
+    <div class="form-group">
+      <label>Email Used:<br>
+        <span id="email-display-text" style="font-weight: bold; margin-right: 10px;">${originalVal}</span>
+        <button type="button" onclick="toggleEmailEditMode(true)">Edit</button>
+      </label>
+    </div>
+  `;
+}
+
+async function saveNewAction(campaignId) {
   const payload = {
     action_type: document.getElementById("action-type").value,
     action_date: document.getElementById("action-date").value,
     price_after: document.getElementById("action-price").value,
     notes: document.getElementById("action-notes").value,
     campaign_status: document.getElementById("action-status").value,
-    email_codes: email_codes,
+    email_codes: document
+      .getElementById("email-display-text")
+      .textContent.split(/[,\s]+/)
+      .filter((c) => c.trim() !== ""),
   };
 
   const res = await fetch(`/api/campaigns/${campaignId}/actions`, {
@@ -785,16 +839,16 @@ async function saveNewAction(campaignId) {
 }
 
 async function saveEditAction(campaignId, seq) {
-  const emailInput = document.getElementById("edit-email-codes");
-  const email_codes = emailInput ? emailInput.value.split(/[,\s]+/).filter(c => c.trim() !== "") : [];
-
   const payload = {
     action_type: document.getElementById("edit-type").value,
     action_date: document.getElementById("edit-date").value,
     price_after: document.getElementById("edit-price").value,
     notes: document.getElementById("edit-notes").value,
     campaign_status: document.getElementById("edit-status").value,
-    email_codes: email_codes
+    email_codes: document
+      .getElementById("email-display-text")
+      .textContent.split(/[,\s]+/)
+      .filter((c) => c.trim() !== ""),
   };
 
   const res = await fetch(`/api/campaigns/${campaignId}/actions/${seq}`, {
@@ -815,4 +869,3 @@ async function saveEditAction(campaignId, seq) {
 
 // Render the table on page load
 document.addEventListener("DOMContentLoaded", renderDomainTable);
-
