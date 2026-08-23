@@ -396,7 +396,7 @@ def check_history_action(id):
     data = request.json
     new_seq = int(data.get('seq'))
 
-    camp = Campaign.query.filter_by(domain_id=id).first()
+    camp = Campaign.query.filter_by(domain_id=camp.id).first()
     if not camp:
         return jsonify({'error': 'Campaign not found'}), 404
 
@@ -575,4 +575,59 @@ def edit_campaign_action(campaign_id, sequence):
         }})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
+@bp.route('/dashboard/first-follow-ups', methods=['GET'])
+def get_first_follow_ups():
+    from app.models.models import Campaign, CampaignStatus, CampaignHistory, ActionType
+    from app.services.campaign_service import get_first_follow_up_window
+
+    today = datetime.utcnow().date()
+    eligible_campaigns = Campaign.query.filter(
+        Campaign.status.in_([CampaignStatus.ACTIVE, CampaignStatus.RESTING])
+    ).all()
+
+    due = []
+    past_due = []
+
+    for camp in eligible_campaigns:
+        # Check eligibility:
+        # Has FIRST_OUTREACH history record.
+        first_outreach = CampaignHistory.query.filter_by(
+            campaign_id=camp.id,
+            action_type=ActionType.FIRST_OUTREACH
+        ).first()
+        if not first_outreach:
+            continue
+
+        # Does not have a FIRST_FOLLOW_UP action
+        has_follow_up = CampaignHistory.query.filter_by(
+            campaign_id=camp.id,
+            action_type=ActionType.FIRST_FOLLOW_UP
+        ).first()
+        if has_follow_up:
+            continue
+
+        earliest, latest = get_first_follow_up_window(camp)
+        if not earliest or not latest:
+            continue
+
+        days_since = (today - first_outreach.action_date.date()).days
+
+        campaign_info = {
+            'domain': camp.domain.domain_name,
+            'campaign_id': camp.id,
+            'status': camp.status.value,
+            'current_sequence': camp.current_sequence,
+            'first_outreach_date': first_outreach.action_date.date().isoformat(),
+            'earliest_due_date': earliest.isoformat(),
+            'latest_due_date': latest.isoformat(),
+            'days_since_outreach': days_since
+        }
+
+        if earliest <= today <= latest:
+            due.append(campaign_info)
+        elif today > latest:
+            past_due.append(campaign_info)
+
+    return jsonify({"due": due, "past_due": past_due})
 

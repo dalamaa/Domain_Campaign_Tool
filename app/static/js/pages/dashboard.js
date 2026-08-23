@@ -63,7 +63,32 @@ function renderSuggestedWork() {
     { id: "normal-followup", action: "Normal Follow-up" },
     { id: "price-reduction", action: "Price Reduction" },
   ];
-  categories.forEach((cat) => {
+
+  // Custom renderer for first-followup to use API data
+  const renderFirstFollowups = async () => {
+    const container = document.getElementById("first-followup");
+    if (!container) return;
+
+    const res = await fetch("/api/dashboard/first-follow-ups");
+    const data = await res.json();
+
+    container.innerHTML = `
+      <h4>Due</h4>
+      <table>
+        <tr><th>Domain</th><th>Days Since Outreach</th></tr>
+        ${data.due.map((c) => `<tr><td>${c.domain}</td><td>${c.days_since_outreach}</td></tr>`).join("")}
+      </table>
+      <h4>Past Due</h4>
+      <table>
+        <tr><th>Domain</th><th>Days Since Outreach</th></tr>
+        ${data.past_due.map((c) => `<tr><td>${c.domain}</td><td>${c.days_since_outreach}</td></tr>`).join("")}
+      </table>
+    `;
+  };
+
+  renderFirstFollowups();
+
+  categories.slice(1).forEach((cat) => {
     const container = document.getElementById(cat.id);
     if (!container) return;
     const data = mockCampaigns.filter((c) => c.action === cat.action);
