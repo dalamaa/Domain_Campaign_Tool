@@ -88,6 +88,12 @@
           >
             Last Action ↕
           </th>
+          <th
+            style="position: sticky; top: 0; background: #eee; cursor: pointer"
+            onclick="sortTable('latestEmails')"
+          >
+            Email Used ↕
+          </th>
         </tr>
       </thead>
       <tbody id="domain-table-body">
@@ -329,5 +335,21 @@
       el.disabled = !el.disabled;
     }
   }
+
+  // Example snippet of render logic integration:
+  // return `
+  //   <tr class="${selectedDomains.has(c.id) ? "selected" : ""}">
+  //       <td><input type="checkbox" ${selectedDomains.has(c.id) ? "checked" : ""} onchange="toggleDomainSelection(${c.id})"></td>
+  //       <td onclick="openHistoryModal(${c.id}, '${c.domain}')" style="cursor:pointer; text-decoration: underline;">${c.domain}</td>
+  //       <td>${c.expiry || "N/A"}</td>
+  //       <td>${daysLeft} days</td>
+  //       <td>${c.status || "Dormant"}</td>
+  //       <td>${c.price ? `$${c.price}` : "N/A"}</td>
+  //       <td>${daysSince} days</td>
+  //       <td>${c.hasValues ? c.seq : "Not started"}</td>
+  //       <td>${c.lastAction || "N/A"}</td>
+  //       <td>${c.latestEmails || "N/A"}</td>
+  //   </tr>`;
 </script>
 {% endblock %}
+

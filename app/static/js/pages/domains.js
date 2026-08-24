@@ -122,6 +122,7 @@ async function renderDomainTable() {
       const daysSince = lastContactDate
         ? Math.floor((today - lastContactDate) / (1000 * 60 * 60 * 24))
         : "N/A";
+      // Ensure we use the property 'latestEmails' returned by the API
       return `
         <tr class="${selectedDomains.has(c.id) ? "selected" : ""}">
             <td><input type="checkbox" ${selectedDomains.has(c.id) ? "checked" : ""} onchange="toggleDomainSelection(${c.id})"></td>
@@ -133,6 +134,7 @@ async function renderDomainTable() {
             <td>${daysSince} days</td>
             <td>${c.hasValues ? c.seq : "Not started"}</td>
             <td>${c.lastAction || "N/A"}</td>
+            <td>${c.latestEmails || "N/A"}</td>
         </tr>`;
     })
     .join("");
@@ -869,3 +871,4 @@ async function saveEditAction(campaignId, seq) {
 
 // Render the table on page load
 document.addEventListener("DOMContentLoaded", renderDomainTable);
+

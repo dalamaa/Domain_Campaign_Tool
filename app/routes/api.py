@@ -242,6 +242,15 @@ def get_domains():
         has_history = bool(c and CampaignHistory.query.filter_by(campaign_id=c.id).first())
         has_values = has_history
 
+        # Get latest action's emails
+        latest_emails = []
+        if c and has_history:
+            latest = CampaignHistory.query.filter_by(campaign_id=c.id).order_by(CampaignHistory.sequence.desc()).first()
+            if latest:
+                # Debug print
+                print(f"DEBUG: Latest history {latest.id} for campaign {c.id}, found {len(latest.history_email_used)} emails.")
+                latest_emails = [e.email_code for e in latest.history_email_used]
+
         raw_action = c.last_action if c else ''
         friendly_action = action_mapping.get(str(raw_action), raw_action)
         results.append({
@@ -253,6 +262,7 @@ def get_domains():
             'seq': c.current_sequence if has_history else '',
             'lastContact': c.last_contact_date.isoformat() if c and c.last_contact_date else '',
             'lastAction': friendly_action if has_history else '',
+            'latestEmails': ", ".join(latest_emails),
             'hasValues': has_values
         })
     return jsonify(results)
