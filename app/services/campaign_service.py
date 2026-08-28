@@ -110,6 +110,7 @@ def get_first_follow_up_window(campaign):
     based on the FIRST_OUTREACH action.
     Returns (earliest_date, latest_date) or (None, None) if no FIRST_OUTREACH found.
     """
+    from app.services.time_service import get_business_today
     first_outreach = CampaignHistory.query.filter_by(
         campaign_id=campaign.id,
         action_type=ActionType.FIRST_OUTREACH

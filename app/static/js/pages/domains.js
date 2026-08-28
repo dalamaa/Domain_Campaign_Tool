@@ -6,6 +6,13 @@ let domains = [];
 let allEmailAccounts = [];
 let emailWasEdited = false;
 let originalEmailCodes = [];
+let businessToday = null;
+
+async function fetchBusinessInfo() {
+  const res = await fetch("/api/settings/business-info");
+  const data = await res.json();
+  businessToday = new Date(data.business_today);
+}
 
 async function fetchDomains() {
   const res = await fetch(`/api/domains?t=${Date.now()}`);
@@ -32,7 +39,7 @@ function sortTable(key) {
 
 function applyCurrentSort() {
   const { key, direction } = currentSort;
-  const today = new Date();
+  const today = businessToday || new Date();
 
   domains.sort((a, b) => {
     let valA, valB;
@@ -78,6 +85,7 @@ function applyCurrentSort() {
 // 2. Fix the renderDomainTable in domains.js
 async function renderDomainTable() {
   // 1. Fetch
+  await fetchBusinessInfo();
   domains = await fetchDomains();
   // Fetch email accounts for validation
   const accRes = await fetch("/api/email-accounts");
@@ -114,13 +122,12 @@ async function renderDomainTable() {
     .map((c) => {
       const expiryDate = c.expiry ? new Date(c.expiry) : null;
       const lastContactDate = c.lastContact ? new Date(c.lastContact) : null;
-      const today = new Date();
 
       const daysLeft = expiryDate
-        ? Math.floor((expiryDate - today) / (1000 * 60 * 60 * 24))
+        ? Math.floor((expiryDate - businessToday) / (1000 * 60 * 60 * 24))
         : "N/A";
       const daysSince = lastContactDate
-        ? Math.floor((today - lastContactDate) / (1000 * 60 * 60 * 24))
+        ? Math.floor((businessToday - lastContactDate) / (1000 * 60 * 60 * 24))
         : "N/A";
       // Ensure we use the property 'latestEmails' returned by the API
       return `
@@ -426,20 +433,12 @@ async function saveDomain() {
     { id: "form-domain", key: "domain" },
     { id: "form-expiry", key: "expiry" },
     { id: "form-status", key: "status" },
-    { id: "form-email-accounts", key: "email_accounts" },
   ];
 
   fields.forEach((f) => {
     const input = document.getElementById(f.id);
-    if (!input.disabled || f.id === "form-email-accounts") {
-      if (f.id === "form-email-accounts") {
-        const codes = input.value
-          .split(/[,\s\n]+/)
-          .filter((c) => c.trim() !== "");
-        updates[f.key] = [...new Set(codes.map((c) => c.toUpperCase()))];
-      } else {
-        updates[f.key] = input.value;
-      }
+    if (!input.disabled) {
+      updates[f.key] = input.value;
       summary.push(`${f.key}: ${input.value}`);
     }
   });
@@ -493,10 +492,6 @@ function openModal(id = null) {
   const c = domains.find((x) => x.id === id);
 
   const statusEl = document.getElementById("form-status");
-  const emailInput = document.getElementById("form-email-accounts");
-  const validationDiv = document.getElementById("email-validation-messages");
-  validationDiv.innerHTML = "";
-
   if (c) {
     modalTitle.innerText = "Edit Domain";
     document.getElementById("edit-id").value = c.id;
@@ -506,14 +501,6 @@ function openModal(id = null) {
 
     statusEl.value = c.status || "";
     statusEl.disabled = true;
-
-    // Fetch and populate assigned accounts
-    fetch(`/api/domains/${c.id}/email-accounts`)
-      .then((res) => res.json())
-      .then((assigned) => {
-        emailInput.value = assigned.map((a) => a.code).join(", ");
-        validateEmailAccounts();
-      });
   } else {
     modalTitle.innerText = "Add Domain";
     document.getElementById("edit-id").value = "";
@@ -523,50 +510,10 @@ function openModal(id = null) {
 
     statusEl.value = "";
     statusEl.disabled = false;
-    emailInput.value = "";
   }
-  emailInput.onblur = validateEmailAccounts;
 }
 
-function validateEmailAccounts() {
-  const input = document.getElementById("form-email-accounts");
-  const val = input.value;
-  const codes = val.split(/[,\s\n]+/).filter((c) => c.trim() !== "");
-  const uniqueCodes = [...new Set(codes.map((c) => c.toUpperCase()))];
-
-  const messages = document.getElementById("email-validation-messages");
-  messages.innerHTML = "";
-  let isValid = true;
-
-  uniqueCodes.forEach((code) => {
-    const acc = allEmailAccounts.find((a) => a.code === code);
-    const div = document.createElement("div");
-    if (!acc) {
-      div.innerHTML = `${code} ✕ <br><small style="color:red">Not found. Check Email Accounts page.</small>`;
-      isValid = false;
-    } else if (!acc.enabled) {
-      div.innerHTML = `${code} ⚠️ <br><small style="color:orange">Exists but is disabled.</small>`;
-    } else {
-      div.innerHTML = `${code} ✓`;
-    }
-    messages.appendChild(div);
-  });
-  return isValid;
-}
-
-async function recheckAccounts() {
-  const btn = document.getElementById("recheck-accounts");
-  btn.disabled = true;
-
-  const res = await fetch("/api/email-accounts");
-  allEmailAccounts = await res.json();
-  validateEmailAccounts();
-
-  setTimeout(() => {
-    btn.disabled = false;
-  }, 3000);
-}
-
+// Removed validateEmailAccounts and recheckAccounts
 function closeModal() {
   document.getElementById("domain-modal").style.display = "none";
 }
@@ -871,4 +818,3 @@ async function saveEditAction(campaignId, seq) {
 
 // Render the table on page load
 document.addEventListener("DOMContentLoaded", renderDomainTable);
-

@@ -1,0 +1,108 @@
+{% extends 'base.html' %} {% block content %}
+<div class="settings-management">
+  <h2>Settings</h2>
+  <div class="form-group" style="margin-top: 20px">
+    <label>Business Timezone:</label><br />
+    <select id="timezone-select" style="width: 300px; padding: 5px">
+      <!-- Populated by JS -->
+    </select>
+  </div>
+  <div style="margin-top: 20px">
+    <button onclick="saveSettings()" style="padding: 8px 16px">
+      Save Settings
+    </button>
+  </div>
+</div>
+
+<script>
+  let timezoneTimer = null;
+
+  async function loadSettings() {
+    const res = await fetch("/api/settings/business-info");
+    const data = await res.json();
+
+    // Fetch timezones
+    const tzRes = await fetch("/api/settings/timezones");
+    const timezones = await tzRes.json();
+
+    const select = document.getElementById("timezone-select");
+    timezones.forEach((tz) => {
+      const option = document.createElement("option");
+      option.value = tz.id;
+      option.setAttribute("data-tz", tz.id);
+      option.setAttribute("data-label", tz.label);
+      option.textContent = tz.label;
+      if (tz.id === data.business_timezone) {
+        option.selected = true;
+      }
+      select.appendChild(option);
+    });
+
+    updateTimezoneTimes();
+    scheduleNextTimezoneUpdate();
+  }
+
+  function updateTimezoneTimes() {
+    const select = document.getElementById("timezone-select");
+    const options = select.querySelectorAll("option");
+    const now = new Date();
+
+    options.forEach((option) => {
+      const tz = option.getAttribute("data-tz");
+      const baseLabel = option.getAttribute("data-label");
+      if (!tz) return;
+
+      try {
+        const formatter = new Intl.DateTimeFormat("en-GB", {
+          timeZone: tz,
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        });
+        const timeString = formatter.format(now);
+        const newText = `${baseLabel} (${timeString})`;
+
+        if (option.textContent !== newText) {
+          option.textContent = newText;
+        }
+      } catch (e) {
+        // fallback
+      }
+    });
+  }
+
+  function scheduleNextTimezoneUpdate() {
+    const now = new Date();
+    const delay = (60 - now.getSeconds()) * 1000 - now.getMilliseconds();
+
+    if (timezoneTimer) clearTimeout(timezoneTimer);
+
+    timezoneTimer = setTimeout(() => {
+      updateTimezoneTimes();
+      scheduleNextTimezoneUpdate();
+    }, delay);
+  }
+
+  async function saveSettings() {
+    const tz = document.getElementById("timezone-select").value;
+    const res = await fetch("/api/settings/business-timezone", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timezone: tz }),
+    });
+
+    if (res.ok) {
+      alert("Settings saved successfully.");
+      location.reload();
+    } else {
+      const err = await res.json();
+      alert("Error saving settings: " + (err.error || "Unknown"));
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", loadSettings);
+  window.addEventListener("beforeunload", () => {
+    if (timezoneTimer) clearTimeout(timezoneTimer);
+  });
+</script>
+{% endblock %}

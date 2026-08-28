@@ -135,12 +135,46 @@ def fix_order():
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
+@bp.route('/settings/business-info', methods=['GET'])
+def get_business_info():
+    from app.services.time_service import get_business_timezone, get_business_today
+    return jsonify({
+        'business_timezone': str(get_business_timezone()),
+        'business_today': get_business_today().isoformat()
+    })
+
+@bp.route('/settings/timezones', methods=['GET'])
+def get_timezones():
+    from zoneinfo import available_timezones
+    timezones = sorted(list(available_timezones()))
+    # Create friendly labels
+    results = []
+    for tz in timezones:
+        # Simplistic friendly label
+        label = tz.replace('_', ' ')
+        results.append({'id': tz, 'label': f"{label} ({tz})"})
+    return jsonify(results)
+
+@bp.route('/api/settings/business-timezone', methods=['POST'])
+def save_timezone():
+    from app.services.settings_service import set_setting
+    from zoneinfo import ZoneInfo
+    data = request.json
+    tz = data.get('timezone')
+    try:
+        ZoneInfo(tz) # Validate
+        set_setting('BUSINESS_TIMEZONE', tz)
+        return jsonify({'success': True})
+    except Exception:
+        return jsonify({'error': 'Invalid timezone'}), 400
+
 @bp.route('/dashboard/overview', methods=['GET'])
 def get_dashboard_overview():
     from app.models.models import Domain, Campaign, CampaignStatus
     from datetime import timedelta
+    from app.services.time_service import get_business_today
     expiry_days = int(request.args.get('expiry_days', 30))
-    today = datetime.utcnow().date()
+    today = get_business_today()
 
     total_domains = Domain.query.count()
     active_campaigns = Campaign.query.filter_by(status=CampaignStatus.ACTIVE).count()
@@ -269,7 +303,7 @@ def get_domains():
 
 @bp.route('/domains', methods=['POST'])
 def add_domain():
-    from app.models.models import Domain, Campaign, CampaignStatus, CampaignEmailBlock, EmailAccount
+    from app.models.models import Domain, Campaign, CampaignStatus
     data = request.json
     if Domain.query.filter_by(domain_name=data['domain']).first():
         return jsonify({'error': 'Domain exists'}), 400
@@ -296,14 +330,6 @@ def add_domain():
         current_sequence=seq
     )
     db.session.add(new_camp)
-    db.session.flush()
-
-    # Save email accounts if provided
-    if 'email_accounts' in data:
-        for code in data['email_accounts']:
-            if not EmailAccount.query.get(code):
-                return jsonify({'error': f'Email account {code} not found'}), 400
-            db.session.add(CampaignEmailBlock(campaign_id=new_camp.id, email_code=code))
     db.session.commit()
     return jsonify({'success': True})
 
@@ -633,8 +659,9 @@ def edit_campaign_action(campaign_id, sequence):
 def get_first_follow_ups():
     from app.models.models import Campaign, CampaignStatus, CampaignHistory, ActionType, Reservation, ReservationEmailLink, ReservationStatus
     from app.services.campaign_service import get_first_follow_up_window
+    from app.services.time_service import get_business_today
     from sqlalchemy import and_
-    today = datetime.utcnow().date()
+    today = get_business_today()
     # Debug: Print what we are finding
     eligible_campaigns = Campaign.query.filter(
         Campaign.status.in_([CampaignStatus.ACTIVE, CampaignStatus.RESTING, CampaignStatus.DORMANT])
@@ -742,10 +769,11 @@ def get_first_follow_ups():
 def reserve_campaign(campaign_id):
     from app.models.models import Campaign, Reservation, ReservationEmailLink, ReservationStatus
     from app.services.settings_service import get_setting
+    from app.services.time_service import get_business_today
     from sqlalchemy import and_
 
     limit = int(get_setting('EMAIL_ACCOUNT_DAILY_USE_LIMIT', '1'))
-    today = datetime.utcnow().date()
+    today = get_business_today()
     camp = Campaign.query.get_or_404(campaign_id)
 
     # Get required emails from campaign's latest action (First Outreach for first-followups)
@@ -805,7 +833,9 @@ def reserve_campaign(campaign_id):
 @bp.route('/campaigns/<int:campaign_id>/reservation', methods=['DELETE'])
 def unreserve_campaign(campaign_id):
     from app.models.models import Reservation, ReservationStatus
-    today = datetime.utcnow().date()
+    from app.services.time_service import get_business_today
+
+    today = get_business_today()
     res = Reservation.query.filter_by(campaign_id=campaign_id, date=today, status=ReservationStatus.RESERVED).first()
     if res:
         db.session.delete(res)
