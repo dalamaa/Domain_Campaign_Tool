@@ -44,7 +44,7 @@ def seed_data():
         db.session.add(res1)
         
         # Campaign History for camp1
-        hist1 = CampaignHistory(campaign_id=camp1.id, action_type=ActionType.CAMPAIGN_STARTED, action_date=datetime.utcnow(), price_after=499)
+        hist1 = CampaignHistory(campaign_id=camp1.id, action_type=ActionType.FIRST_OUTREACH, action_date=datetime.utcnow(), price_after=499)
         db.session.add(hist1)
 
         db.session.commit()
@@ -53,3 +53,4 @@ def seed_data():
 
 if __name__ == "__main__":
     seed_data()
+

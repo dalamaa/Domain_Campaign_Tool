@@ -760,16 +760,24 @@ function cancelEmailEdit(originalVal) {
 }
 
 async function saveNewAction(campaignId) {
+  const emailCodes = document
+    .getElementById("email-display-text")
+    .textContent.split(/[,\s]+/)
+    .filter((c) => c.trim() !== "");
+
+  if (emailCodes.length === 0) {
+    alert(
+      "No email account was entered. Please select at least one email account before saving.",
+    );
+    return;
+  }
   const payload = {
     action_type: document.getElementById("action-type").value,
     action_date: document.getElementById("action-date").value,
     price_after: document.getElementById("action-price").value,
     notes: document.getElementById("action-notes").value,
     campaign_status: document.getElementById("action-status").value,
-    email_codes: document
-      .getElementById("email-display-text")
-      .textContent.split(/[,\s]+/)
-      .filter((c) => c.trim() !== ""),
+    email_codes: emailCodes,
   };
 
   const res = await fetch(`/api/campaigns/${campaignId}/actions`, {
@@ -788,16 +796,25 @@ async function saveNewAction(campaignId) {
 }
 
 async function saveEditAction(campaignId, seq) {
+  const emailCodes = document
+    .getElementById("email-display-text")
+    .textContent.split(/[,\s]+/)
+    .filter((c) => c.trim() !== "");
+
+  if (emailCodes.length === 0) {
+    alert(
+      "No email account was entered. Please select at least one email account before saving.",
+    );
+    return;
+  }
+
   const payload = {
     action_type: document.getElementById("edit-type").value,
     action_date: document.getElementById("edit-date").value,
     price_after: document.getElementById("edit-price").value,
     notes: document.getElementById("edit-notes").value,
     campaign_status: document.getElementById("edit-status").value,
-    email_codes: document
-      .getElementById("email-display-text")
-      .textContent.split(/[,\s]+/)
-      .filter((c) => c.trim() !== ""),
+    email_codes: emailCodes,
   };
 
   const res = await fetch(`/api/campaigns/${campaignId}/actions/${seq}`, {

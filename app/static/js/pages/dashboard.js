@@ -43,7 +43,7 @@ async function updateReservationBoard() {
       if (acc.state === "UNRESERVED") stateClass = "unreserved";
       else if (acc.state === "RESERVED") {
         stateClass = "reserved";
-        domainLabel = `<br><small>${acc.reserved_domain || ""}</small>`;
+        domainLabel = `<br><small>${(acc.reserved_domains || []).join("<br>")}</small>`;
       } else if (acc.state === "USED") stateClass = "used";
       else if (acc.state === "DISABLED") stateClass = "disabled";
 
@@ -51,7 +51,7 @@ async function updateReservationBoard() {
         <div class="acc-item ${stateClass}">
           <strong>${acc.code}</strong>${domainLabel}
           <br><small>${stateLabel}</small>
-          <br><small>0/${/* Replace 0 with real count when available */ "2"}</small>
+          <br><small>${acc.count}/${acc.limit}</small>
         </div>`;
     })
     .join("");
@@ -143,17 +143,47 @@ function renderSuggestedWork() {
 
   renderFirstFollowups();
 
-  // Prepare structure for Normal Follow-ups
-  const normalFollowupContainer = document.getElementById("normal-followup");
-  if (normalFollowupContainer) {
-    normalFollowupContainer.innerHTML = `
+  // Render Normal Follow-ups
+  const renderNormalFollowups = async () => {
+    const container = document.getElementById("normal-followup");
+    if (!container) return;
+
+    const res = await fetch("/api/dashboard/normal-follow-ups");
+    const data = await res.json();
+    container.innerHTML = `
       <h4>Due</h4>
-      <div class="table-container">${renderTable([], true)}</div>
+      <div class="table-container">${renderTable(data.due, true)}</div>
       <h4>Past Due</h4>
-      <div class="table-container">${renderTable([], true)}</div>
+      <div class="table-container">${renderTable(data.past_due, true)}</div>
     `;
-  }
+
+    // Attach event delegation for Reserve/Unreserve
+    container.querySelectorAll("button[data-action]").forEach((btn) => {
+      btn.onclick = async (e) => {
+        const action = e.target.dataset.action;
+        const campId = e.target.dataset.campaignId;
+        if (action === "reserve") {
+          const resp = await fetch(`/api/campaigns/${campId}/reservation`, {
+            method: "POST",
+          });
+          if (resp.ok) refreshDashboard();
+          else {
+            const err = await resp.json();
+            alert(err.details ? err.details.join("\n") : err.error);
+          }
+        } else if (action === "unreserve") {
+          await fetch(`/api/campaigns/${campId}/reservation`, {
+            method: "DELETE",
+          });
+          refreshDashboard();
+        }
+      };
+    });
+  };
+
+  renderNormalFollowups();
 }
+
 function reserveBlock(domain) {
   const campaign = mockCampaigns.find((c) => c.domain === domain);
   if (campaign.isReserved) {

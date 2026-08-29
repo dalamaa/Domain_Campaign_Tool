@@ -1,6 +1,6 @@
 import pytest
 from app import create_app
-from app.models.models import db, Campaign, CampaignHistory, Setting, CampaignStatus, Domain
+from app.models.models import db, Campaign, CampaignHistory, Setting, CampaignStatus, Domain, ActionType
 from app.services.campaign_service import (
     sync_campaign_state, get_next_sequence, 
     get_history_by_sequence, get_next_due_date,
@@ -41,7 +41,7 @@ def campaign(app):
 def test_sync_campaign_state(app, campaign):
     with app.app_context():
         # Add history
-        h = CampaignHistory(campaign_id=campaign.id, sequence=1, action_type='CAMPAIGN_STARTED', action_date=datetime.utcnow(), price_after=200)
+        h = CampaignHistory(campaign_id=campaign.id, sequence=1, action_type=ActionType.FIRST_OUTREACH, action_date=datetime.utcnow(), price_after=200)
         db.session.add(h)
         db.session.commit()
         
@@ -56,14 +56,14 @@ def test_next_sequence(app, campaign):
     with app.app_context():
         assert get_next_sequence(campaign.id) == 1
         # Add history
-        h = CampaignHistory(campaign_id=campaign.id, sequence=1, action_type='CAMPAIGN_STARTED')
+        h = CampaignHistory(campaign_id=campaign.id, sequence=1, action_type=ActionType.FIRST_OUTREACH)
         db.session.add(h)
         db.session.commit()
         assert get_next_sequence(campaign.id) == 2
 
 def test_history_lookup(app, campaign):
     with app.app_context():
-        h = CampaignHistory(campaign_id=campaign.id, sequence=1, action_type='CAMPAIGN_STARTED')
+        h = CampaignHistory(campaign_id=campaign.id, sequence=1, action_type=ActionType.FIRST_OUTREACH)
         db.session.add(h)
         db.session.commit()
         assert get_history_by_sequence(campaign.id, 1) is not None
@@ -72,21 +72,21 @@ def test_history_lookup(app, campaign):
 def test_create_new_action(app, campaign):
     with app.app_context():
         # New action
-        create_new_action(campaign.id, 'CAMPAIGN_STARTED', datetime.utcnow(), 150, 'First')
+        create_new_action(campaign.id, ActionType.FIRST_OUTREACH, datetime.utcnow(), 150, 'First')
         db.session.commit()
         
         # Check Sequence
         assert get_next_sequence(campaign.id) == 2
 
         # Second action
-        create_new_action(campaign.id, 'FOLLOW_UP_SENT', datetime.utcnow(), 100, 'Second')
+        create_new_action(campaign.id, ActionType.FOLLOW_UP, datetime.utcnow(), 100, 'Second')
         db.session.commit()
         assert get_next_sequence(campaign.id) == 3
 
 def test_update_existing_action(app, campaign):
     with app.app_context():
         # Create history
-        h = create_new_action(campaign.id, 'CAMPAIGN_STARTED', datetime(2026, 1, 1), 100, 'Initial')
+        h = create_new_action(campaign.id, ActionType.FIRST_OUTREACH, datetime(2026, 1, 1), 100, 'Initial')
         db.session.commit()
         
         # Update history
@@ -106,15 +106,16 @@ def test_due_date_calculation(app, campaign):
         db.session.commit()
         
         # 1 history record
-        create_new_action(campaign.id, 'CAMPAIGN_STARTED', datetime(2026, 1, 1), 100, 'Init')
+        create_new_action(campaign.id, ActionType.FIRST_OUTREACH, datetime(2026, 1, 1), 100, 'Init')
         db.session.commit()
         
         due_date = get_next_due_date(campaign)
         assert due_date == date(2026, 1, 4) # 1 + 3 days
 
         # 2 history records
-        create_new_action(campaign.id, 'FOLLOW_UP_SENT', datetime(2026, 1, 5), 100, 'Follow')
+        create_new_action(campaign.id, ActionType.FOLLOW_UP, datetime(2026, 1, 5), 100, 'Follow')
         db.session.commit()
 
         due_date = get_next_due_date(campaign)
         assert due_date == date(2026, 1, 12) # 5 + 7 days
+

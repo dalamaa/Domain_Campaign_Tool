@@ -8,6 +8,66 @@
     </select>
   </div>
   <div style="margin-top: 20px">
+    <h3>First Follow-up</h3>
+    <label
+      ><input
+        type="radio"
+        name="first-mode"
+        value="fixed"
+        checked
+        onchange="toggleMode('first', 'fixed')"
+      />
+      Fixed day</label
+    >
+    <input type="number" id="first-fixed" style="width: 60px" /> days<br />
+    <label
+      ><input
+        type="radio"
+        name="first-mode"
+        value="range"
+        onchange="toggleMode('first', 'range')"
+      />
+      Range</label
+    >
+    From <input type="number" id="first-min" style="width: 60px" disabled /> To
+    <input type="number" id="first-max" style="width: 60px" disabled /> days
+  </div>
+
+  <div style="margin-top: 20px">
+    <h3>Normal Follow-up</h3>
+    <label
+      ><input
+        type="radio"
+        name="normal-mode"
+        value="fixed"
+        checked
+        onchange="toggleMode('normal', 'fixed')"
+      />
+      Fixed day</label
+    >
+    <input type="number" id="normal-fixed" style="width: 60px" /> days<br />
+    <label
+      ><input
+        type="radio"
+        name="normal-mode"
+        value="range"
+        onchange="toggleMode('normal', 'range')"
+      />
+      Range</label
+    >
+    From <input type="number" id="normal-min" style="width: 60px" disabled /> To
+    <input type="number" id="normal-max" style="width: 60px" disabled /> days
+  </div>
+
+  <div style="margin-top: 20px">
+    <h3>Reservation</h3>
+    <label for="daily-use-limit">Email Account Daily Reservation Limit:</label
+    ><br />
+    <input type="number" id="daily-use-limit" style="width: 100px" /> campaigns
+    per email account per day
+  </div>
+
+  <div style="margin-top: 20px">
     <button onclick="saveSettings()" style="padding: 8px 16px">
       Save Settings
     </button>
@@ -18,12 +78,14 @@
   let timezoneTimer = null;
 
   async function loadSettings() {
-    const res = await fetch("/api/settings/business-info");
-    const data = await res.json();
-
-    // Fetch timezones
     const tzRes = await fetch("/api/settings/timezones");
     const timezones = await tzRes.json();
+    const infoRes = await fetch("/api/settings/business-info");
+    const data = await infoRes.json();
+    const configRes = await fetch("/api/settings/follow-up-config");
+    const config = await configRes.json();
+    const limitRes = await fetch("/api/settings/daily-use-limit");
+    const limitData = await limitRes.json();
 
     const select = document.getElementById("timezone-select");
     timezones.forEach((tz) => {
@@ -38,8 +100,31 @@
       select.appendChild(option);
     });
 
+    ["first", "normal"].forEach((type) => {
+      const c = config[type];
+      document.querySelector(
+        `input[name="${type}-mode"][value="${c.mode}"]`,
+      ).checked = true;
+      toggleMode(type, c.mode);
+      if (c.mode === "fixed") {
+        document.getElementById(`${type}-fixed`).value = c.min;
+      } else {
+        document.getElementById(`${type}-min`).value = c.min;
+        document.getElementById(`${type}-max`).value = c.max;
+      }
+    });
+
+    document.getElementById("daily-use-limit").value = limitData.limit;
+
     updateTimezoneTimes();
     scheduleNextTimezoneUpdate();
+  }
+
+  function toggleMode(type, mode) {
+    const isFixed = mode === "fixed";
+    document.getElementById(`${type}-fixed`).disabled = !isFixed;
+    document.getElementById(`${type}-min`).disabled = isFixed;
+    document.getElementById(`${type}-max`).disabled = isFixed;
   }
 
   function updateTimezoneTimes() {
@@ -84,20 +169,53 @@
   }
 
   async function saveSettings() {
-    const tz = document.getElementById("timezone-select").value;
-    const res = await fetch("/api/settings/business-timezone", {
+    const data = {
+      first: getModeData("first"),
+      normal: getModeData("normal"),
+    };
+
+    const tzRes = await fetch("/api/settings/business-timezone", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ timezone: tz }),
+      body: JSON.stringify({
+        timezone: document.getElementById("timezone-select").value,
+      }),
     });
 
-    if (res.ok) {
+    const confRes = await fetch("/api/settings/follow-up-config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+
+    const limitRes = await fetch("/api/settings/daily-use-limit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        limit: document.getElementById("daily-use-limit").value,
+      }),
+    });
+    if (tzRes.ok && confRes.ok && limitRes.ok) {
       alert("Settings saved successfully.");
       location.reload();
     } else {
-      const err = await res.json();
-      alert("Error saving settings: " + (err.error || "Unknown"));
+      alert("Error saving settings.");
     }
+  }
+
+  function getModeData(type) {
+    const mode = document.querySelector(
+      `input[name="${type}-mode"]:checked`,
+    ).value;
+    if (mode === "fixed") {
+      const val = document.getElementById(`${type}-fixed`).value;
+      return { mode, min: val, max: val, fixed: val };
+    }
+    return {
+      mode,
+      min: document.getElementById(`${type}-min`).value,
+      max: document.getElementById(`${type}-max`).value,
+    };
   }
 
   document.addEventListener("DOMContentLoaded", loadSettings);
