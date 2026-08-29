@@ -27,6 +27,31 @@ async function refreshDashboard() {
   syncCampaignStates();
   updateReservationBoard();
   renderSuggestedWork();
+  renderTodaysCampaigns();
+}
+
+async function renderTodaysCampaigns() {
+  const container = document
+    .getElementById("todays-campaigns-table")
+    .querySelector("tbody");
+  if (!container) return;
+
+  const res = await fetch("/api/dashboard/todays-campaigns");
+  const data = await res.json();
+
+  container.innerHTML = data
+    .map(
+      (c) => `
+    <tr>
+      <td><a href="/domain/${c.campaign_id}">${c.domain}</a></td>
+      <td>${c.status}</td>
+      <td>${c.sequence}</td>
+      <td>$${c.current_price}</td>
+      <td>${c.emails.join(", ")}</td>
+      <td>${c.shared_emails.join(", ") || "—"}</td>
+    </tr>`,
+    )
+    .join("");
 }
 
 async function updateReservationBoard() {

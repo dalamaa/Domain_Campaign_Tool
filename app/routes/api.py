@@ -334,6 +334,42 @@ def get_reservation_board():
         })
     return jsonify(results)
 
+@bp.route('/dashboard/todays-campaigns', methods=['GET'])
+def get_todays_campaigns():
+    from app.models.models import Reservation, ReservationStatus, ReservationEmailLink, Campaign
+    from app.services.time_service import get_business_today
+    from sqlalchemy import func
+
+    today = get_business_today()
+
+    # Get all reservations for today
+    reservations = Reservation.query.filter_by(date=today, status=ReservationStatus.RESERVED).all()
+
+    # Get all email usage counts for today to identify shared accounts
+    email_usage = db.session.query(
+        ReservationEmailLink.email_code, func.count(ReservationEmailLink.reservation_id)
+    ).join(Reservation).filter(
+        Reservation.date == today, Reservation.status == ReservationStatus.RESERVED
+    ).group_by(ReservationEmailLink.email_code).all()
+
+    shared_emails = {code: count > 1 for code, count in email_usage}
+
+    results = []
+    for res in reservations:
+        email_codes = [link.email_code for link in res.email_links]
+
+        results.append({
+            'domain': res.campaign.domain.domain_name,
+            'campaign_id': res.campaign.id,
+            'status': res.campaign.status.value,
+            'sequence': res.campaign.current_sequence,
+            'current_price': res.campaign.current_price,
+            'emails': email_codes,
+            'shared_emails': [code for code in email_codes if shared_emails.get(code, False)]
+        })
+
+    return jsonify(results)
+
 @bp.route('/domains', methods=['GET'])
 def get_domains():
     from app.models.models import Domain, Campaign, CampaignStatus, CampaignHistory
