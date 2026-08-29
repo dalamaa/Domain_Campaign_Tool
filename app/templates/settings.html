@@ -6,76 +6,96 @@
     <select id="timezone-select" style="width: 300px; padding: 5px">
       <!-- Populated by JS -->
     </select>
+    <button onclick="saveTimezone()">Save Timezone</button>
   </div>
   <div style="margin-top: 20px">
     <h3>First Follow-up</h3>
-    <label
-      ><input
-        type="radio"
-        name="first-mode"
-        value="fixed"
-        checked
-        onchange="toggleMode('first', 'fixed')"
-      />
-      Fixed day</label
-    >
-    <input type="number" id="first-fixed" style="width: 60px" /> days<br />
-    <label
-      ><input
-        type="radio"
-        name="first-mode"
-        value="range"
-        onchange="toggleMode('first', 'range')"
-      />
-      Range</label
-    >
-    From <input type="number" id="first-min" style="width: 60px" disabled /> To
-    <input type="number" id="first-max" style="width: 60px" disabled /> days
+    <div id="first-view">
+      <p>Current: <span id="first-display"></span></p>
+      <button onclick="editSection('first')">Change</button>
+    </div>
+    <div id="first-edit" style="display: none">
+      <label
+        ><input
+          type="radio"
+          name="first-mode"
+          value="fixed"
+          onchange="toggleMode('first', 'fixed')"
+        />
+        Fixed day</label
+      >
+      <input type="number" id="first-fixed" style="width: 60px" /> days<br />
+      <label
+        ><input
+          type="radio"
+          name="first-mode"
+          value="range"
+          onchange="toggleMode('first', 'range')"
+        />
+        Range</label
+      >
+      From
+      <input type="number" id="first-min" style="width: 60px" disabled /> To
+      <input type="number" id="first-max" style="width: 60px" disabled />
+      days<br />
+      <button onclick="saveSection('first')">Save</button>
+      <button onclick="cancelEdit('first')">Cancel</button>
+    </div>
   </div>
 
   <div style="margin-top: 20px">
     <h3>Normal Follow-up</h3>
-    <label
-      ><input
-        type="radio"
-        name="normal-mode"
-        value="fixed"
-        checked
-        onchange="toggleMode('normal', 'fixed')"
-      />
-      Fixed day</label
-    >
-    <input type="number" id="normal-fixed" style="width: 60px" /> days<br />
-    <label
-      ><input
-        type="radio"
-        name="normal-mode"
-        value="range"
-        onchange="toggleMode('normal', 'range')"
-      />
-      Range</label
-    >
-    From <input type="number" id="normal-min" style="width: 60px" disabled /> To
-    <input type="number" id="normal-max" style="width: 60px" disabled /> days
+    <div id="normal-view">
+      <p>Current: <span id="normal-display"></span></p>
+      <button onclick="editSection('normal')">Change</button>
+    </div>
+    <div id="normal-edit" style="display: none">
+      <label
+        ><input
+          type="radio"
+          name="normal-mode"
+          value="fixed"
+          onchange="toggleMode('normal', 'fixed')"
+        />
+        Fixed day</label
+      >
+      <input type="number" id="normal-fixed" style="width: 60px" /> days<br />
+      <label
+        ><input
+          type="radio"
+          name="normal-mode"
+          value="range"
+          onchange="toggleMode('normal', 'range')"
+        />
+        Range</label
+      >
+      From
+      <input type="number" id="normal-min" style="width: 60px" disabled /> To
+      <input type="number" id="normal-max" style="width: 60px" disabled />
+      days<br />
+      <button onclick="saveSection('normal')">Save</button>
+      <button onclick="cancelEdit('normal')">Cancel</button>
+    </div>
   </div>
 
   <div style="margin-top: 20px">
     <h3>Reservation</h3>
-    <label for="daily-use-limit">Email Account Daily Reservation Limit:</label
-    ><br />
-    <input type="number" id="daily-use-limit" style="width: 100px" /> campaigns
-    per email account per day
-  </div>
-
-  <div style="margin-top: 20px">
-    <button onclick="saveSettings()" style="padding: 8px 16px">
-      Save Settings
-    </button>
+    <div id="reservation-view">
+      <p>Current: <span id="reservation-display"></span></p>
+      <button onclick="editSection('reservation')">Change</button>
+    </div>
+    <div id="reservation-edit" style="display: none">
+      <input type="number" id="daily-use-limit" style="width: 100px" />
+      campaigns per email account per day<br />
+      <button onclick="saveSection('reservation')">Save</button>
+      <button onclick="cancelEdit('reservation')">Cancel</button>
+    </div>
   </div>
 </div>
 
 <script>
   let timezoneTimer = null;
+  let originalConfig = {};
 
   async function loadSettings() {
     const tzRes = await fetch("/api/settings/timezones");
@@ -86,6 +106,8 @@
     const config = await configRes.json();
     const limitRes = await fetch("/api/settings/daily-use-limit");
     const limitData = await limitRes.json();
+
+    originalConfig = { config, limitData };
 
     const select = document.getElementById("timezone-select");
     timezones.forEach((tz) => {
@@ -102,20 +124,11 @@
 
     ["first", "normal"].forEach((type) => {
       const c = config[type];
-      document.querySelector(
-        `input[name="${type}-mode"][value="${c.mode}"]`,
-      ).checked = true;
-      toggleMode(type, c.mode);
-      if (c.mode === "fixed") {
-        document.getElementById(`${type}-fixed`).value = c.min;
-      } else {
-        document.getElementById(`${type}-min`).value = c.min;
-        document.getElementById(`${type}-max`).value = c.max;
-      }
+      updateDisplay(type, c);
     });
 
-    document.getElementById("daily-use-limit").value = limitData.limit;
-
+    document.getElementById("reservation-display").textContent =
+      `${limitData.limit} campaigns per email account per day`;
     updateTimezoneTimes();
     scheduleNextTimezoneUpdate();
   }
@@ -168,39 +181,84 @@
     }, delay);
   }
 
-  async function saveSettings() {
-    const data = {
-      first: getModeData("first"),
-      normal: getModeData("normal"),
-    };
-
-    const tzRes = await fetch("/api/settings/business-timezone", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        timezone: document.getElementById("timezone-select").value,
-      }),
-    });
-
-    const confRes = await fetch("/api/settings/follow-up-config", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-
-    const limitRes = await fetch("/api/settings/daily-use-limit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        limit: document.getElementById("daily-use-limit").value,
-      }),
-    });
-    if (tzRes.ok && confRes.ok && limitRes.ok) {
-      alert("Settings saved successfully.");
-      location.reload();
+  function updateDisplay(type, c) {
+    const display = document.getElementById(`${type}-display`);
+    if (c.mode === "fixed") {
+      display.textContent = `Fixed day · ${c.min} days`;
     } else {
-      alert("Error saving settings.");
+      display.textContent = `Range · ${c.min} to ${c.max} days`;
     }
+  }
+
+  function editSection(type) {
+    document.getElementById(`${type}-view`).style.display = "none";
+    document.getElementById(`${type}-edit`).style.display = "block";
+
+    if (type !== "reservation") {
+      const c = originalConfig.config[type];
+      document.querySelector(
+        `input[name="${type}-mode"][value="${c.mode}"]`,
+      ).checked = true;
+      toggleMode(type, c.mode);
+      if (c.mode === "fixed") {
+        document.getElementById(`${type}-fixed`).value = c.min;
+      } else {
+        document.getElementById(`${type}-min`).value = c.min;
+        document.getElementById(`${type}-max`).value = c.max;
+      }
+    } else {
+      document.getElementById("daily-use-limit").value =
+        originalConfig.limitData.limit;
+    }
+  }
+
+  function cancelEdit(type) {
+    document.getElementById(`${type}-view`).style.display = "block";
+    document.getElementById(`${type}-edit`).style.display = "none";
+  }
+
+  async function saveSection(type) {
+    if (type === "reservation") {
+      const limit = document.getElementById("daily-use-limit").value;
+      const res = await fetch("/api/settings/daily-use-limit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit }),
+      });
+      if (res.ok) {
+        originalConfig.limitData.limit = limit;
+        document.getElementById("reservation-display").textContent =
+          `${limit} campaigns per email account per day`;
+        cancelEdit(type);
+      } else {
+        alert("Error saving reservation limit.");
+      }
+    } else {
+      const data = { [type]: getModeData(type) };
+      const res = await fetch("/api/settings/follow-up-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (res.ok) {
+        originalConfig.config[type] = data[type];
+        updateDisplay(type, data[type]);
+        cancelEdit(type);
+      } else {
+        alert("Error saving follow-up settings.");
+      }
+    }
+  }
+
+  async function saveTimezone() {
+    const timezone = document.getElementById("timezone-select").value;
+    const res = await fetch("/api/settings/business-timezone", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timezone }),
+    });
+    if (res.ok) alert("Timezone saved.");
+    else alert("Error saving timezone.");
   }
 
   function getModeData(type) {
