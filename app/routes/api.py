@@ -472,60 +472,28 @@ def delete_domain(id):
 
 @bp.route('/domains/import', methods=['POST'])
 def import_domains():
-    from app.models.models import Domain, Campaign, CampaignStatus
-    data = request.json.get('domains', [])
-    try:
-        for item in data:
-            # Handle empty/invalid price
-            price_raw = item.get('price')
-            price = int(price_raw) if (price_raw and str(price_raw).isdigit()) else 0
+    campaign_history_csv = request.files.get('campaign_history_csv')
+    email_usage_csv = request.files.get('email_usage_csv')
 
-            # Handle empty/invalid sequence. Omitted or invalid sequence means
-            # the domain is "not started" (0). A provided/castable sequence is
-            # used only when the domain is explicitly started.
-            seq_raw = item.get('seq')
-            seq = int(seq_raw) if (seq_raw is not None and str(seq_raw).isdigit() and int(seq_raw) > 0) else 0
+    if not campaign_history_csv:
+        return jsonify({'error': 'Campaign History CSV is required.'}), 400
+    if not email_usage_csv:
+        return jsonify({'error': 'Email Usage CSV is required.'}), 400
 
-            # Handle expiry date safely
-            expiry_date = None
-            if item.get('expiry'):
-                try:
-                    expiry_date = datetime.strptime(str(item.get('expiry')), '%Y-%m-%d').date()
-                except ValueError:
-                    pass # Keep None if date is invalid
+    def is_csv_upload(file_storage):
+        filename = (file_storage.filename or '').lower()
+        content_type = (file_storage.content_type or '').lower()
+        return filename.endswith('.csv') or content_type == 'text/csv'
 
-            # Imported domains start Dormant (never worked on) unless the import
-            # explicitly provides an ACTIVE/status AND a real sequence. Sequence 0
-            # means "not started". If a status is given but no real sequence, we
-            # still require a started sequence before treating it as active.
-            status_resolved = getattr(
-                CampaignStatus,
-                str(item.get('status', 'DORMANT')).upper(),
-                CampaignStatus.DORMANT,
-            )
-            # Only keep an imported sequence/status as a genuine start.
-            if seq <= 0:
-                status_resolved = CampaignStatus.DORMANT
-                price = 0
+    if not is_csv_upload(campaign_history_csv):
+        return jsonify({'error': 'Campaign History CSV must be a CSV file.'}), 400
+    if not is_csv_upload(email_usage_csv):
+        return jsonify({'error': 'Email Usage CSV must be a CSV file.'}), 400
 
-            new_dom = Domain(domain_name=item.get('domain'), expiry_date=expiry_date)
-            db.session.add(new_dom)
-            db.session.flush()
-
-            new_camp = Campaign(
-                domain_id=new_dom.id,
-                status=status_resolved,
-                start_date=datetime.utcnow(),
-                current_price=price,
-                current_sequence=seq
-            )
-            db.session.add(new_camp)
-        db.session.commit()
-        return jsonify({'success': True})
-    except Exception as e:
-        db.session.rollback()
-        print(f"Import Error: {e}")
-        return jsonify({'error': str(e)}), 500
+    return jsonify({
+        'success': True,
+        'message': 'Both CSV files were received successfully.',
+    })
 
 @bp.route('/domains/<int:id>/campaign-status', methods=['GET'])
 def get_campaign_status(id):
@@ -963,4 +931,3 @@ def unreserve_campaign(campaign_id):
         db.session.delete(res)
         db.session.commit()
     return jsonify({'success': True})
-

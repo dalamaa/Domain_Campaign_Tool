@@ -7,6 +7,10 @@ let allEmailAccounts = [];
 let emailWasEdited = false;
 let originalEmailCodes = [];
 let businessToday = null;
+let bulkImportFiles = {
+  campaignHistory: null,
+  emailUsage: null,
+};
 
 async function fetchBusinessInfo() {
   const res = await fetch("/api/settings/business-info");
@@ -350,70 +354,90 @@ function escapeHtml(text) {
   div.innerHTML;
 }
 
-// 1. Improved CSV parsing using a more flexible approach in domains.js
-async function handleCSVImport(event) {
-  const file = event.target.files[0];
-  const reader = new FileReader();
-  reader.onload = async (e) => {
-    const text = e.target.result;
-    const lines = text.split(/\r?\n/).filter((line) => line.trim() !== "");
+function openBulkImportModal() {
+  bulkImportFiles.campaignHistory = null;
+  bulkImportFiles.emailUsage = null;
+  document.getElementById("campaign-history-csv").value = "";
+  document.getElementById("email-usage-csv").value = "";
+  document.getElementById("campaign-history-csv-name").textContent =
+    "No file selected";
+  document.getElementById("email-usage-csv-name").textContent =
+    "No file selected";
+  document.getElementById("bulk-import-error").textContent = "";
+  document.getElementById("bulk-import-continue-btn").disabled = true;
+  document.getElementById("bulk-import-modal").style.display = "block";
+}
 
-    // Detect delimiter (comma, semicolon, or tab)
-    const firstLine = lines[0];
-    const delimiter = [",", "\t", ";"].reduce(
-      (prev, curr) =>
-        firstLine.split(curr).length > prev.split(curr).length ? curr : prev,
-      ",",
+function closeBulkImportModal() {
+  document.getElementById("bulk-import-modal").style.display = "none";
+  document.getElementById("bulk-import-error").textContent = "";
+}
+
+function updateBulkImportContinueState() {
+  const btn = document.getElementById("bulk-import-continue-btn");
+  if (btn) {
+    btn.disabled = !(
+      bulkImportFiles.campaignHistory && bulkImportFiles.emailUsage
     );
-    const headers = firstLine
-      .split(delimiter)
-      .map((h) => h.trim().toLowerCase());
-    const fieldMap = {
-      domain: headers.findIndex((h) => h === "domain"),
-      expiry: headers.findIndex((h) => h === "expiry"),
-      status: headers.findIndex((h) => h === "status"),
-      price: headers.findIndex((h) => h === "price"),
-      lastContact: headers.findIndex((h) => h === "last contact"),
-      seq: headers.findIndex((h) => h === "seq"),
-      lastAction: headers.findIndex((h) => h === "last action"),
-    };
+  }
+}
 
-    if (fieldMap.domain === -1) {
-      alert("Import failed. Required column missing: Domain.");
-      return;
-    }
+function handleBulkImportFileChange(type, event) {
+  const file = event.target.files[0] || null;
+  bulkImportFiles[type] = file;
 
-    const processed = lines.slice(1).map((line) => {
-      const cols = line.split(delimiter).map((c) => c.trim());
-      return {
-        domain: cols[fieldMap.domain],
-        expiry: fieldMap.expiry !== -1 ? cols[fieldMap.expiry] : null,
-        status: fieldMap.status !== -1 ? cols[fieldMap.status] : null,
-        price: fieldMap.price !== -1 ? cols[fieldMap.price] : null,
-        lastContact:
-          fieldMap.lastContact !== -1 ? cols[fieldMap.lastContact] : null,
-        seq: fieldMap.seq !== -1 ? cols[fieldMap.seq] : null,
-        lastAction:
-          fieldMap.lastAction !== -1 ? cols[fieldMap.lastAction] : null,
-      };
-    });
+  const nameEl =
+    type === "campaignHistory"
+      ? document.getElementById("campaign-history-csv-name")
+      : document.getElementById("email-usage-csv-name");
+  if (nameEl) {
+    nameEl.textContent = file ? file.name : "No file selected";
+  }
+  document.getElementById("bulk-import-error").textContent = "";
+  updateBulkImportContinueState();
+}
 
-    // Send to backend
-    const res = await fetch("/api/domains/import", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ domains: processed }),
-    });
+function isCsvFile(file) {
+  if (!file) return false;
+  const name = (file.name || "").toLowerCase();
+  const type = (file.type || "").toLowerCase();
+  return name.endsWith(".csv") || type === "text/csv";
+}
 
-    if (res.ok) {
-      alert("Successfully imported records.");
-      renderDomainTable();
-    } else {
-      const err = await res.json();
-      alert("Import failed: " + (err.error || "Unknown server error"));
-    }
-  };
-  reader.readAsText(file);
+async function submitBulkImport() {
+  const campaignHistory = bulkImportFiles.campaignHistory;
+  const emailUsage = bulkImportFiles.emailUsage;
+
+  if (!campaignHistory || !emailUsage) {
+    document.getElementById("bulk-import-error").textContent =
+      "Both CSV files are required.";
+    return;
+  }
+
+  if (!isCsvFile(campaignHistory) || !isCsvFile(emailUsage)) {
+    document.getElementById("bulk-import-error").textContent =
+      "Both files must be CSV files.";
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("campaign_history_csv", campaignHistory);
+  formData.append("email_usage_csv", emailUsage);
+
+  const res = await fetch("/api/domains/import", {
+    method: "POST",
+    body: formData,
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (res.ok) {
+    alert("Both CSV files were received successfully.");
+    closeBulkImportModal();
+  } else {
+    document.getElementById("bulk-import-error").textContent =
+      data.error || "Import failed.";
+  }
 }
 
 // Update domains.js to support the new selective edit modal
