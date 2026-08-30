@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
 from app.models.models import db, EmailAccount
 from sqlalchemy import asc
+import csv
 import re
 from sqlalchemy import desc
 from datetime import datetime, timedelta
@@ -490,9 +491,27 @@ def import_domains():
     if not is_csv_upload(email_usage_csv):
         return jsonify({'error': 'Email Usage CSV must be a CSV file.'}), 400
 
+    from app.services.bulk_import_service import match_bulk_import_files
+    try:
+        result = match_bulk_import_files(campaign_history_csv, email_usage_csv)
+    except (UnicodeDecodeError, csv.Error) as exc:
+        return jsonify({'error': f'Unable to parse CSV files: {exc}'}), 400
+
+    if not result['ok']:
+        return jsonify({
+            'success': False,
+            'error': result['error'],
+            'duplicates': result['duplicates'],
+        }), 400
+
     return jsonify({
         'success': True,
-        'message': 'Both CSV files were received successfully.',
+        'message': 'Both CSV files were matched successfully.',
+        'matching': {
+            'results': result['results'],
+            'duplicates': result['duplicates'],
+            'summary': result['summary'],
+        },
     })
 
 @bp.route('/domains/<int:id>/campaign-status', methods=['GET'])

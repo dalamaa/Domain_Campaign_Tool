@@ -364,6 +364,10 @@ function openBulkImportModal() {
   document.getElementById("email-usage-csv-name").textContent =
     "No file selected";
   document.getElementById("bulk-import-error").textContent = "";
+  document.getElementById("bulk-import-review").style.display = "none";
+  document.getElementById("bulk-import-summary").textContent = "";
+  document.getElementById("bulk-import-unmatched").innerHTML = "";
+  document.getElementById("bulk-import-matched").innerHTML = "";
   document.getElementById("bulk-import-continue-btn").disabled = true;
   document.getElementById("bulk-import-modal").style.display = "block";
 }
@@ -432,12 +436,51 @@ async function submitBulkImport() {
   const data = await res.json().catch(() => ({}));
 
   if (res.ok) {
-    alert("Both CSV files were received successfully.");
-    closeBulkImportModal();
+    renderBulkImportReview(data.matching);
   } else {
-    document.getElementById("bulk-import-error").textContent =
-      data.error || "Import failed.";
+    const errorEl = document.getElementById("bulk-import-error");
+    errorEl.textContent = data.error || "Import failed.";
+    if (data.duplicates && data.duplicates.length) {
+      const details = document.createElement("div");
+      data.duplicates.forEach((duplicate) => {
+        const item = document.createElement("div");
+        const rows = duplicate.rows.map((row) => row.row).join(", ");
+        item.textContent = `${duplicate.normalized_domain}: CSV rows ${rows}`;
+        details.appendChild(item);
+      });
+      errorEl.appendChild(details);
+    }
   }
+}
+
+function renderBulkImportReview(matching) {
+  const summary = matching.summary;
+  document.getElementById("bulk-import-summary").textContent =
+    `Campaigns found: ${summary.campaigns_found} | Matched: ${summary.matched} | ` +
+    `Unmatched: ${summary.unmatched} | Duplicates: ${summary.duplicates}`;
+
+  const unmatched = document.getElementById("bulk-import-unmatched");
+  unmatched.innerHTML = "";
+  matching.results
+    .filter((result) => !result.matched)
+    .forEach((result) => {
+      const item = document.createElement("li");
+      item.textContent = result.domain;
+      unmatched.appendChild(item);
+    });
+
+  const matched = document.getElementById("bulk-import-matched");
+  matched.innerHTML = "";
+  matching.results
+    .filter((result) => result.matched)
+    .forEach((result) => {
+      const item = document.createElement("div");
+      item.textContent = `✓ ${result.domain} ${result.email_usage_codes.length} email accounts`;
+      matched.appendChild(item);
+    });
+
+  document.getElementById("bulk-import-review").style.display = "block";
+  document.getElementById("bulk-import-continue-btn").disabled = true;
 }
 
 // Update domains.js to support the new selective edit modal

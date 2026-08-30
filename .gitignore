@@ -7,3 +7,4 @@ __pycache__/
 .coverage
 instance/
 .DS_Store
+csv_files/

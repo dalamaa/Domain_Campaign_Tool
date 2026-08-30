@@ -314,9 +314,12 @@
   style="
     display: none;
     position: fixed;
-    top: 15%;
+    top: 5%;
     left: 20%;
     width: 60%;
+    max-height: 90vh;
+    box-sizing: border-box;
+    overflow: hidden;
     background: white;
     padding: 20px;
     border: 1px solid #ccc;
@@ -345,6 +348,17 @@
     <div id="email-usage-csv-name" style="margin-top: 6px; color: #555;">No file selected</div>
   </div>
   <div id="bulk-import-error" style="color: #b00020; margin-bottom: 12px;"></div>
+  <div id="bulk-import-review" style="display: none; margin-bottom: 12px;">
+    <h4>Matching Review</h4>
+    <div id="bulk-import-summary"></div>
+    <div style="max-height: calc(90vh - 250px); overflow-y: auto; margin-top: 10px;">
+      <details>
+        <summary>View unmatched domains</summary>
+        <ul id="bulk-import-unmatched"></ul>
+      </details>
+      <div id="bulk-import-matched" style="margin-top: 10px;"></div>
+    </div>
+  </div>
   <button id="bulk-import-continue-btn" onclick="submitBulkImport()" disabled>
     Continue
   </button>
