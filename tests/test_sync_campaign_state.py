@@ -1,10 +1,11 @@
 import pytest
 from app.models.models import db, Domain, Campaign, CampaignStatus, ActionType, CampaignHistory
 from datetime import datetime, date
+from app.services.time_service import get_business_today
 
 def test_add_campaign_action_synchronizes_state(client):
     # 1. Create a campaign
-    new_dom = Domain(domain_name="testcampaign.com", expiry_date=date.today())
+    new_dom = Domain(domain_name="testcampaign.com", expiry_date=get_business_today())
     db.session.add(new_dom)
     db.session.flush()
     new_camp = Campaign(
@@ -44,7 +45,7 @@ def test_add_campaign_action_synchronizes_state(client):
     camp = Campaign.query.get(campaign_id)
     assert camp.current_sequence == 1
     assert camp.current_price == 400
-    assert camp.last_contact_date == date.today()
+    assert camp.last_contact_date == get_business_today()
     assert camp.last_action == 'FIRST_OUTREACH'
 
     # 5. Verifies the Domains API now exposes the updated values

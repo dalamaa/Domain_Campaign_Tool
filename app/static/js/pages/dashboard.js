@@ -43,7 +43,7 @@ async function renderTodaysCampaigns() {
     .map(
       (c) => `
     <tr>
-      <td><a href="/domain/${c.campaign_id}">${c.domain}</a></td>
+      <td><a href="/domains?history_id=${c.campaign_id}&domain=${encodeURIComponent(c.domain)}" target="_blank" rel="noopener noreferrer">${c.domain}</a></td>
       <td>${c.status}</td>
       <td>${c.sequence}</td>
       <td>$${c.current_price}</td>

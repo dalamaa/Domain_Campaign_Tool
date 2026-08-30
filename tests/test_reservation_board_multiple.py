@@ -1,8 +1,7 @@
 import pytest
 from app.models.models import db, EmailAccount, Domain, Campaign, CampaignStatus, Reservation, ReservationEmailLink, ReservationStatus
-from datetime import date
+from app.services.time_service import get_business_today
 from flask import json
-
 def test_reservation_board_multiple_reservations(client, app):
     with app.app_context():
         # Setup: 2 email accounts, 2 campaigns, daily limit = 2
@@ -16,14 +15,15 @@ def test_reservation_board_multiple_reservations(client, app):
         db.session.add_all([dom1, dom2])
         db.session.flush()
         
-        camp1 = Campaign(domain_id=dom1.id, status=CampaignStatus.ACTIVE, start_date=date.today(), current_price=100, current_sequence=1)
-        camp2 = Campaign(domain_id=dom2.id, status=CampaignStatus.ACTIVE, start_date=date.today(), current_price=100, current_sequence=1)
+        today = get_business_today()
+        camp1 = Campaign(domain_id=dom1.id, status=CampaignStatus.ACTIVE, start_date=today, current_price=100, current_sequence=1)
+        camp2 = Campaign(domain_id=dom2.id, status=CampaignStatus.ACTIVE, start_date=today, current_price=100, current_sequence=1)
         db.session.add_all([camp1, camp2])
         db.session.flush()
         
         # Setup reservations
-        res1 = Reservation(campaign_id=camp1.id, date=date.today(), status=ReservationStatus.RESERVED)
-        res2 = Reservation(campaign_id=camp2.id, date=date.today(), status=ReservationStatus.RESERVED)
+        res1 = Reservation(campaign_id=camp1.id, date=today, status=ReservationStatus.RESERVED)
+        res2 = Reservation(campaign_id=camp2.id, date=today, status=ReservationStatus.RESERVED)
         db.session.add_all([res1, res2])
         db.session.flush()
         
@@ -44,3 +44,4 @@ def test_reservation_board_multiple_reservations(client, app):
         assert 'floridacolocation.com' in m04['reserved_domains']
         assert 'breavva.com' in m04['reserved_domains']
         assert len(m04['reserved_domains']) == 2
+

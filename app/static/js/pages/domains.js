@@ -834,4 +834,15 @@ async function saveEditAction(campaignId, seq) {
 }
 
 // Render the table on page load
-document.addEventListener("DOMContentLoaded", renderDomainTable);
+document.addEventListener("DOMContentLoaded", async () => {
+  await renderDomainTable();
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const historyId = urlParams.get("history_id");
+  const domain = urlParams.get("domain");
+
+  if (historyId && domain) {
+    // History modal expects numeric ID, found in domains array
+    openHistoryModal(Number(historyId), domain);
+  }
+});

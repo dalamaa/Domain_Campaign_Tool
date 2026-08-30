@@ -1,6 +1,6 @@
 import pytest
 from app.models.models import db, EmailAccount, Domain, Campaign, CampaignStatus, Reservation, ReservationEmailLink, ReservationStatus
-from datetime import date
+from app.services.time_service import get_business_today
 from flask import json
 from app.services.settings_service import update_daily_use_limit
 
@@ -17,8 +17,9 @@ def test_reservation_conflict_alert_multiple_domains(client, app):
         db.session.add_all([dom1, dom2])
         db.session.flush()
         
-        camp1 = Campaign(domain_id=dom1.id, status=CampaignStatus.ACTIVE, start_date=date.today(), current_price=100, current_sequence=1)
-        camp2 = Campaign(domain_id=dom2.id, status=CampaignStatus.ACTIVE, start_date=date.today(), current_price=100, current_sequence=1)
+        today = get_business_today()
+        camp1 = Campaign(domain_id=dom1.id, status=CampaignStatus.ACTIVE, start_date=today, current_price=100, current_sequence=1)
+        camp2 = Campaign(domain_id=dom2.id, status=CampaignStatus.ACTIVE, start_date=today, current_price=100, current_sequence=1)
         db.session.add_all([camp1, camp2])
         db.session.flush()
 
@@ -31,8 +32,8 @@ def test_reservation_conflict_alert_multiple_domains(client, app):
             db.session.add(HistoryEmailUsed(history_id=hist.id, email_code='M04'))
 
         # Reserve for camp1 and camp2 (limit = 2)
-        res1 = Reservation(campaign_id=camp1.id, date=date.today(), status=ReservationStatus.RESERVED)
-        res2 = Reservation(campaign_id=camp2.id, date=date.today(), status=ReservationStatus.RESERVED)
+        res1 = Reservation(campaign_id=camp1.id, date=today, status=ReservationStatus.RESERVED)
+        res2 = Reservation(campaign_id=camp2.id, date=today, status=ReservationStatus.RESERVED)
         db.session.add_all([res1, res2])
         db.session.flush()
         db.session.add(ReservationEmailLink(reservation_id=res1.id, email_code='M04'))
@@ -43,7 +44,7 @@ def test_reservation_conflict_alert_multiple_domains(client, app):
         dom3 = Domain(domain_name="third.com")
         db.session.add(dom3)
         db.session.flush()
-        camp3 = Campaign(domain_id=dom3.id, status=CampaignStatus.ACTIVE, start_date=date.today(), current_price=100, current_sequence=1)
+        camp3 = Campaign(domain_id=dom3.id, status=CampaignStatus.ACTIVE, start_date=today, current_price=100, current_sequence=1)
         db.session.add(camp3)
         db.session.flush()
         hist3 = CampaignHistory(campaign_id=camp3.id, sequence=1, action_type=ActionType.FIRST_OUTREACH, price_after=100)
@@ -60,3 +61,4 @@ def test_reservation_conflict_alert_multiple_domains(client, app):
         # Verify both domains in alert
         assert 'floridacolocation.com' in details
         assert 'breavva.com' in details
+
