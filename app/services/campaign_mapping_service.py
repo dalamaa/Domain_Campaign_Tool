@@ -130,6 +130,7 @@ def build_campaign_mapping_preview(history_file, matching, domains, campaigns, h
             "existing_campaigns": len(campaigns_by_domain.get(domain_by_key[key].id, [])) if domain_by_key.get(key) else 0,
             "proposed_status": base.get("status"), "proposed_current_sequence": base.get("current_sequence", 0),
             "proposed_current_price": base.get("current_price", 0), "last_contact": last_contact,
+            "expiry_date": _parse_date(row[indexes["expiry"]]) if indexes["expiry"] is not None and indexes["expiry"] < len(row) and row[indexes["expiry"]].strip() else None,
             "start_date": start_date, "start_date_status": "UNKNOWN_START_DATE" if start_date is None else "KNOWN",
             "historical_progression": base.get("rows", []),
             "email_usage_codes": result.get("email_usage_codes", []), "warnings": warnings,
