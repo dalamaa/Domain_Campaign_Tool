@@ -1,4 +1,3 @@
-from apscheduler.schedulers.background import BackgroundScheduler
 from app.models.models import db, Setting, Campaign, Domain, CampaignStatus
 from datetime import date
 import os
@@ -18,6 +17,12 @@ def check_domain_expiries():
         db.session.commit()
 
 def init_scheduler(app):
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+    except ImportError:
+        app.logger.warning("APScheduler unavailable; scheduler not started.")
+        return
+
     # Only start in one process (prevent multi-worker issues in dev)
     # WERKZEUG_RUN_MAIN is true in reloader, None if started directly
     if os.environ.get('WERKZEUG_RUN_MAIN') == 'false':
@@ -40,4 +45,3 @@ def init_scheduler(app):
             )
         
         scheduler.start()
-

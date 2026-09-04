@@ -314,12 +314,14 @@
   style="
     display: none;
     position: fixed;
+    height: 90vh;
     top: 5%;
     left: 20%;
     width: 60%;
     max-height: 90vh;
     box-sizing: border-box;
     overflow: hidden;
+    flex-direction: column;
     background: white;
     padding: 20px;
     border: 1px solid #ccc;
@@ -348,15 +350,15 @@
     <div id="email-usage-csv-name" style="margin-top: 6px; color: #555;">No file selected</div>
   </div>
   <div id="bulk-import-error" style="color: #b00020; margin-bottom: 12px;"></div>
-  <div id="bulk-import-review" style="display: none; margin-bottom: 12px;">
-    <h4>Matching Review</h4>
-    <div id="bulk-import-summary"></div>
-    <div id="bulk-import-validation" style="margin-top: 10px;">
-      <strong>Email Account Validation</strong>
-      <div id="bulk-import-invalid"></div>
-      <div id="bulk-import-conflicts"></div>
-    </div>
-    <div style="max-height: calc(90vh - 250px); overflow-y: auto; margin-top: 10px;">
+  <div style="flex: 1 1 auto; min-height: 0; overflow-y: auto; margin-top: 10px;">
+    <div id="bulk-import-review" style="display: none; margin-bottom: 12px;">
+      <h4>Matching Review</h4>
+      <div id="bulk-import-summary"></div>
+      <div id="bulk-import-validation" style="margin-top: 10px;">
+        <strong>Email Account Validation</strong>
+        <div id="bulk-import-invalid"></div>
+        <div id="bulk-import-conflicts"></div>
+      </div>
       <details>
         <summary id="bulk-import-unmatched-summary">View unmatched domains</summary>
         <ul id="bulk-import-unmatched"></ul>
@@ -366,12 +368,15 @@
         <div id="bulk-import-matched"></div>
       </details>
     </div>
+    <div id="bulk-import-mapping-preview" style="display: none; margin-bottom: 12px;"></div>
   </div>
-  <div id="bulk-import-blocked-reason" style="color: #b00020; margin-bottom: 8px;"></div>
-  <button id="bulk-import-continue-btn" onclick="submitBulkImport()" disabled>
-    Review matching
-  </button>
-  <button onclick="closeBulkImportModal()">Cancel</button>
+  <div style="flex: 0 0 auto; padding-top: 8px;">
+    <div id="bulk-import-blocked-reason" style="color: #b00020; margin-bottom: 8px;"></div>
+    <button id="bulk-import-continue-btn" onclick="submitBulkImport()" disabled>
+      Review matching
+    </button>
+    <button onclick="closeBulkImportModal()">Cancel</button>
+  </div>
 </div>
 
 <script src="{{ url_for('static', filename='js/shared.js') }}"></script>

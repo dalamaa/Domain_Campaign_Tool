@@ -2,7 +2,8 @@ from flask import Flask
 from flask_migrate import Migrate
 from config import Config
 from app.models.models import db
-from app.scheduler import init_scheduler
+import os
+import sys
 
 migrate = Migrate()
 
@@ -13,11 +14,16 @@ def create_app(config_class=Config):
     db.init_app(app)
     migrate.init_app(app, db)
 
-    # Initialize scheduler
+    # Migrations must be able to load the app without starting the scheduler.
     with app.app_context():
         try:
-            # We skip scheduler initialization during testing to avoid db conflicts
-            if not app.config.get('TESTING'):
+            flask_command = next((arg for arg in sys.argv[1:] if not arg.startswith('-')), None)
+            is_migration_command = (
+                os.environ.get('FLASK_RUN_FROM_CLI') == 'true'
+                and flask_command == 'db'
+            )
+            if not app.config.get('TESTING') and not is_migration_command:
+                from app.scheduler import init_scheduler
                 init_scheduler(app)
         except Exception as e:
             print(f"Scheduler failed to start: {e}")

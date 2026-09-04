@@ -377,11 +377,13 @@ function openBulkImportModal() {
   document.getElementById("bulk-import-invalid").textContent = "";
   document.getElementById("bulk-import-conflicts").innerHTML = "";
   document.getElementById("bulk-import-blocked-reason").textContent = "";
+  document.getElementById("bulk-import-mapping-preview").style.display = "none";
+  document.getElementById("bulk-import-mapping-preview").innerHTML = "";
   const actionButton = document.getElementById("bulk-import-continue-btn");
   actionButton.disabled = true;
   actionButton.textContent = "Review matching";
   actionButton.onclick = submitBulkImport;
-  document.getElementById("bulk-import-modal").style.display = "block";
+  document.getElementById("bulk-import-modal").style.display = "flex";
 }
 
 function closeBulkImportModal() {
@@ -599,8 +601,52 @@ function continueBulkImportReview() {
   }
   const { ready } = counts;
   if (ready.length > 0) {
-    alert(`${ready.length} campaigns are ready for the next stage.`);
+    const formData = new FormData();
+    formData.append("campaign_history_csv", bulkImportFiles.campaignHistory);
+    formData.append("email_usage_csv", bulkImportFiles.emailUsage);
+    formData.append("preview_mapping", "1");
+    formData.append("conflict_selections", JSON.stringify(bulkImportConflictSelections));
+    fetch("/api/domains/import", { method: "POST", body: formData })
+      .then((response) => response.json().then((data) => ({ response, data })))
+      .then(({ response, data }) => {
+        if (!response.ok) {
+          document.getElementById("bulk-import-error").textContent = data.error || "Mapping preview failed.";
+          return;
+        }
+        renderCampaignMappingPreview(data.mapping);
+      });
   }
+}
+
+function renderCampaignMappingPreview(mapping) {
+  document.querySelectorAll("#bulk-import-review details").forEach((details) => {
+    details.open = false;
+  });
+  const container = document.getElementById("bulk-import-mapping-preview");
+  container.innerHTML = "<h4>Campaign Mapping Preview</h4>";
+  const summary = document.createElement("div");
+  summary.textContent = Object.entries(mapping.summary)
+    .map(([classification, count]) => `${classification}: ${count}`)
+    .join(" | ");
+  container.appendChild(summary);
+  const details = document.createElement("details");
+  details.open = false;
+  const label = document.createElement("summary");
+  label.textContent = `View mapping details (${mapping.results.length})`;
+  details.appendChild(label);
+  const list = document.createElement("div");
+  mapping.results.forEach((item) => {
+    const row = document.createElement("div");
+    row.style.marginTop = "8px";
+    row.textContent = `${item.domain} | ${item.classification} | ${item.proposed_status || ""} | ` +
+      `Sequence ${item.proposed_current_sequence} | Price ${item.proposed_current_price} | ` +
+      `Last Contact ${item.last_contact || "UNKNOWN"} | Start ${item.start_date || "UNKNOWN_START_DATE"}`;
+    if (item.warnings.length) row.textContent += ` | ${item.warnings.join("; ")}`;
+    list.appendChild(row);
+  });
+  details.appendChild(list);
+  container.appendChild(details);
+  container.style.display = "block";
 }
 
 // Update domains.js to support the new selective edit modal

@@ -44,7 +44,7 @@ class Campaign(db.Model):
     id = db.Column(Integer, primary_key=True)
     domain_id = db.Column(Integer, ForeignKey('domains.id'), nullable=False, index=True)
     status = db.Column(Enum(CampaignStatus), nullable=False, index=True)
-    start_date = db.Column(Date, nullable=False)
+    start_date = db.Column(Date, nullable=True)
     last_contact_date = db.Column(Date)
     current_price = db.Column(Integer, nullable=False)
     current_sequence = db.Column(Integer, nullable=False)
@@ -134,4 +134,3 @@ class Setting(db.Model):
     __tablename__ = 'settings'
     key = db.Column(String, primary_key=True)
     value = db.Column(String)
-

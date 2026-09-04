@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 from app.models.models import db, EmailAccount
 from sqlalchemy import asc
 import csv
+import json
 import re
 from sqlalchemy import desc
 from datetime import datetime, timedelta
@@ -506,6 +507,25 @@ def import_domains():
             'error': result['error'],
             'duplicates': result['duplicates'],
         }), 400
+
+    if request.form.get('preview_mapping') == '1':
+        from app.models.models import Domain, Campaign, CampaignHistory
+        from app.services.campaign_mapping_service import build_campaign_mapping_preview
+        selections = json.loads(request.form.get('conflict_selections', '{}'))
+        for item in result['results']:
+            selected = selections.get(item['normalized_domain'])
+            if selected is not None and item['email_usage_records']:
+                records = item['email_usage_records']
+                if isinstance(selected, int) and 0 <= selected < len(records):
+                    item['email_usage_codes'] = records[selected]['email_usage_codes']
+        mapping = build_campaign_mapping_preview(
+            campaign_history_csv,
+            result,
+            Domain.query.all(),
+            Campaign.query.all(),
+            CampaignHistory.query.all(),
+        )
+        return jsonify({'success': True, 'mapping': mapping})
 
     return jsonify({
         'success': True,

@@ -1,6 +1,8 @@
 import io
+from types import SimpleNamespace
 
 from app.services.bulk_import_service import match_bulk_import_files
+from app.services.campaign_mapping_service import build_campaign_mapping_preview, parse_price
 
 from app.models.models import db, Domain, Campaign, EmailAccount
 
@@ -300,3 +302,110 @@ def test_step3_endpoint_validates_codes_read_only_and_does_not_import(client, ap
     assert response.get_json()["matching"]["can_proceed"] is True
     with app.app_context():
         assert (Domain.query.count(), Campaign.query.count(), EmailAccount.query.count()) == before
+
+
+def mapping_csv(*values, last_contact="8/27/2026", start_date=""):
+    header = "Domain,Expiry Date,Last Contact,Sequence Start Date,Email Sent #1,Email Sent #2,Email Sent #3,Email Sent #4\n"
+    row = "example.com,10/3/2026,{},{},{}, {}, {}, {}\n".format(
+        last_contact, start_date, *(values + ("",) * (4 - len(values)))
+    )
+    return io.BytesIO((header + row).encode("utf-8"))
+
+
+def make_mapping_result(codes=None, matched=True):
+    return {
+        "results": [{
+            "normalized_domain": "example.com",
+            "matched": matched,
+            "email_usage_codes": codes or [],
+            "email_usage_records": [],
+        }]
+    }
+
+
+def map_preview(content, matching=None, domains=None, campaigns=None, histories=None):
+    return build_campaign_mapping_preview(
+        io.BytesIO(content.getvalue()),
+        matching or make_mapping_result(["M01"]),
+        domains or [], campaigns or [], histories or [],
+    )
+
+
+def test_step4b_price_parser_ignores_np_prefixes():
+    assert parse_price("N350") == 350
+    assert parse_price("P295") == 295
+
+
+def test_step4b_action_mapping_and_latest_date():
+    result = map_preview(mapping_csv("N350", "P350", "P295"))
+    rows = result["results"][0]["historical_progression"]
+    assert [row["action_type"] for row in rows] == [
+        "FIRST_OUTREACH", "FIRST_FOLLOW_UP", "PRICE_REDUCTION"
+    ]
+    assert [row["price_after"] for row in rows] == [350, 350, 295]
+    assert rows[0]["action_date"] == "UNKNOWN"
+    assert rows[1]["action_date"] == "UNKNOWN"
+    assert rows[2]["action_date"] == "2026-08-27"
+
+
+def test_step4b_follow_up_and_price_reduction_mapping():
+    result = map_preview(mapping_csv("N599", "P550", "P550", "P500"))
+    assert [row["action_type"] for row in result["results"][0]["historical_progression"]] == [
+        "FIRST_OUTREACH", "PRICE_REDUCTION", "FOLLOW_UP", "PRICE_REDUCTION"
+    ]
+
+
+def test_step4b_sequence_gap_is_invalid_source_data():
+    result = map_preview(mapping_csv("N599", "", "P499"))
+    assert result["results"][0]["classification"] == "INVALID_SOURCE_DATA"
+
+
+def test_step4b_malformed_price_is_invalid_source_data():
+    result = map_preview(mapping_csv("N5O0"))
+    assert result["results"][0]["classification"] == "INVALID_SOURCE_DATA"
+
+
+def test_step4b_blank_start_date_is_explicitly_unknown():
+    result = map_preview(mapping_csv("N350", start_date=""))
+    assert result["results"][0]["start_date"] is None
+    assert "UNKNOWN_START_DATE" in result["results"][0]["warnings"]
+    assert result["results"][0]["classification"] == "NEW"
+
+
+def test_step4b_new_and_safe_to_attach_classifications():
+    domain = SimpleNamespace(id=7, domain_name="example.com")
+    new_result = map_preview(mapping_csv("N350"))
+    attach_result = map_preview(mapping_csv("N350"), domains=[domain])
+    assert new_result["results"][0]["classification"] == "NEW"
+    assert attach_result["results"][0]["classification"] == "SAFE_TO_ATTACH"
+
+
+def test_step4b_safe_new_campaign_and_already_present_classifications():
+    domain = SimpleNamespace(id=7, domain_name="example.com")
+    campaign = SimpleNamespace(id=8, domain_id=7, current_sequence=0, current_price=0)
+    safe = map_preview(mapping_csv("N350"), domains=[domain], campaigns=[campaign])
+    assert safe["results"][0]["classification"] == "SAFE_NEW_CAMPAIGN"
+
+    campaign.current_sequence = 1
+    campaign.current_price = 350
+    history = SimpleNamespace(campaign_id=8)
+    present = map_preview(mapping_csv("N350"), domains=[domain], campaigns=[campaign], histories=[history])
+    assert present["results"][0]["classification"] == "ALREADY_PRESENT"
+
+
+def test_step4b_existing_progression_conflict_and_sold_marker():
+    domain = SimpleNamespace(id=7, domain_name="example.com")
+    campaign = SimpleNamespace(id=8, domain_id=7, current_sequence=1, current_price=300)
+    history = SimpleNamespace(campaign_id=8)
+    conflict = map_preview(mapping_csv("N350"), domains=[domain], campaigns=[campaign], histories=[history])
+    sold = map_preview(mapping_csv("sold"), domains=[domain])
+    assert conflict["results"][0]["classification"] == "CONFLICT_NEEDS_ATTENTION"
+    assert sold["results"][0]["classification"] == "SOLD_SOURCE_MARKER"
+    assert sold["results"][0]["proposed_status"] is None
+
+
+def test_step4b_email_usage_is_campaign_level_only():
+    result = map_preview(mapping_csv("N350"), matching=make_mapping_result(["M01", "M02"]))
+    item = result["results"][0]
+    assert item["email_usage_codes"] == ["M01", "M02"]
+    assert "history_email_used" not in item
