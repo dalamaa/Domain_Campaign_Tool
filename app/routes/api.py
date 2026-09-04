@@ -511,6 +511,7 @@ def import_domains():
     if request.form.get('preview_mapping') == '1':
         from app.models.models import Domain, Campaign, CampaignHistory
         from app.services.campaign_mapping_service import build_campaign_mapping_preview
+        from app.services.import_eligibility_service import build_import_eligibility
         selections = json.loads(request.form.get('conflict_selections', '{}'))
         for item in result['results']:
             selected = selections.get(item['normalized_domain'])
@@ -525,7 +526,8 @@ def import_domains():
             Campaign.query.all(),
             CampaignHistory.query.all(),
         )
-        return jsonify({'success': True, 'mapping': mapping})
+        eligibility = build_import_eligibility(mapping, result, selections)
+        return jsonify({'success': True, 'mapping': mapping, 'eligibility': eligibility})
 
     return jsonify({
         'success': True,

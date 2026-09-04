@@ -614,8 +614,43 @@ function continueBulkImportReview() {
           return;
         }
         renderCampaignMappingPreview(data.mapping);
+        renderImportEligibility(data.eligibility);
       });
   }
+}
+
+function renderImportEligibility(eligibility) {
+  const container = document.getElementById("bulk-import-eligibility");
+  const summaryOrder = ["READY_TO_IMPORT", "BLOCKED_NEEDS_ATTENTION", "INVALID_SOURCE_DATA", "SOLD_SOURCE_MARKER", "SKIP_UNMATCHED", "SKIP_ALREADY_PRESENT"];
+  container.innerHTML = "<h4>Final Import Eligibility</h4>";
+  const summary = document.createElement("div");
+  summary.textContent = summaryOrder.map((key) => `${key}: ${eligibility.summary[key] || 0}`).join(" | ");
+  container.appendChild(summary);
+  const details = document.createElement("details");
+  const label = document.createElement("summary");
+  label.textContent = `View eligibility details (${eligibility.results.length})`;
+  details.appendChild(label);
+  const list = document.createElement("div");
+  eligibility.results.forEach((item) => {
+    const row = document.createElement("div");
+    row.style.marginTop = "8px";
+    row.textContent = `${item.domain} | ${item.final_eligibility} | ${item.mapping_classification} | ` +
+      `${item.proposed_status || ""} | Sequence ${item.proposed_current_sequence} | Price ${item.proposed_current_price} | ` +
+      `Last Contact ${item.last_contact || "UNKNOWN"} | Start ${item.start_date || "UNKNOWN_START_DATE"} | ` +
+      `Email Accounts: ${(item.validated_campaign_email_codes || []).join(", ") || "NONE"}`;
+    const reasons = (item.blocking_reasons || []).concat(item.warnings || []);
+    if (reasons.length) row.textContent += ` | ${reasons.join("; ")}`;
+    list.appendChild(row);
+  });
+  details.appendChild(list);
+  container.appendChild(details);
+  container.style.display = "block";
+  const ready = eligibility.summary.READY_TO_IMPORT || 0;
+  const button = document.getElementById("bulk-import-continue-btn");
+  button.textContent = `${ready} campaigns ready for import`;
+  button.disabled = ready === 0;
+  button.onclick = () => alert("Final import is not implemented yet.");
+  document.getElementById("bulk-import-blocked-reason").textContent = ready === 0 ? "No campaigns are currently eligible." : "Only eligible campaigns will proceed; others remain skipped or blocked.";
 }
 
 function renderCampaignMappingPreview(mapping) {
