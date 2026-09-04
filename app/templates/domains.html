@@ -351,16 +351,25 @@
   <div id="bulk-import-review" style="display: none; margin-bottom: 12px;">
     <h4>Matching Review</h4>
     <div id="bulk-import-summary"></div>
+    <div id="bulk-import-validation" style="margin-top: 10px;">
+      <strong>Email Account Validation</strong>
+      <div id="bulk-import-invalid"></div>
+      <div id="bulk-import-conflicts"></div>
+    </div>
     <div style="max-height: calc(90vh - 250px); overflow-y: auto; margin-top: 10px;">
       <details>
-        <summary>View unmatched domains</summary>
+        <summary id="bulk-import-unmatched-summary">View unmatched domains</summary>
         <ul id="bulk-import-unmatched"></ul>
       </details>
-      <div id="bulk-import-matched" style="margin-top: 10px;"></div>
+      <details style="margin-top: 10px;">
+        <summary id="bulk-import-matched-summary">View matched domains</summary>
+        <div id="bulk-import-matched"></div>
+      </details>
     </div>
   </div>
+  <div id="bulk-import-blocked-reason" style="color: #b00020; margin-bottom: 8px;"></div>
   <button id="bulk-import-continue-btn" onclick="submitBulkImport()" disabled>
-    Continue
+    Review matching
   </button>
   <button onclick="closeBulkImportModal()">Cancel</button>
 </div>

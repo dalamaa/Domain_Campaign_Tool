@@ -493,7 +493,10 @@ def import_domains():
 
     from app.services.bulk_import_service import match_bulk_import_files
     try:
-        result = match_bulk_import_files(campaign_history_csv, email_usage_csv)
+        valid_email_codes = {account.code for account in EmailAccount.query.all()}
+        result = match_bulk_import_files(
+            campaign_history_csv, email_usage_csv, valid_email_codes
+        )
     except (UnicodeDecodeError, csv.Error) as exc:
         return jsonify({'error': f'Unable to parse CSV files: {exc}'}), 400
 
@@ -511,6 +514,7 @@ def import_domains():
             'results': result['results'],
             'duplicates': result['duplicates'],
             'summary': result['summary'],
+            'can_proceed': result['can_proceed'],
         },
     })
 

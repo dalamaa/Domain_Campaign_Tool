@@ -18,7 +18,7 @@ def _has_domain_header(row):
     return bool(row) and normalize_domain(row[0]) == "domain"
 
 
-def match_bulk_import_files(campaign_history_file, email_usage_file):
+def match_bulk_import_files(campaign_history_file, email_usage_file, valid_email_codes=None):
     history_rows = _read_rows(campaign_history_file)
     usage_rows = _read_rows(email_usage_file)
 
@@ -58,25 +58,56 @@ def match_bulk_import_files(campaign_history_file, email_usage_file):
             "duplicates": duplicate_domains,
         }
 
-    usage_codes = {}
+    usage_records = {}
     for row in usage_rows:
         if not row or not normalize_domain(row[0]):
             continue
         normalized = normalize_domain(row[0])
-        codes = usage_codes.setdefault(normalized, [])
-        codes.extend(cell.strip() for cell in row[1:] if cell.strip())
+        codes = [cell.strip() for cell in row[1:] if cell.strip()]
+        duplicate_codes = sorted({code for code in codes if codes.count(code) > 1})
+        signature = tuple(sorted(set(codes)))
+        records = usage_records.setdefault(normalized, {})
+        record = records.setdefault(signature, {
+            "email_usage_codes": list(dict.fromkeys(codes)),
+            "duplicate_email_codes": duplicate_codes,
+            "occurrences": 0,
+        })
+        record["occurrences"] += 1
 
     results = []
     for original, normalized in history_domains:
-        codes = usage_codes.get(normalized, [])
+        records = list(usage_records.get(normalized, {}).values())
+        for record in records:
+            record["invalid_email_codes"] = (
+                sorted(set(record["email_usage_codes"]) - valid_email_codes)
+                if valid_email_codes is not None else []
+            )
+            record["duplicate_record"] = record["occurrences"] > 1
+        distinct_records = len(records)
+        has_conflict = distinct_records > 1
+        has_invalid_codes = any(record["invalid_email_codes"] for record in records)
+        has_duplicate_codes = any(record["duplicate_email_codes"] for record in records)
         results.append({
             "domain": original,
             "normalized_domain": normalized,
-            "matched": normalized in usage_codes,
-            "email_usage_codes": codes,
+            "matched": bool(records),
+            "email_usage_codes": records[0]["email_usage_codes"] if distinct_records == 1 else [],
+            "email_usage_records": records,
+            "email_usage_status": (
+                "conflict" if has_conflict else
+                "invalid" if has_invalid_codes else
+                "duplicate" if records and records[0]["occurrences"] > 1 else
+                "valid" if records else "unmatched"
+            ),
+            "requires_conflict_selection": has_conflict,
+            "invalid_email_codes": sorted({code for record in records for code in record["invalid_email_codes"]}),
+            "duplicate_email_codes": sorted({code for record in records for code in record["duplicate_email_codes"]}),
         })
 
     matched = sum(1 for result in results if result["matched"])
+    invalid = sum(1 for result in results if result["invalid_email_codes"])
+    conflicts = sum(1 for result in results if result["requires_conflict_selection"])
+    can_proceed = not invalid and not conflicts
     return {
         "ok": True,
         "results": results,
@@ -86,5 +117,8 @@ def match_bulk_import_files(campaign_history_file, email_usage_file):
             "matched": matched,
             "unmatched": len(results) - matched,
             "duplicates": 0,
+            "invalid_email_accounts": invalid,
+            "conflicts": conflicts,
         },
+        "can_proceed": can_proceed,
     }

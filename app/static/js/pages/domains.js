@@ -11,6 +11,10 @@ let bulkImportFiles = {
   campaignHistory: null,
   emailUsage: null,
 };
+let bulkImportConflictSelections = {};
+const bulkImportState = {
+  matching: null,
+};
 
 async function fetchBusinessInfo() {
   const res = await fetch("/api/settings/business-info");
@@ -357,6 +361,8 @@ function escapeHtml(text) {
 function openBulkImportModal() {
   bulkImportFiles.campaignHistory = null;
   bulkImportFiles.emailUsage = null;
+  bulkImportConflictSelections = {};
+  bulkImportState.matching = null;
   document.getElementById("campaign-history-csv").value = "";
   document.getElementById("email-usage-csv").value = "";
   document.getElementById("campaign-history-csv-name").textContent =
@@ -368,13 +374,20 @@ function openBulkImportModal() {
   document.getElementById("bulk-import-summary").textContent = "";
   document.getElementById("bulk-import-unmatched").innerHTML = "";
   document.getElementById("bulk-import-matched").innerHTML = "";
-  document.getElementById("bulk-import-continue-btn").disabled = true;
+  document.getElementById("bulk-import-invalid").textContent = "";
+  document.getElementById("bulk-import-conflicts").innerHTML = "";
+  document.getElementById("bulk-import-blocked-reason").textContent = "";
+  const actionButton = document.getElementById("bulk-import-continue-btn");
+  actionButton.disabled = true;
+  actionButton.textContent = "Review matching";
+  actionButton.onclick = submitBulkImport;
   document.getElementById("bulk-import-modal").style.display = "block";
 }
 
 function closeBulkImportModal() {
   document.getElementById("bulk-import-modal").style.display = "none";
   document.getElementById("bulk-import-error").textContent = "";
+  document.getElementById("bulk-import-blocked-reason").textContent = "";
 }
 
 function updateBulkImportContinueState() {
@@ -434,9 +447,17 @@ async function submitBulkImport() {
   });
 
   const data = await res.json().catch(() => ({}));
+  console.log("IMPORT STATUS:", res.status, res.ok);
+  console.log("FULL API RESPONSE:", data);
+  console.log("API MATCHING:", data.matching);
 
   if (res.ok) {
-    renderBulkImportReview(data.matching);
+    console.log("API RESPONSE:", data);
+
+    bulkImportState.matching = data.matching;
+
+    console.log("AFTER API ASSIGNMENT:", bulkImportState.matching);
+    renderBulkImportReview();
   } else {
     const errorEl = document.getElementById("bulk-import-error");
     errorEl.textContent = data.error || "Import failed.";
@@ -453,34 +474,133 @@ async function submitBulkImport() {
   }
 }
 
-function renderBulkImportReview(matching) {
-  const summary = matching.summary;
-  document.getElementById("bulk-import-summary").textContent =
-    `Campaigns found: ${summary.campaigns_found} | Matched: ${summary.matched} | ` +
-    `Unmatched: ${summary.unmatched} | Duplicates: ${summary.duplicates}`;
+function renderBulkImportReview() {
+  updateBulkImportReviewState();
+}
 
-  const unmatched = document.getElementById("bulk-import-unmatched");
-  unmatched.innerHTML = "";
-  matching.results
+function getBulkImportReviewCounts() {
+  const matching = bulkImportState.matching;
+  if (!matching || !Array.isArray(matching.results)) {
+    return null;
+  }
+  const results = matching.results;
+  const unmatched = results.filter((result) => !result.matched);
+  const needsAttention = results.filter(
+    (result) =>
+      result.matched &&
+      (result.invalid_email_codes.length > 0 ||
+        (result.requires_conflict_selection &&
+          bulkImportConflictSelections[result.normalized_domain] === undefined)),
+  );
+  const ready = results.filter(
+    (result) => result.matched && !needsAttention.includes(result),
+  );
+  return { results, unmatched, needsAttention, ready };
+}
+
+function updateBulkImportReviewState() {
+  console.log("DURING RENDER:", bulkImportState.matching);
+  if (!bulkImportState.matching) {
+    document.getElementById("bulk-import-error").textContent =
+      "Bulk import review data is no longer available. Please restart the review.";
+    return;
+  }
+  const { results, unmatched, needsAttention, ready } =
+    getBulkImportReviewCounts();
+  const invalidCodes = [
+    ...new Set(results.flatMap((result) => result.invalid_email_codes)),
+  ];
+  const conflictResults = results.filter((result) => result.requires_conflict_selection);
+  document.getElementById("bulk-import-summary").textContent =
+    `Campaigns found: ${results.length} | Ready: ${ready.length} | ` +
+    `Needs attention: ${needsAttention.length} | Unmatched: ${unmatched.length}`;
+
+  document.getElementById("bulk-import-unmatched-summary").textContent =
+    `View unmatched domains (${unmatched.length})`;
+  document.getElementById("bulk-import-matched-summary").textContent =
+    `View matched domains (${results.length - unmatched.length})`;
+
+  const invalid = document.getElementById("bulk-import-invalid");
+  invalid.textContent = invalidCodes.length
+    ? `⚠ ${invalidCodes.length} email account codes not found: ${invalidCodes.join(", ")}`
+    : "No invalid email accounts found.";
+
+  const conflicts = document.getElementById("bulk-import-conflicts");
+  conflicts.innerHTML = "";
+  conflictResults
+    .forEach((result) => {
+      const item = document.createElement("div");
+      item.textContent = `⚠ ${result.domain}: multiple records found. Select the current record:`;
+      result.email_usage_records.forEach((record, index) => {
+        const label = document.createElement("label");
+        label.style.display = "block";
+        const input = document.createElement("input");
+        input.type = "radio";
+        input.name = `bulk-import-conflict-${result.normalized_domain}`;
+        input.checked = bulkImportConflictSelections[result.normalized_domain] === index;
+        input.onchange = () => {
+          bulkImportConflictSelections[result.normalized_domain] = index;
+          updateBulkImportReviewState();
+        };
+        label.appendChild(input);
+        label.appendChild(
+          document.createTextNode(
+            ` Record ${index + 1}: ${record.email_usage_codes.join(", ")}`
+          )
+        );
+        item.appendChild(label);
+      });
+      conflicts.appendChild(item);
+    });
+
+  const unmatchedList = document.getElementById("bulk-import-unmatched");
+  unmatchedList.innerHTML = "";
+  results
     .filter((result) => !result.matched)
     .forEach((result) => {
       const item = document.createElement("li");
       item.textContent = result.domain;
-      unmatched.appendChild(item);
+      unmatchedList.appendChild(item);
     });
 
   const matched = document.getElementById("bulk-import-matched");
   matched.innerHTML = "";
-  matching.results
+  results
     .filter((result) => result.matched)
     .forEach((result) => {
       const item = document.createElement("div");
       item.textContent = `✓ ${result.domain} ${result.email_usage_codes.length} email accounts`;
+      if (result.requires_conflict_selection) {
+        item.textContent = `⚠ ${result.domain} (unresolved email record conflict)`;
+      } else if (result.invalid_email_codes.length) {
+        item.textContent += ` (invalid: ${result.invalid_email_codes.join(", ")})`;
+      }
       matched.appendChild(item);
     });
 
   document.getElementById("bulk-import-review").style.display = "block";
-  document.getElementById("bulk-import-continue-btn").disabled = true;
+  const button = document.getElementById("bulk-import-continue-btn");
+  button.disabled = ready.length === 0;
+  button.textContent = `Continue with ${ready.length} ready campaigns`;
+  button.onclick = continueBulkImportReview;
+  document.getElementById("bulk-import-blocked-reason").textContent =
+    ready.length === 0
+      ? "No campaigns are ready to continue."
+      : `${needsAttention.length} campaigns will be skipped until their issues are resolved.`;
+}
+
+function continueBulkImportReview() {
+  console.log("BEFORE CONTINUE:", bulkImportState.matching);
+  const counts = getBulkImportReviewCounts();
+  if (!counts) {
+    document.getElementById("bulk-import-error").textContent =
+      "Bulk import review data is no longer available. Please restart the review.";
+    return;
+  }
+  const { ready } = counts;
+  if (ready.length > 0) {
+    alert(`${ready.length} campaigns are ready for the next stage.`);
+  }
 }
 
 // Update domains.js to support the new selective edit modal
