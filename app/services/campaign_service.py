@@ -12,7 +12,7 @@ def sync_campaign_state(campaign_id):
     if latest_history:
         campaign.current_price = latest_history.price_after
         # Assuming action_date is the contact date
-        campaign.last_contact_date = latest_history.action_date.date()
+        campaign.last_contact_date = latest_history.action_date.date() if latest_history.action_date else None
         campaign.current_sequence = latest_history.sequence
         campaign.last_action = latest_history.action_type.value
     else:
@@ -122,6 +122,8 @@ def get_first_follow_up_window(campaign):
     min_days = get_setting('FIRST_FOLLOW_UP_MIN_DAYS', 2)
     max_days = get_setting('FIRST_FOLLOW_UP_MAX_DAYS', 5)
 
+    if not first_outreach.action_date:
+        return None, None
     outreach_date = first_outreach.action_date.date()
     return outreach_date + timedelta(days=min_days), outreach_date + timedelta(days=max_days)
 
@@ -139,5 +141,6 @@ def get_next_due_date(campaign):
     history_count = CampaignHistory.query.filter_by(campaign_id=campaign.id).count()
 
     interval_days = get_configured_interval('FIRST_FOLLOW_UP_INTERVAL') if history_count == 1 else get_configured_interval('FOLLOW_UP_INTERVAL')
+    if not latest_history.action_date:
+        return None
     return latest_history.action_date.date() + timedelta(days=interval_days)
-

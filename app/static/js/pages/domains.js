@@ -168,7 +168,7 @@ async function openHistoryModal(id, domainName) {
     .map(
       (h) => `
     <tr>
-      <td>${new Date(h.date).toLocaleString()}</td>
+      <td>${h.date ? new Date(h.date).toLocaleString() : "Unknown"}</td>
       <td>${h.action}</td>
       <td>${h.price_before !== null ? `$${h.price_before} → ` : ""}$${h.price_after}</td>
       <td>${h.notes || ""}</td>
@@ -955,7 +955,7 @@ async function loadActionForEdit(campaignId) {
       </label>
     </div>
     <div class="form-group">
-      <label>Date: <input type="datetime-local" id="edit-date" value="${data.action_date.slice(0, 16)}"></label>
+      <label>Date: <input type="datetime-local" id="edit-date" value="${data.action_date ? data.action_date.slice(0, 16) : ""}"></label>
     </div>
     <div class="form-group">
       <label>Price: <input type="number" id="edit-price" value="${data.price_after}"></label>

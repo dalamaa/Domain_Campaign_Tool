@@ -108,7 +108,7 @@ class CampaignHistory(db.Model):
     campaign_id = db.Column(Integer, ForeignKey('campaigns.id'), nullable=False, index=True)
     sequence = db.Column(Integer, index=True)
     action_type = db.Column(Enum(ActionType), nullable=False)
-    action_date = db.Column(DateTime, default=datetime.utcnow, index=True)
+    action_date = db.Column(DateTime, nullable=True, index=True)
     edited_at = db.Column(DateTime, nullable=True)
     price_before = db.Column(Integer)
     price_after = db.Column(Integer)
@@ -119,6 +119,13 @@ class CampaignHistory(db.Model):
     campaign = relationship("Campaign", back_populates="history")
     history_email_used = relationship("HistoryEmailUsed", back_populates="history")
     __table_args__ = (UniqueConstraint('campaign_id', 'sequence', name='uix_campaign_sequence'),)
+
+    def __init__(self, **kwargs):
+        # Preserve the normal timestamp for new actions while allowing imports
+        # to explicitly represent an unknown historical date as NULL.
+        if "action_date" not in kwargs:
+            kwargs["action_date"] = datetime.utcnow()
+        super().__init__(**kwargs)
 
 class HistoryEmailUsed(db.Model):
     __tablename__ = 'history_email_used'

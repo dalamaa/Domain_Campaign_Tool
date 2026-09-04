@@ -556,10 +556,10 @@ def get_campaign_history(id):
         return jsonify({'error': 'Campaign not found'}), 404
 
     # Order by action_date descending so latest actions appear first
-    history = CampaignHistory.query.filter_by(campaign_id=camp.id).order_by(CampaignHistory.action_date.desc()).all()
+    history = CampaignHistory.query.filter_by(campaign_id=camp.id).order_by(CampaignHistory.sequence.asc()).all()
     return jsonify([{
         'action': h.action_type.value,
-        'date': h.action_date.isoformat(),
+        'date': h.action_date.isoformat() if h.action_date else None,
         'price_before': h.price_before,
         'price_after': h.price_after,
         'notes': h.notes
@@ -725,7 +725,7 @@ def get_campaign_actions(campaign_id):
     return jsonify([{
         'sequence': h.sequence,
         'action_type': h.action_type.value,
-        'action_date': h.action_date.isoformat(),
+        'action_date': h.action_date.isoformat() if h.action_date else None,
         'price_before': h.price_before,
         'price_after': h.price_after,
         'notes': h.notes,
@@ -741,7 +741,7 @@ def get_campaign_action(campaign_id, sequence):
     return jsonify({
         'sequence': hist.sequence,
         'action_type': hist.action_type.value,
-        'action_date': hist.action_date.isoformat(),
+        'action_date': hist.action_date.isoformat() if hist.action_date else None,
         'price_after': hist.price_after,
         'notes': hist.notes
     })
@@ -815,6 +815,8 @@ def get_first_follow_ups():
         if not latest:
             continue
 
+        if not latest.action_date:
+            continue
         days_since = (today - latest.action_date.date()).days
         if days_since < min_days:
             continue
@@ -870,6 +872,8 @@ def get_normal_follow_ups():
         if not latest:
             continue
 
+        if not latest.action_date:
+            continue
         days_since = (today - latest.action_date.date()).days
         if days_since < min_days:
             continue
