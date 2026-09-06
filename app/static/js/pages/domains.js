@@ -72,7 +72,7 @@ function applyCurrentSort() {
     } else if (key === "daysLeft") {
       valA = getDaysLeft(a.expiry);
       valB = getDaysLeft(b.expiry);
-    } else if (["expiry", "lastContact"].includes(key)) {
+    } else if (["expiry", "lastContact", "createdAt"].includes(key)) {
       valA = a[key] ? new Date(a[key]) : new Date(0);
       valB = b[key] ? new Date(b[key]) : new Date(0);
     } else if (key === "price" || key === "seq") {
@@ -142,6 +142,7 @@ async function renderDomainTable() {
         <tr class="${selectedDomains.has(c.id) ? "selected" : ""}">
             <td><input type="checkbox" ${selectedDomains.has(c.id) ? "checked" : ""} onchange="toggleDomainSelection(${c.id})"></td>
             <td onclick="openHistoryModal(${c.id}, '${c.domain}')" style="cursor:pointer; text-decoration: underline;">${c.domain}</td>
+            <td>${c.createdAt ? c.createdAt.slice(0, 10) : "N/A"}</td>
             <td>${c.expiry || "N/A"}</td>
             <td>${daysLeft} days</td>
             <td>${c.status || "Dormant"}</td>
@@ -369,6 +370,18 @@ function openBulkImportModal() {
     "No file selected";
   document.getElementById("email-usage-csv-name").textContent =
     "No file selected";
+  resetBulkImportDerivedState();
+  const actionButton = document.getElementById("bulk-import-continue-btn");
+  actionButton.disabled = true;
+  actionButton.style.display = "inline-block";
+  actionButton.textContent = "Review matching";
+  actionButton.onclick = submitBulkImport;
+  document.getElementById("bulk-import-modal").style.display = "flex";
+}
+
+function resetBulkImportDerivedState() {
+  bulkImportConflictSelections = {};
+  bulkImportState.matching = null;
   document.getElementById("bulk-import-error").textContent = "";
   document.getElementById("bulk-import-review").style.display = "none";
   document.getElementById("bulk-import-summary").textContent = "";
@@ -377,13 +390,17 @@ function openBulkImportModal() {
   document.getElementById("bulk-import-invalid").textContent = "";
   document.getElementById("bulk-import-conflicts").innerHTML = "";
   document.getElementById("bulk-import-blocked-reason").textContent = "";
-  document.getElementById("bulk-import-mapping-preview").style.display = "none";
-  document.getElementById("bulk-import-mapping-preview").innerHTML = "";
+  ["bulk-import-mapping-preview", "bulk-import-eligibility", "bulk-import-result"].forEach((id) => {
+    const element = document.getElementById(id);
+    element.style.display = "none";
+    element.innerHTML = "";
+  });
+  document.getElementById("bulk-import-confirmation").style.display = "none";
   const actionButton = document.getElementById("bulk-import-continue-btn");
-  actionButton.disabled = true;
+  actionButton.style.display = "inline-block";
   actionButton.textContent = "Review matching";
   actionButton.onclick = submitBulkImport;
-  document.getElementById("bulk-import-modal").style.display = "flex";
+  actionButton.disabled = !(bulkImportFiles.campaignHistory && bulkImportFiles.emailUsage);
 }
 
 function closeBulkImportModal() {
@@ -412,8 +429,7 @@ function handleBulkImportFileChange(type, event) {
   if (nameEl) {
     nameEl.textContent = file ? file.name : "No file selected";
   }
-  document.getElementById("bulk-import-error").textContent = "";
-  updateBulkImportContinueState();
+  resetBulkImportDerivedState();
 }
 
 function isCsvFile(file) {
@@ -491,6 +507,7 @@ function getBulkImportReviewCounts() {
     (result) =>
       result.matched &&
       (result.invalid_email_codes.length > 0 ||
+        result.duplicate_campaign_history ||
         (result.requires_conflict_selection &&
           bulkImportConflictSelections[result.normalized_domain] === undefined)),
   );
@@ -513,9 +530,11 @@ function updateBulkImportReviewState() {
     ...new Set(results.flatMap((result) => result.invalid_email_codes)),
   ];
   const conflictResults = results.filter((result) => result.requires_conflict_selection);
+  const duplicateResults = results.filter((result) => result.duplicate_campaign_history);
   document.getElementById("bulk-import-summary").textContent =
     `Campaigns found: ${results.length} | Ready: ${ready.length} | ` +
-    `Needs attention: ${needsAttention.length} | Unmatched: ${unmatched.length}`;
+    `Needs attention: ${needsAttention.length} | Unmatched: ${unmatched.length} | ` +
+    `Duplicates: ${duplicateResults.length}`;
 
   document.getElementById("bulk-import-unmatched-summary").textContent =
     `View unmatched domains (${unmatched.length})`;
@@ -554,6 +573,12 @@ function updateBulkImportReviewState() {
       });
       conflicts.appendChild(item);
     });
+  duplicateResults.forEach((result) => {
+    const item = document.createElement("div");
+    const rows = (result.duplicate_campaign_history_rows || []).map((row) => row.row).join(", ");
+    item.textContent = `⚠ ${result.domain}: duplicate Campaign History domain (CSV rows ${rows})`;
+    conflicts.appendChild(item);
+  });
 
   const unmatchedList = document.getElementById("bulk-import-unmatched");
   unmatchedList.innerHTML = "";
@@ -649,8 +674,62 @@ function renderImportEligibility(eligibility) {
   const button = document.getElementById("bulk-import-continue-btn");
   button.textContent = `${ready} campaigns ready for import`;
   button.disabled = ready === 0;
-  button.onclick = () => alert("Final import is not implemented yet.");
+  button.onclick = () => showBulkImportConfirmation(ready);
   document.getElementById("bulk-import-blocked-reason").textContent = ready === 0 ? "No campaigns are currently eligible." : "Only eligible campaigns will proceed; others remain skipped or blocked.";
+}
+
+function showBulkImportConfirmation(ready) {
+  const confirmation = document.getElementById("bulk-import-confirmation");
+  document.getElementById("bulk-import-confirmation-text").textContent =
+    `Import ${ready} eligible campaigns? Blocked, invalid, sold, unmatched, and already-present records will remain untouched.`;
+  confirmation.style.display = "block";
+  document.getElementById("bulk-import-confirm-btn").textContent = `Import ${ready} campaigns`;
+  document.getElementById("bulk-import-confirm-btn").onclick = submitFinalBulkImport;
+  document.getElementById("bulk-import-cancel-confirm-btn").onclick = () => { confirmation.style.display = "none"; };
+}
+
+async function submitFinalBulkImport() {
+  const confirmation = document.getElementById("bulk-import-confirmation");
+  const importButton = document.getElementById("bulk-import-confirm-btn");
+  importButton.disabled = true;
+  document.getElementById("bulk-import-cancel-confirm-btn").disabled = true;
+  importButton.textContent = "Importing...";
+  const formData = new FormData();
+  formData.append("campaign_history_csv", bulkImportFiles.campaignHistory);
+  formData.append("email_usage_csv", bulkImportFiles.emailUsage);
+  formData.append("conflict_selections", JSON.stringify(bulkImportConflictSelections));
+  try {
+    const response = await fetch("/api/domains/import/final", { method: "POST", body: formData });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Final import failed.");
+    renderBulkImportResult(data.results || []);
+    confirmation.style.display = "none";
+  } catch (error) {
+    document.getElementById("bulk-import-error").textContent = error.message;
+    importButton.disabled = false;
+    document.getElementById("bulk-import-cancel-confirm-btn").disabled = false;
+    importButton.textContent = "Retry import";
+  }
+}
+
+function renderBulkImportResult(results) {
+  const counts = { IMPORTED: 0, SKIPPED_ALREADY_PRESENT: 0, SKIPPED: 0, FAILED: 0 };
+  results.forEach((result) => { counts[result.status] = (counts[result.status] || 0) + 1; });
+  const container = document.getElementById("bulk-import-result");
+  container.innerHTML = "<strong>Import Complete</strong>";
+  const summary = document.createElement("div");
+  summary.textContent = `Imported: ${counts.IMPORTED} | Already present: ${counts.SKIPPED_ALREADY_PRESENT} | Skipped: ${counts.SKIPPED} | Failed: ${counts.FAILED}`;
+  container.appendChild(summary);
+  results.filter((result) => result.status === "FAILED").forEach((result) => {
+    const row = document.createElement("div");
+    row.textContent = `${result.domain} - ${result.reason || "Unknown failure"}`;
+    container.appendChild(row);
+  });
+  container.style.display = "block";
+  const button = document.getElementById("bulk-import-continue-btn");
+  button.style.display = "none";
+  const cancel = document.querySelector("#bulk-import-modal button[onclick=\"closeBulkImportModal()\"]");
+  if (cancel) { cancel.textContent = "Close"; cancel.onclick = () => { closeBulkImportModal(); renderDomainTable(); }; }
 }
 
 function renderCampaignMappingPreview(mapping) {

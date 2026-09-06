@@ -210,6 +210,21 @@ def save_follow_up_config():
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
+@bp.route('/settings/resting-eligibility-config', methods=['GET'])
+def get_resting_eligibility_config_route():
+    from app.services.settings_service import get_resting_eligibility_config
+    return jsonify(get_resting_eligibility_config())
+
+@bp.route('/settings/resting-eligibility-config', methods=['POST'])
+def save_resting_eligibility_config():
+    from app.services.settings_service import update_resting_eligibility_config
+    data = request.get_json(silent=True)
+    try:
+        config = update_resting_eligibility_config(data)
+        return jsonify({'success': True, 'config': config})
+    except (TypeError, ValueError) as exc:
+        return jsonify({'error': str(exc)}), 400
+
 @bp.route('/dashboard/overview', methods=['GET'])
 def get_dashboard_overview():
     from app.models.models import Domain, Campaign, CampaignStatus
@@ -234,6 +249,115 @@ def get_dashboard_overview():
         'dormant_campaigns': dormant_campaigns,
         'expiring_count': expiring_count
     })
+
+@bp.route('/dashboard/resting-suggestions', methods=['GET'])
+def get_resting_suggestions():
+    from app.models.models import Campaign, CampaignStatus, Domain, db
+    from app.services.resting_eligibility_service import evaluate_resting_eligibility
+    from app.services.settings_service import get_resting_eligibility_config
+    from app.services.time_service import get_business_today
+
+    trigger_labels = {
+        'sequence': 'Sequence',
+        'days_since_last_contact': 'Days Since Last Contact',
+        'campaign_age': 'Campaign Age',
+        'known_activity_age': 'Known Activity Age',
+    }
+    metric_names = {
+        'sequence': 'current_sequence',
+        'days_since_last_contact': 'days_since_last_contact',
+        'campaign_age': 'campaign_age_days',
+        'known_activity_age': 'known_activity_age_days',
+    }
+
+    suggestions = []
+    with db.session.no_autoflush:
+        today = get_business_today()
+        trigger_config = get_resting_eligibility_config()
+        campaigns = Campaign.query.filter_by(
+            status=CampaignStatus.ACTIVE
+        ).join(Domain).order_by(Domain.domain_name.asc(), Campaign.id.asc()).all()
+
+        for campaign in campaigns:
+            eligibility = evaluate_resting_eligibility(
+                campaign,
+                trigger_config,
+                business_today=today,
+            )
+            if not eligibility['eligible']:
+                continue
+
+            trigger_reasons = []
+            for trigger in eligibility['triggered_by']:
+                metric = eligibility['metrics'][metric_names[trigger]]
+                threshold = trigger_config[trigger]['threshold']
+                if trigger == 'sequence':
+                    text = f"Sequence {metric} reached threshold {threshold}"
+                elif trigger == 'days_since_last_contact':
+                    text = f"{metric} days since last contact (threshold {threshold})"
+                elif trigger == 'campaign_age':
+                    text = f"Campaign age: {metric} days (threshold {threshold})"
+                else:
+                    text = f"Known activity age: {metric} days (threshold {threshold})"
+                trigger_reasons.append({
+                    'trigger': trigger,
+                    'label': trigger_labels[trigger],
+                    'value': metric,
+                    'threshold': threshold,
+                    'text': text,
+                })
+
+            days_until_expiry = (
+                (campaign.domain.expiry_date - today).days
+                if campaign.domain.expiry_date else None
+            )
+            suggestions.append({
+                'campaign_id': campaign.id,
+                'domain': campaign.domain.domain_name,
+                'status': campaign.status.value,
+                'current_price': campaign.current_price,
+                'current_sequence': campaign.current_sequence,
+                'start_date': campaign.start_date.isoformat() if campaign.start_date else None,
+                'last_contact_date': campaign.last_contact_date.isoformat() if campaign.last_contact_date else None,
+                'expiry_date': campaign.domain.expiry_date.isoformat() if campaign.domain.expiry_date else None,
+                'days_until_expiry': days_until_expiry,
+                'triggered_by': eligibility['triggered_by'],
+                'eligibility_metrics': eligibility['metrics'],
+                'trigger_thresholds': {
+                    trigger: trigger_config[trigger]['threshold']
+                    for trigger in eligibility['triggered_by']
+                },
+                'trigger_reasons': trigger_reasons,
+            })
+
+    return jsonify({
+        'business_today': today.isoformat(),
+        'count': len(suggestions),
+        'suggestions': suggestions,
+    })
+
+@bp.route('/campaigns/<int:campaign_id>/rest', methods=['POST'])
+def rest_campaign(campaign_id):
+    from app.services.resting_transition_service import (
+        RestingTransitionError,
+        manually_rest_campaign,
+    )
+
+    try:
+        result = manually_rest_campaign(campaign_id)
+        return jsonify({
+            'success': True,
+            'campaign_id': result['campaign_id'],
+            'status': result['status'],
+        })
+    except RestingTransitionError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), exc.status_code
+    except Exception:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': 'Unable to move campaign to Resting.',
+        }), 500
 
 @bp.route('/settings/reset-config', methods=['GET'])
 def get_reset_config():
@@ -407,6 +531,7 @@ def get_domains():
             'price': c.current_price if c else '',
             'seq': c.current_sequence if has_history else '',
             'lastContact': c.last_contact_date.isoformat() if c and c.last_contact_date else '',
+            'createdAt': c.created_at.isoformat() if c and c.created_at else '',
             'lastAction': friendly_action if has_history else '',
             'latestEmails': ", ".join(latest_emails),
             'hasValues': has_values
@@ -539,6 +664,45 @@ def import_domains():
             'can_proceed': result['can_proceed'],
         },
     })
+
+@bp.route('/domains/import/final', methods=['POST'])
+def final_import_domains():
+    """Recompute eligibility from source files, then persist eligible rows only."""
+    campaign_history_csv = request.files.get('campaign_history_csv')
+    email_usage_csv = request.files.get('email_usage_csv')
+    if not campaign_history_csv or not email_usage_csv:
+        return jsonify({'success': False, 'error': 'Both CSV files are required.'}), 400
+
+    def is_csv(file_storage):
+        return (file_storage.filename or '').lower().endswith('.csv') or (file_storage.content_type or '').lower() == 'text/csv'
+    if not is_csv(campaign_history_csv) or not is_csv(email_usage_csv):
+        return jsonify({'success': False, 'error': 'Both uploaded files must be CSV files.'}), 400
+
+    try:
+        from app.models.models import Domain, Campaign, CampaignHistory
+        from app.services.bulk_import_service import match_bulk_import_files
+        from app.services.campaign_mapping_service import build_campaign_mapping_preview
+        from app.services.import_eligibility_service import build_import_eligibility
+        from app.services.bulk_import_persistence_service import persist_ready_import
+        selections = json.loads(request.form.get('conflict_selections', '{}'))
+        if not isinstance(selections, dict):
+            raise ValueError('Conflict selections must be an object.')
+        valid_codes = {account.code for account in EmailAccount.query.all()}
+        matching = match_bulk_import_files(campaign_history_csv, email_usage_csv, valid_codes)
+        if not matching['ok']:
+            return jsonify({'success': False, 'error': matching['error'], 'duplicates': matching['duplicates']}), 400
+        for item in matching['results']:
+            selected = selections.get(item['normalized_domain'])
+            if selected is not None and item['email_usage_records']:
+                if not isinstance(selected, int) or not 0 <= selected < len(item['email_usage_records']):
+                    return jsonify({'success': False, 'error': f'Invalid conflict selection for {item["domain"]}.'}), 400
+                item['email_usage_codes'] = item['email_usage_records'][selected]['email_usage_codes']
+        mapping = build_campaign_mapping_preview(campaign_history_csv, matching, Domain.query.all(), Campaign.query.all(), CampaignHistory.query.all())
+        eligibility = build_import_eligibility(mapping, matching, selections)
+        results = persist_ready_import(eligibility)
+        return jsonify({'success': True, 'results': results, 'eligibility': eligibility})
+    except (UnicodeDecodeError, csv.Error, ValueError) as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
 
 @bp.route('/domains/<int:id>/campaign-status', methods=['GET'])
 def get_campaign_status(id):
@@ -791,6 +955,8 @@ def edit_campaign_action(campaign_id, sequence):
 @bp.route('/dashboard/first-follow-ups', methods=['GET'])
 def get_first_follow_ups():
     from app.models.models import Campaign, CampaignStatus, CampaignHistory, ActionType, Reservation, ReservationStatus
+    from app.services.resting_eligibility_service import evaluate_resting_eligibility
+    from app.services.settings_service import get_resting_eligibility_config
     from app.services.time_service import get_business_today
     from app.services.settings_service import get_setting
     from sqlalchemy import and_
@@ -798,6 +964,7 @@ def get_first_follow_ups():
     today = get_business_today()
     min_days = int(get_setting('FIRST_FOLLOW_UP_MIN', '2'))
     max_days = int(get_setting('FIRST_FOLLOW_UP_MAX', '5'))
+    resting_config = get_resting_eligibility_config()
 
     eligible_campaigns = Campaign.query.filter(
         Campaign.status.in_([CampaignStatus.ACTIVE, CampaignStatus.RESTING]),
@@ -836,7 +1003,12 @@ def get_first_follow_ups():
             'campaign_id': camp.id,
             'days_since_outreach': days_since,
             'emails_used': emails_used,
-            'reservation': res_info
+            'reservation': res_info,
+            'resting_suggested': evaluate_resting_eligibility(
+                camp,
+                resting_config,
+                business_today=today,
+            )['eligible'],
         }
 
         if days_since <= max_days:
@@ -849,12 +1021,15 @@ def get_first_follow_ups():
 @bp.route('/dashboard/normal-follow-ups', methods=['GET'])
 def get_normal_follow_ups():
     from app.models.models import Campaign, CampaignStatus, CampaignHistory, Reservation, ReservationStatus
+    from app.services.resting_eligibility_service import evaluate_resting_eligibility
+    from app.services.settings_service import get_resting_eligibility_config
     from app.services.time_service import get_business_today
     from app.services.settings_service import get_setting
 
     today = get_business_today()
     min_days = int(get_setting('NORMAL_FOLLOW_UP_MIN', '7'))
     max_days = int(get_setting('NORMAL_FOLLOW_UP_MAX', '7'))
+    resting_config = get_resting_eligibility_config()
 
     eligible_campaigns = Campaign.query.filter(
         Campaign.status.in_([CampaignStatus.ACTIVE, CampaignStatus.RESTING]),
@@ -893,7 +1068,12 @@ def get_normal_follow_ups():
             'campaign_id': camp.id,
             'days_since_contact': days_since,
             'emails_used': emails_used,
-            'reservation': res_info
+            'reservation': res_info,
+            'resting_suggested': evaluate_resting_eligibility(
+                camp,
+                resting_config,
+                business_today=today,
+            )['eligible'],
         }
 
         if days_since <= max_days:

@@ -36,8 +36,8 @@ def _history_rows(file_storage):
     if not rows:
         return []
     header = rows[0]
-    header_text = " ".join(cell.strip().lower() for cell in header)
-    has_header = "expiry date" in header_text or any("email sent" in cell.lower() for cell in header)
+    domain_index = next((i for i, cell in enumerate(header) if normalize_domain(cell) == "domain"), None)
+    has_header = domain_index is not None
     if not has_header:
         raise ValueError("Campaign History CSV header was not recognized.")
     email_columns = [i for i, cell in enumerate(header) if "email sent" in cell.lower()]
@@ -47,13 +47,13 @@ def _history_rows(file_storage):
         "start": next((i for i, cell in enumerate(header) if "sequence start date" in cell.lower()), None),
     }
     for row_number, row in enumerate(rows[1:], start=2):
-        if not row or not normalize_domain(row[0]):
+        if not row or domain_index >= len(row) or not normalize_domain(row[domain_index]):
             continue
         values = []
         for column_number in email_columns:
             value = row[column_number] if column_number < len(row) else ""
             values.append((column_number, value))
-        yield row_number, row, values, indexes
+        yield row_number, row, values, indexes, domain_index
 
 
 def _proposed_history(values):
@@ -97,8 +97,8 @@ def build_campaign_mapping_preview(history_file, matching, domains, campaigns, h
         histories_by_campaign.setdefault(history.campaign_id, []).append(history)
 
     preview = []
-    for row_number, row, email_columns, indexes in _history_rows(history_file):
-        original = row[0].strip()
+    for row_number, row, email_columns, indexes, domain_index in _history_rows(history_file):
+        original = row[domain_index].strip()
         key = normalize_domain(original)
         result = next(item for item in matching["results"] if item["normalized_domain"] == key)
         base = _proposed_history([value for _, value in email_columns])

@@ -42,6 +42,12 @@
           </th>
           <th
             style="position: sticky; top: 0; background: #eee; cursor: pointer"
+            onclick="sortTable('createdAt')"
+          >
+            Added ↕
+          </th>
+          <th
+            style="position: sticky; top: 0; background: #eee; cursor: pointer"
             onclick="sortTable('expiry')"
           >
             Expiry ↕
@@ -349,7 +355,7 @@
     />
     <div id="email-usage-csv-name" style="margin-top: 6px; color: #555;">No file selected</div>
   </div>
-  <div id="bulk-import-error" style="color: #b00020; margin-bottom: 12px;"></div>
+  <div id="bulk-import-error" style="color: #b00020; margin-bottom: 12px; white-space: pre-line;"></div>
   <div style="flex: 1 1 auto; min-height: 0; overflow-y: auto; margin-top: 10px;">
     <div id="bulk-import-review" style="display: none; margin-bottom: 12px;">
       <h4>Matching Review</h4>
@@ -372,6 +378,12 @@
     <div id="bulk-import-eligibility" style="display: none; margin-bottom: 12px;"></div>
   </div>
   <div style="flex: 0 0 auto; padding-top: 8px;">
+    <div id="bulk-import-confirmation" style="display:none; border:1px solid #ccc; padding:10px; margin-bottom:8px;">
+      <div id="bulk-import-confirmation-text"></div>
+      <button id="bulk-import-confirm-btn" type="button">Import</button>
+      <button id="bulk-import-cancel-confirm-btn" type="button">Cancel</button>
+    </div>
+    <div id="bulk-import-result" style="display:none; margin-bottom:8px;"></div>
     <div id="bulk-import-blocked-reason" style="color: #b00020; margin-bottom: 8px;"></div>
     <button id="bulk-import-continue-btn" onclick="submitBulkImport()" disabled>
       Review matching

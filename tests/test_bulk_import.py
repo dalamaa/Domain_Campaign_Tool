@@ -1,4 +1,6 @@
 import io
+
+import pytest
 from types import SimpleNamespace
 
 from app.services.bulk_import_service import match_bulk_import_files
@@ -139,16 +141,177 @@ def test_bulk_import_matching_normalizes_domains_and_ignores_unrelated_usage():
     ]
 
 
-def test_bulk_import_duplicate_campaign_history_domain_is_rejected():
+def test_campaign_history_domain_only_row_is_valid_dormant_input():
+    result = match_bulk_import_files(
+        match_csv("Domain,Expiry Date,Last Contact\ndormant.example.com,,\n"),
+        match_csv("Domain,M01\ndormant.example.com,M01\n"),
+    )
+    assert result["ok"] is True
+
+
+def test_campaign_history_domain_column_can_be_middle_or_last():
+    for header, row in (
+        ("Expiry Date,Domain,Handled By", "2027-01-01, middle.example.com,Team"),
+        ("Handled By,Expiry Date, domain ", "Team,2027-01-01,last.example.com"),
+    ):
+        result = match_bulk_import_files(
+            match_csv(f"{header}\n{row}\n"),
+            match_csv("Domain,M01\nmiddle.example.com,M01\nlast.example.com,M01\n"),
+        )
+        assert result["ok"] is True
+        assert result["results"][0]["normalized_domain"] in {"middle.example.com", "last.example.com"}
+
+
+def test_campaign_history_domain_header_is_case_insensitive_and_trimmed():
+    result = match_bulk_import_files(
+        match_csv("Handled By,  DoMaIn  \nTeam,example.com\n"),
+        match_csv("Domain,M01\nexample.com,M01\n"),
+    )
+    assert result["ok"] is True
+    assert result["results"][0]["matched"] is True
+
+
+def test_campaign_history_without_domain_column_is_rejected():
+    result = match_bulk_import_files(
+        match_csv("Expiry Date,Handled By\n2027-01-01,Team\n"),
+        match_csv("Domain,M01\nexample.com,M01\n"),
+    )
+    assert result["ok"] is False
+    assert "Campaign History CSV" in result["error"]
+
+
+def assert_compact_domain_error(error, valid_count, invalid_count):
+    heading = (
+        "Campaign History Domain column does not appear to contain valid domain names."
+        if valid_count == 0 else
+        "Campaign History contains invalid domain values."
+    )
+    assert error == f"{heading}\nValid domains: {valid_count}\nInvalid domains: {invalid_count}"
+    for verbose in (
+        "invalid domain examples", "0 valid domains were found", "row ",
+        "Invalid rows", "unavailable", "https://bad.example.com", "bad-",
+    ):
+        assert verbose not in error
+
+
+@pytest.mark.parametrize("valid_rows,valid_count", [
+    ("", 0),
+    ("valid.example.com\n", 1),
+    ("valid.example.com\nVALID.example.com.\n\n", 1),
+])
+def test_campaign_history_reports_compact_domain_counts(valid_rows, valid_count):
+    result = match_bulk_import_files(
+        match_csv(f"Domain\n{valid_rows}unavailable\nhttps://bad.example.com\n"),
+        match_csv("Domain,M01\nvalid.example.com,M01\n"),
+    )
+    assert result["ok"] is False
+    assert_compact_domain_error(result["error"], valid_count, 2)
+
+
+def test_campaign_history_counts_all_invalid_domains_without_examples():
+    rows = "Domain\n" + "".join(f"bad-{index}\n" for index in range(25))
+    result = match_bulk_import_files(match_csv(rows), match_csv("Domain,M01\nexample.com,M01\n"))
+    assert result["ok"] is False
+    assert_compact_domain_error(result["error"], 0, 25)
+
+
+@pytest.mark.parametrize("path,form", [
+    ("/api/domains/import", {}),
+    ("/api/domains/import", {"preview_mapping": "1"}),
+    ("/api/domains/import/final", {}),
+])
+@pytest.mark.parametrize("valid_rows,valid_count", [("", 0), ("valid.example.com\n", 1)])
+def test_import_surfaces_compact_domain_errors(client, app, path, form, valid_rows, valid_count):
+    with app.app_context():
+        before = (Domain.query.count(), Campaign.query.count())
+    response = client.post(path, data={
+        **form,
+        "campaign_history_csv": make_csv(
+            "history.csv", f"Domain\n{valid_rows}unavailable\nhttps://bad.example.com\n".encode(),
+        ),
+        "email_usage_csv": make_csv("usage.csv", b"Domain,M01\nvalid.example.com,M01\n"),
+    }, content_type="multipart/form-data")
+    assert response.status_code == 400
+    assert response.get_json()["success"] is False
+    assert_compact_domain_error(response.get_json()["error"], valid_count, 2)
+    with app.app_context():
+        assert (Domain.query.count(), Campaign.query.count()) == before
+
+
+def test_all_campaign_history_domains_still_succeed_after_full_validation():
+    result = match_bulk_import_files(
+        match_csv("Domain\nfirst.example.com\nsecond.example.com\n"),
+        match_csv("Domain,M01\nfirst.example.com,M01\n"),
+    )
+    assert result["ok"] is True
+    assert result["summary"]["campaigns_found"] == 2
+
+
+def test_campaign_history_history_requires_last_contact():
+    result = match_bulk_import_files(
+        match_csv("Domain,Email Sent #1,Last Contact\nactive.example.com,N350,\n"),
+        match_csv("Domain,M01\nactive.example.com,M01\n"),
+    )
+    assert result["ok"] is False
+    assert "Last Contact is missing" in result["error"]
+
+
+def test_invalid_campaign_history_domains_are_rejected():
+    for value in ("not a domain", "https://example.com", "person@example.com"):
+        result = match_bulk_import_files(
+            match_csv(f"Domain\n{value}\n"),
+            match_csv("Domain,M01\nexample.com,M01\n"),
+        )
+        assert result["ok"] is False
+        assert_compact_domain_error(result["error"], 0, 1)
+
+
+def test_email_usage_rows_without_codes_are_unusable():
+    result = match_bulk_import_files(
+        match_csv("Domain\nexample.com\n"),
+        match_csv("Domain,M01\nexample.com,\n"),
+    )
+    assert result["ok"] is True
+    assert result["results"][0]["matched"] is False
+
+
+def test_invalid_email_usage_domain_is_rejected():
+    result = match_bulk_import_files(
+        match_csv("Domain\nexample.com\n"),
+        match_csv("Domain,M01\nhttps://example.com,M01\n"),
+    )
+    assert result["ok"] is False
+    assert "Email Usage" in result["error"]
+
+
+def test_swapped_files_are_explicitly_rejected():
+    result = match_bulk_import_files(
+        match_csv("Domain,M01\nexample.com,M01\n"),
+        match_csv("Domain,Email Sent #1\nexample.com,N350\n"),
+    )
+    assert result["ok"] is False
+    assert "appear to be reversed" in result["error"]
+
+
+def test_unrelated_csv_is_rejected():
+    result = match_bulk_import_files(
+        match_csv("Name,Value\nexample.com,one\n"),
+        match_csv("Domain,M01\nexample.com,M01\n"),
+    )
+    assert result["ok"] is False
+    assert "Domain column" in result["error"]
+
+
+def test_bulk_import_duplicate_campaign_history_domain_is_reported_without_blocking_clean_rows():
     result = match_bulk_import_files(
         match_csv("Domain\nExample.com\n example.COM.\n"),
         match_csv("Domain,M1\nexample.com,M1\n"),
     )
 
-    assert result["ok"] is False
-    assert result["error"] == "Duplicate Campaign History domains were found."
+    assert result["ok"] is True
     assert result["duplicates"][0]["normalized_domain"] == "example.com"
     assert [row["row"] for row in result["duplicates"][0]["rows"]] == [2, 3]
+    assert result["results"][0]["duplicate_campaign_history"] is True
 
 
 def test_bulk_import_duplicate_campaign_history_reports_actual_csv_rows():
@@ -160,6 +323,7 @@ def test_bulk_import_duplicate_campaign_history_reports_actual_csv_rows():
         match_csv("Domain,M1\nManagedServicesOhio.com,M1\n"),
     )
 
+    assert result["ok"] is True
     duplicate = result["duplicates"][0]
     assert duplicate["normalized_domain"] == "managedservicesohio.com"
     assert [row["row"] for row in duplicate["rows"]] == [3, 5]

@@ -37,6 +37,12 @@
       </button>
       <div id="normal-followup" class="content"></div>
     </div>
+    <div class="accordion">
+      <button onclick="toggleAccordion('resting-suggestions')">
+        Resting Suggestions (<span id="resting-suggestions-count">0</span>)
+      </button>
+      <div id="resting-suggestions" class="content"></div>
+    </div>
   </section>
   <!-- Today's Campaigns -->
   <section id="todays-campaigns">
@@ -78,4 +84,3 @@
 <script src="{{ url_for('static', filename='js/shared.js') }}"></script>
 <script src="{{ url_for('static', filename='js/pages/dashboard.js') }}"></script>
 {% endblock %}
-

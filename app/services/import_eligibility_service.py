@@ -50,6 +50,8 @@ def build_import_eligibility(mapping, matching, conflict_selections=None):
         else:
             if invalid_codes:
                 reasons.append("Invalid email account codes: " + ", ".join(invalid_codes))
+            if source.get("duplicate_campaign_history"):
+                reasons.append("Duplicate Campaign History domain rows require correction")
             if source.get("requires_conflict_selection") and selected_record is None:
                 reasons.append("Unresolved Email Usage record conflict")
             if classification == "CONFLICT_NEEDS_ATTENTION":

@@ -148,7 +148,7 @@ function renderSuggestedWork() {
   const renderTable = (list, isNormal = false) => `
     <table>
       <thead>
-        <tr><th>Domain</th><th>Days Since ${isNormal ? "Contact" : "Outreach"}</th><th>Emails Used</th><th>Reservation</th></tr>
+        <tr><th>Domain</th><th>Days Since ${isNormal ? "Contact" : "Outreach"}</th><th>Emails Used</th><th>Reservation</th><th>Rest</th></tr>
       </thead>
       <tbody>
         ${list
@@ -159,12 +159,120 @@ function renderSuggestedWork() {
           <td>${isNormal ? c.days_since_contact || "N/A" : c.days_since_outreach}</td>
           <td>${c.emails_used.length > 0 ? c.emails_used.join(", ") : "—"}</td>
           <td>${getResButtons(c)}</td>
+          <td>${c.resting_suggested ? '<span class="rest-suggested" title="Rest suggested">🪙 Rest</span>' : ""}</td>
         </tr>`,
           )
           .join("")}
       </tbody>
     </table>
   `;
+
+  const renderRestingSuggestions = async () => {
+    const container = document.getElementById("resting-suggestions");
+    const count = document.getElementById("resting-suggestions-count");
+    if (!container) return;
+
+    container.innerHTML = "<p>Loading Resting suggestions...</p>";
+    try {
+      const response = await fetch("/api/dashboard/resting-suggestions");
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to load Resting suggestions.");
+      }
+
+      const suggestions = data.suggestions || [];
+      if (count) count.textContent = data.count ?? suggestions.length;
+      if (suggestions.length === 0) {
+        container.innerHTML =
+          "<p>No active campaigns currently meet the Resting rules.</p>";
+        return;
+      }
+
+      const formatDays = (value) => (value == null ? "—" : `${value} days`);
+
+      container.innerHTML = `
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Domain</th>
+                <th>Sequence</th>
+                <th>Last Contact</th>
+                <th>Campaign Age</th>
+                <th>Known Activity Age</th>
+                <th>Expiry</th>
+                <th>Reasons</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${suggestions
+                .map(
+                  (campaign) => `
+                <tr>
+                  <td>${campaign.domain}</td>
+                  <td>${campaign.eligibility_metrics.current_sequence ?? "—"}</td>
+                  <td>${campaign.last_contact_date || "—"}<br />
+                    <small>${formatDays(campaign.eligibility_metrics.days_since_last_contact)}</small>
+                  </td>
+                  <td>${formatDays(campaign.eligibility_metrics.campaign_age_days)}</td>
+                  <td>${formatDays(campaign.eligibility_metrics.known_activity_age_days)}</td>
+                  <td>${
+                    campaign.expiry_date
+                      ? `${campaign.expiry_date} (${campaign.days_until_expiry} days)`
+                      : "—"
+                  }</td>
+                  <td><ul>${(campaign.trigger_reasons || [])
+                    .map((reason) => `<li>${reason.text}</li>`)
+                    .join("")}</ul></td>
+                  <td>
+                    <button
+                      type="button"
+                      data-action="rest"
+                      data-campaign-id="${campaign.campaign_id}"
+                      data-domain="${campaign.domain}"
+                    >Move to Resting</button>
+                  </td>
+                </tr>`,
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      container.querySelectorAll("button[data-action='rest']").forEach((button) => {
+        button.onclick = async () => {
+          const domain = button.dataset.domain;
+          const campaignId = button.dataset.campaignId;
+          if (!window.confirm(`Move ${domain} to Resting?`)) return;
+
+          button.disabled = true;
+          try {
+            const response = await fetch(`/api/campaigns/${campaignId}/rest`, {
+              method: "POST",
+            });
+            const result = await response.json();
+            if (!response.ok) {
+              throw new Error(result.error || "Unable to move campaign to Resting.");
+            }
+            await refreshDashboard();
+            alert(`${domain} moved to Resting.`);
+          } catch (error) {
+            alert(error.message);
+            try {
+              await refreshDashboard();
+            } catch (refreshError) {
+              // Keep the dashboard usable even if a refresh also fails.
+            }
+          }
+        };
+      });
+    } catch (error) {
+      if (count) count.textContent = "—";
+      container.innerHTML = `<p class="dashboard-error">${error.message}</p>`;
+    }
+  };
 
   renderFirstFollowups();
 
@@ -207,6 +315,7 @@ function renderSuggestedWork() {
   };
 
   renderNormalFollowups();
+  renderRestingSuggestions();
 }
 
 function reserveBlock(domain) {

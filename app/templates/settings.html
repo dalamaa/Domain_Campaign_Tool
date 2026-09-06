@@ -78,6 +78,85 @@
     </div>
   </div>
 
+  <div style="margin-top: 20px" id="resting-campaign-rules">
+    <h3>Resting Campaign Rules</h3>
+    <p>
+      These rules determine when an ACTIVE campaign becomes eligible to be
+      suggested for Resting. A campaign becomes eligible when any enabled rule is met.
+    </p>
+    <div class="resting-rule" data-resting-trigger="sequence">
+      <strong>Sequence</strong><br />
+      <small>Eligible when the campaign reaches this sequence number.</small><br />
+      <label>
+        <input type="checkbox" id="resting-sequence-enabled" /> Enabled
+      </label>
+      <label for="resting-sequence-threshold">Threshold</label>
+      <input
+        type="number"
+        id="resting-sequence-threshold"
+        min="0"
+        step="1"
+        required
+        style="width: 80px"
+      />
+      <span>sequence</span>
+    </div>
+    <div class="resting-rule" data-resting-trigger="days_since_last_contact">
+      <strong>Days Since Last Contact</strong><br />
+      <small>Eligible after this many days since the most recent contact.</small><br />
+      <label>
+        <input type="checkbox" id="resting-days-since-last-contact-enabled" />
+        Enabled
+      </label>
+      <label for="resting-days-since-last-contact-threshold">Threshold</label>
+      <input
+        type="number"
+        id="resting-days-since-last-contact-threshold"
+        min="0"
+        step="1"
+        required
+        style="width: 80px"
+      />
+      <span>days</span>
+    </div>
+    <div class="resting-rule" data-resting-trigger="campaign_age">
+      <strong>Campaign Age</strong><br />
+      <small>Eligible after the campaign has been active for this many days.</small><br />
+      <label>
+        <input type="checkbox" id="resting-campaign-age-enabled" /> Enabled
+      </label>
+      <label for="resting-campaign-age-threshold">Threshold</label>
+      <input
+        type="number"
+        id="resting-campaign-age-threshold"
+        min="0"
+        step="1"
+        required
+        style="width: 80px"
+      />
+      <span>days</span>
+    </div>
+    <div class="resting-rule" data-resting-trigger="known_activity_age">
+      <strong>Known Activity Age</strong><br />
+      <small>Eligible when the earliest known activity is at least this old.</small><br />
+      <label>
+        <input type="checkbox" id="resting-known-activity-age-enabled" /> Enabled
+      </label>
+      <label for="resting-known-activity-age-threshold">Threshold</label>
+      <input
+        type="number"
+        id="resting-known-activity-age-threshold"
+        min="0"
+        step="1"
+        required
+        style="width: 80px"
+      />
+      <span>days</span>
+    </div>
+    <button type="button" onclick="saveRestingRules()">Save Resting Rules</button>
+    <p id="resting-rules-status" role="status" aria-live="polite"></p>
+  </div>
+
   <div style="margin-top: 20px">
     <h3>Reservation</h3>
     <div id="reservation-view">
@@ -96,6 +175,24 @@
 <script>
   let timezoneTimer = null;
   let originalConfig = {};
+  const restingRuleControls = {
+    sequence: {
+      enabled: "resting-sequence-enabled",
+      threshold: "resting-sequence-threshold",
+    },
+    days_since_last_contact: {
+      enabled: "resting-days-since-last-contact-enabled",
+      threshold: "resting-days-since-last-contact-threshold",
+    },
+    campaign_age: {
+      enabled: "resting-campaign-age-enabled",
+      threshold: "resting-campaign-age-threshold",
+    },
+    known_activity_age: {
+      enabled: "resting-known-activity-age-enabled",
+      threshold: "resting-known-activity-age-threshold",
+    },
+  };
 
   async function loadSettings() {
     const tzRes = await fetch("/api/settings/timezones");
@@ -107,7 +204,19 @@
     const limitRes = await fetch("/api/settings/daily-use-limit");
     const limitData = await limitRes.json();
 
-    originalConfig = { config, limitData };
+    originalConfig = { config, limitData, restingConfig: null };
+
+    try {
+      const restingRes = await fetch("/api/settings/resting-eligibility-config");
+      const restingConfig = await restingRes.json();
+      if (!restingRes.ok) {
+        throw new Error(restingConfig.error || "Unable to load Resting rules.");
+      }
+      originalConfig.restingConfig = restingConfig;
+      populateRestingRules(restingConfig);
+    } catch (error) {
+      setRestingRulesStatus(error.message, true);
+    }
 
     const select = document.getElementById("timezone-select");
     timezones.forEach((tz) => {
@@ -131,6 +240,78 @@
       `${limitData.limit} campaigns per email account per day`;
     updateTimezoneTimes();
     scheduleNextTimezoneUpdate();
+  }
+
+  function setRestingRulesStatus(message, isError = false) {
+    const status = document.getElementById("resting-rules-status");
+    if (!status) return;
+    status.textContent = message;
+    status.style.color = isError ? "#b00020" : "#176b2c";
+  }
+
+  function populateRestingRules(config) {
+    Object.entries(restingRuleControls).forEach(([trigger, controls]) => {
+      const rule = config[trigger];
+      if (!rule) return;
+      const enabled = document.getElementById(controls.enabled);
+      const threshold = document.getElementById(controls.threshold);
+      enabled.checked = rule.enabled;
+      threshold.value = rule.threshold;
+      threshold.disabled = !rule.enabled;
+      enabled.onchange = () => {
+        threshold.disabled = !enabled.checked;
+      };
+    });
+  }
+
+  function readRestingRules() {
+    const config = {};
+    Object.entries(restingRuleControls).forEach(([trigger, controls]) => {
+      const enabled = document.getElementById(controls.enabled).checked;
+      const rawThreshold = document
+        .getElementById(controls.threshold)
+        .value.trim();
+      if (!/^\d+$/.test(rawThreshold)) {
+        throw new Error(
+          `Enter a non-negative integer threshold for ${trigger.replace(/_/g, " ")}.`,
+        );
+      }
+      const threshold = Number(rawThreshold);
+      if (!Number.isSafeInteger(threshold) || threshold < 0) {
+        throw new Error(
+          `Enter a non-negative integer threshold for ${trigger.replace(/_/g, " ")}.`,
+        );
+      }
+      config[trigger] = { enabled, threshold };
+    });
+    return config;
+  }
+
+  async function saveRestingRules() {
+    let payload;
+    try {
+      payload = readRestingRules();
+    } catch (error) {
+      setRestingRulesStatus(error.message, true);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/settings/resting-eligibility-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to save Resting rules.");
+      }
+      originalConfig.restingConfig = data.config || data;
+      populateRestingRules(originalConfig.restingConfig);
+      setRestingRulesStatus("Resting Campaign Rules saved.");
+    } catch (error) {
+      setRestingRulesStatus(error.message, true);
+    }
   }
 
   function toggleMode(type, mode) {
