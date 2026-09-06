@@ -647,6 +647,7 @@ function continueBulkImportReview() {
 function renderImportEligibility(eligibility) {
   const container = document.getElementById("bulk-import-eligibility");
   const summaryOrder = ["READY_TO_IMPORT", "BLOCKED_NEEDS_ATTENTION", "INVALID_SOURCE_DATA", "SOLD_SOURCE_MARKER", "SKIP_UNMATCHED", "SKIP_ALREADY_PRESENT"];
+  const categoryOrder = ["BLOCKED_NEEDS_ATTENTION", "INVALID_SOURCE_DATA", "SKIP_UNMATCHED", "SOLD_SOURCE_MARKER", "SKIP_ALREADY_PRESENT", "READY_TO_IMPORT"];
   container.innerHTML = "<h4>Final Import Eligibility</h4>";
   const summary = document.createElement("div");
   summary.textContent = summaryOrder.map((key) => `${key}: ${eligibility.summary[key] || 0}`).join(" | ");
@@ -655,19 +656,51 @@ function renderImportEligibility(eligibility) {
   const label = document.createElement("summary");
   label.textContent = `View eligibility details (${eligibility.results.length})`;
   details.appendChild(label);
-  const list = document.createElement("div");
+
+  const grouped = new Map(categoryOrder.map((category) => [category, []]));
   eligibility.results.forEach((item) => {
-    const row = document.createElement("div");
-    row.style.marginTop = "8px";
-    row.textContent = `${item.domain} | ${item.final_eligibility} | ${item.mapping_classification} | ` +
-      `${item.proposed_status || ""} | Sequence ${item.proposed_current_sequence} | Price ${item.proposed_current_price} | ` +
-      `Last Contact ${item.last_contact || "UNKNOWN"} | Start ${item.start_date || "UNKNOWN_START_DATE"} | ` +
-      `Email Accounts: ${(item.validated_campaign_email_codes || []).join(", ") || "NONE"}`;
-    const reasons = (item.blocking_reasons || []).concat(item.warnings || []);
-    if (reasons.length) row.textContent += ` | ${reasons.join("; ")}`;
-    list.appendChild(row);
+    if (!grouped.has(item.final_eligibility)) {
+      grouped.set(item.final_eligibility, []);
+    }
+    grouped.get(item.final_eligibility).push(item);
   });
-  details.appendChild(list);
+
+  categoryOrder
+    .concat([...grouped.keys()].filter((category) => !categoryOrder.includes(category)))
+    .forEach((category) => {
+      const items = grouped.get(category) || [];
+      const section = document.createElement("details");
+      section.dataset.eligibilityCategory = category;
+      section.open = category !== "READY_TO_IMPORT" && items.length > 0;
+
+      const sectionSummary = document.createElement("summary");
+      sectionSummary.textContent = `${category} (${items.length}) `;
+      const copyButton = document.createElement("button");
+      copyButton.type = "button";
+      copyButton.textContent = "Copy";
+      copyButton.disabled = items.length === 0;
+      copyButton.style.marginLeft = "8px";
+      copyButton.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        copyImportEligibilityCategory(category, items, copyButton);
+      });
+      sectionSummary.appendChild(copyButton);
+      section.appendChild(sectionSummary);
+
+      if (items.length) {
+        const list = document.createElement("div");
+        items.forEach((item) => {
+          const row = document.createElement("div");
+          row.style.marginTop = "8px";
+          row.textContent = formatImportEligibilityLine(item);
+          list.appendChild(row);
+        });
+        section.appendChild(list);
+      }
+      details.appendChild(section);
+    });
+
   container.appendChild(details);
   container.style.display = "block";
   const ready = eligibility.summary.READY_TO_IMPORT || 0;
@@ -676,6 +709,41 @@ function renderImportEligibility(eligibility) {
   button.disabled = ready === 0;
   button.onclick = () => showBulkImportConfirmation(ready);
   document.getElementById("bulk-import-blocked-reason").textContent = ready === 0 ? "No campaigns are currently eligible." : "Only eligible campaigns will proceed; others remain skipped or blocked.";
+}
+
+function formatImportEligibilityLine(item) {
+  let line = `${item.domain} | ${item.final_eligibility} | ${item.mapping_classification} | ` +
+    `${item.proposed_status || ""} | Sequence ${item.proposed_current_sequence} | Price ${item.proposed_current_price} | ` +
+    `Last Contact ${item.last_contact || "UNKNOWN"} | Start ${item.start_date || "UNKNOWN_START_DATE"} | ` +
+    `Email Accounts: ${(item.validated_campaign_email_codes || []).join(", ") || "NONE"}`;
+  const reasons = (item.blocking_reasons || []).concat(item.warnings || []);
+  if (reasons.length) line += ` | ${reasons.join("; ")}`;
+  return line;
+}
+
+async function copyImportEligibilityCategory(category, items, button) {
+  const text = `${category}: ${items.length}\n\n${items.map(formatImportEligibilityLine).join("\n")}`;
+  try {
+    if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      const copied = document.execCommand && document.execCommand("copy");
+      textarea.remove();
+      if (!copied) throw new Error("Copy is unavailable");
+    }
+    const originalLabel = button.textContent;
+    button.textContent = "Copied";
+    setTimeout(() => { button.textContent = originalLabel; }, 1200);
+  } catch (error) {
+    button.textContent = "Copy failed";
+    setTimeout(() => { button.textContent = "Copy"; }, 1200);
+  }
 }
 
 function showBulkImportConfirmation(ready) {

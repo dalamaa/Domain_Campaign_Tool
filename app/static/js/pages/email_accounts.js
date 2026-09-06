@@ -1,4 +1,5 @@
 let selectedCodes = new Set();
+let emailAccounts = [];
 
 // Update email_accounts.js to handle existing code lookup
 async function checkCodeExists(code) {
@@ -10,6 +11,7 @@ async function checkCodeExists(code) {
 async function renderEmailTable() {
   const response = await fetch("/api/email-accounts");
   const accounts = await response.json();
+  emailAccounts = accounts;
 
   const body = document.querySelector("#email-table-body");
   if (!body) return;
@@ -120,14 +122,37 @@ function toggleAccount(code) {
   renderEmailTable();
 }
 
-function bulkToggle() {
-  selectedCodes.forEach((code) => {
-    const acc = mockEmailAccounts.find((a) => a.code === code);
-    acc.state = acc.state === "Disabled" ? "Available" : "Disabled";
-  });
-  selectedCodes.clear();
-  updateActionBar();
-  renderEmailTable();
+async function bulkToggle() {
+  const updates = [];
+  for (const code of selectedCodes) {
+    const account = emailAccounts.find((candidate) => candidate.code === code);
+    if (!account) {
+      alert(`Email account ${code} is no longer available. Refreshing the list.`);
+      selectedCodes.clear();
+      await renderEmailTable();
+      return;
+    }
+    updates.push({ code: account.code, enabled: !Boolean(account.enabled) });
+  }
+
+  if (!updates.length) return;
+
+  try {
+    const response = await fetch("/api/email-accounts/status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accounts: updates }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(result.error || "Unable to update email account status.");
+    }
+    selectedCodes.clear();
+    await renderEmailTable();
+    alert("Email account status updated.");
+  } catch (error) {
+    alert(error.message);
+  }
 }
 
 async function bulkDelete() {

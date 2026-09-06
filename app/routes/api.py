@@ -17,8 +17,69 @@ def parse_code(code):
 @bp.route('/email-accounts', methods=['GET'])
 def get_email_accounts():
     accounts = EmailAccount.query.order_by(asc(EmailAccount.profile_order)).all()
-    # Note: State logic will be handled based on reservations in a later phase
-    return jsonify([{'code': a.code, 'group': a.group, 'order': a.profile_order, 'enabled': a.enabled, 'state': 'Available'} for a in accounts])
+    return jsonify([{
+        'code': a.code,
+        'group': a.group,
+        'order': a.profile_order,
+        'enabled': a.enabled,
+        'state': 'Available' if a.enabled else 'Disabled',
+    } for a in accounts])
+
+
+@bp.route('/email-accounts/status', methods=['POST'])
+def update_email_account_status():
+    from sqlalchemy.exc import SQLAlchemyError
+
+    data = request.get_json(silent=True)
+    updates = data.get('accounts') if isinstance(data, dict) else None
+    if not isinstance(updates, list) or not updates:
+        return jsonify({'error': 'Accounts must be a non-empty list.'}), 400
+
+    normalized_updates = []
+    seen_codes = set()
+    for update in updates:
+        if not isinstance(update, dict):
+            return jsonify({'error': 'Each account update must be an object.'}), 400
+        code = update.get('code')
+        enabled = update.get('enabled')
+        if not isinstance(code, str) or not code.strip():
+            return jsonify({'error': 'Each account update requires a code.'}), 400
+        if type(enabled) is not bool:
+            return jsonify({'error': 'Each account update requires a boolean enabled value.'}), 400
+        normalized_code = code.strip().upper()
+        if normalized_code in seen_codes:
+            return jsonify({'error': f'Duplicate account code: {normalized_code}.'}), 400
+        seen_codes.add(normalized_code)
+        normalized_updates.append((normalized_code, enabled))
+
+    try:
+        codes = [code for code, _ in normalized_updates]
+        accounts = EmailAccount.query.filter(EmailAccount.code.in_(codes)).all()
+        accounts_by_code = {account.code: account for account in accounts}
+        missing_codes = [code for code in codes if code not in accounts_by_code]
+        if missing_codes:
+            return jsonify({
+                'error': 'One or more email accounts were not found.',
+                'missing_codes': missing_codes,
+            }), 404
+
+        for code, enabled in normalized_updates:
+            accounts_by_code[code].enabled = enabled
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({'error': 'Unable to update email account status.'}), 500
+
+    return jsonify({
+        'success': True,
+        'accounts': [{
+            'code': accounts_by_code[code].code,
+            'group': accounts_by_code[code].group,
+            'order': accounts_by_code[code].profile_order,
+            'enabled': accounts_by_code[code].enabled,
+            'state': 'Available' if accounts_by_code[code].enabled else 'Disabled',
+        } for code in codes],
+    })
 
 @bp.route('/email-accounts/suggest-order', methods=['POST'])
 def suggest_order():
@@ -63,7 +124,9 @@ def check_code():
             'account': {
                 'code': acc.code,
                 'group': acc.group,
-                'order': acc.profile_order
+                'order': acc.profile_order,
+                'enabled': acc.enabled,
+                'state': 'Available' if acc.enabled else 'Disabled',
             }
         })
     return jsonify({'exists': False})
