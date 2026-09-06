@@ -1,5 +1,6 @@
 import pytest
 from app.models.models import db, Domain, Campaign, CampaignStatus
+from app.services.settings_service import set_setting
 from datetime import datetime, timedelta
 
 def test_dashboard_overview_counts(client):
@@ -16,16 +17,18 @@ def test_dashboard_overview_counts(client):
         db.session.commit()
         
         # Test
-        res = client.get('/api/dashboard/overview?expiry_days=30')
+        res = client.get('/api/dashboard/overview')
         data = res.json
         assert data['total_domains'] == 2
         assert data['active_campaigns'] == 1
         assert data['resting_campaigns'] == 1
         assert data['dormant_campaigns'] == 0
-        assert data['expiring_count'] == 1 # d1 is 10 days away
-        
-        # Test different expiry window
+        assert data['expiring_count'] == 2 # Both 10 and 50 are within the default 60
+        assert data['expiring_soon_days'] == 60
+
+        # The persisted setting drives the count; query-string overrides are ignored.
+        set_setting('EXPIRING_SOON_DAYS', '30')
         res = client.get('/api/dashboard/overview?expiry_days=60')
         data = res.json
-        assert data['expiring_count'] == 2 # Both 10 and 50 are within 60
-
+        assert data['expiring_count'] == 1 # Only d1 is within 30
+        assert data['expiring_soon_days'] == 30

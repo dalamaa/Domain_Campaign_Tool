@@ -225,13 +225,34 @@ def save_resting_eligibility_config():
     except (TypeError, ValueError) as exc:
         return jsonify({'error': str(exc)}), 400
 
+@bp.route('/settings/expiring-soon-days', methods=['GET'])
+def get_expiring_soon_days_route():
+    from app.services.expiry_service import get_expiring_soon_days
+    try:
+        return jsonify({'expiring_soon_days': get_expiring_soon_days()})
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 500
+
+@bp.route('/settings/expiring-soon-days', methods=['POST'])
+def save_expiring_soon_days():
+    from app.services.expiry_service import update_expiring_soon_days
+    data = request.get_json(silent=True)
+    try:
+        if not isinstance(data, dict) or set(data) != {'expiring_soon_days'}:
+            raise ValueError('Expiring Soon settings must contain expiring_soon_days.')
+        days = update_expiring_soon_days(data['expiring_soon_days'])
+        return jsonify({'success': True, 'expiring_soon_days': days})
+    except (TypeError, ValueError) as exc:
+        return jsonify({'error': str(exc)}), 400
+
 @bp.route('/dashboard/overview', methods=['GET'])
 def get_dashboard_overview():
     from app.models.models import Domain, Campaign, CampaignStatus
-    from datetime import timedelta
     from app.services.time_service import get_business_today
-    expiry_days = int(request.args.get('expiry_days', 30))
+    from app.services.expiry_service import expiring_soon_bounds, get_expiring_soon_days
     today = get_business_today()
+    expiry_days = get_expiring_soon_days()
+    expiry_start, expiry_end = expiring_soon_bounds(today, expiry_days)
 
     total_domains = Domain.query.count()
     active_campaigns = Campaign.query.filter_by(status=CampaignStatus.ACTIVE).count()
@@ -239,15 +260,69 @@ def get_dashboard_overview():
     dormant_campaigns = Campaign.query.filter_by(status=CampaignStatus.DORMANT).count()
     expiring_count = Domain.query.filter(
         Domain.expiry_date.isnot(None),
-        Domain.expiry_date <= today + timedelta(days=expiry_days),
-        Domain.expiry_date >= today
+        Domain.expiry_date <= expiry_end,
+        Domain.expiry_date >= expiry_start,
     ).count()
     return jsonify({
         'total_domains': total_domains,
         'active_campaigns': active_campaigns,
         'resting_campaigns': resting_campaigns,
         'dormant_campaigns': dormant_campaigns,
-        'expiring_count': expiring_count
+        'expiring_count': expiring_count,
+        'expiring_soon_days': expiry_days,
+    })
+
+@bp.route('/dashboard/expiring-soon', methods=['GET'])
+def get_expiring_soon():
+    from sqlalchemy.orm import selectinload
+    from app.models.models import Domain
+    from app.services.expiry_service import (
+        days_until_expiry,
+        expiring_soon_bounds,
+        get_expiring_soon_days,
+        select_latest_campaign,
+    )
+    from app.services.time_service import get_business_today
+
+    today = get_business_today()
+    threshold_days = get_expiring_soon_days()
+    expiry_start, expiry_end = expiring_soon_bounds(today, threshold_days)
+    domains = Domain.query.options(selectinload(Domain.campaigns)).filter(
+        Domain.expiry_date.isnot(None),
+        Domain.expiry_date >= expiry_start,
+        Domain.expiry_date <= expiry_end,
+    ).order_by(Domain.expiry_date.asc(), Domain.domain_name.asc(), Domain.id.asc()).all()
+
+    results = []
+    for domain in domains:
+        campaign = select_latest_campaign(domain.campaigns)
+        days_since_last_contact = None
+        if campaign and campaign.last_contact_date is not None:
+            days_since_last_contact = (today - campaign.last_contact_date).days
+
+        results.append({
+            'domain_id': domain.id,
+            'domain_name': domain.domain_name,
+            'expiry_date': domain.expiry_date.isoformat(),
+            'days_until_expiry': days_until_expiry(domain.expiry_date, today),
+            'domain_status': domain.status,
+            'campaign_id': campaign.id if campaign else None,
+            'campaign_status': campaign.status.value if campaign else None,
+            'current_sequence': campaign.current_sequence if campaign else None,
+            'current_price': campaign.current_price if campaign else None,
+            'last_contact_date': (
+                campaign.last_contact_date.isoformat()
+                if campaign and campaign.last_contact_date else None
+            ),
+            'days_since_last_contact': days_since_last_contact,
+            'handled_by': campaign.handled_by if campaign else None,
+        })
+
+    return jsonify({
+        'business_today': today.isoformat(),
+        'expiring_soon_days': threshold_days,
+        'count': len(results),
+        'domains': results,
     })
 
 @bp.route('/dashboard/resting-suggestions', methods=['GET'])

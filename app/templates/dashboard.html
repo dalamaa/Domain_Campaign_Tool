@@ -13,12 +13,7 @@
       Dormant Campaigns: <span id="dormant-campaigns"></span>
     </div>
     <div class="card">
-      Expiring:
-      <select id="expiry-filter" onchange="refreshDashboard()">
-        <option value="30">30 Days</option>
-        <option value="45">45 Days</option>
-        <option value="60">60 Days</option>
-      </select>
+      Expiring Soon:
       <span id="expiring-count"></span>
     </div>
   </section>
@@ -42,6 +37,12 @@
         Resting Suggestions (<span id="resting-suggestions-count">0</span>)
       </button>
       <div id="resting-suggestions" class="content"></div>
+    </div>
+    <div class="accordion">
+      <button onclick="toggleAccordion('expiring-soon')">
+        Expiring Soon (<span id="expiring-soon-count">0</span>)
+      </button>
+      <div id="expiring-soon" class="content"></div>
     </div>
   </section>
   <!-- Today's Campaigns -->

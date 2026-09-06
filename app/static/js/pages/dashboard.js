@@ -10,8 +10,7 @@ function syncCampaignStates() {
 }
 
 async function refreshDashboard() {
-  const expiryDays = document.getElementById("expiry-filter").value;
-  const res = await fetch(`/api/dashboard/overview?expiry_days=${expiryDays}`);
+  const res = await fetch("/api/dashboard/overview");
   const data = await res.json();
 
   document.getElementById("total-domains").textContent = data.total_domains;
@@ -274,6 +273,69 @@ function renderSuggestedWork() {
     }
   };
 
+  const renderExpiringSoon = async () => {
+    const container = document.getElementById("expiring-soon");
+    const count = document.getElementById("expiring-soon-count");
+    if (!container) return;
+
+    container.innerHTML = "<p>Loading Expiring Soon...</p>";
+    try {
+      const response = await fetch("/api/dashboard/expiring-soon");
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to load Expiring Soon.");
+      }
+
+      const domains = data.domains || [];
+      if (count) count.textContent = data.count ?? domains.length;
+      if (domains.length === 0) {
+        container.innerHTML =
+          "<p>No domains are currently expiring within the configured window.</p>";
+        return;
+      }
+
+      const display = (value) => (value == null || value === "" ? "—" : value);
+      const sequenceDisplay = (value) =>
+        value == null ? "—" : value === 0 ? "Not started" : value;
+      container.innerHTML = `
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Domain</th>
+                <th>Expiry</th>
+                <th>Days Left</th>
+                <th>Campaign</th>
+                <th>Sequence</th>
+                <th>Last Contact</th>
+                <th>Days Since Last Contact</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${domains
+                .map(
+                  (domain) => `
+                <tr>
+                  <td>${display(domain.domain_name)}</td>
+                  <td>${display(domain.expiry_date)}</td>
+                  <td>${display(domain.days_until_expiry)}</td>
+                  <td>${display(domain.campaign_status)}</td>
+                  <td>${sequenceDisplay(domain.current_sequence)}</td>
+                  <td>${display(domain.last_contact_date)}</td>
+                  <td>${display(domain.days_since_last_contact)}</td>
+                </tr>`,
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    } catch (error) {
+      if (count) count.textContent = "—";
+      container.innerHTML = `<p class="dashboard-error">${error.message}</p>`;
+    }
+  };
+
   renderFirstFollowups();
 
   // Render Normal Follow-ups
@@ -316,6 +378,7 @@ function renderSuggestedWork() {
 
   renderNormalFollowups();
   renderRestingSuggestions();
+  renderExpiringSoon();
 }
 
 function reserveBlock(domain) {

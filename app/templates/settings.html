@@ -157,6 +157,29 @@
     <p id="resting-rules-status" role="status" aria-live="polite"></p>
   </div>
 
+  <div style="margin-top: 20px" id="expiring-soon-settings">
+    <h3>Expiring Domains</h3>
+    <label for="expiring-soon-days">Show domains expiring within:</label>
+    <input
+      type="number"
+      id="expiring-soon-days"
+      min="0"
+      max="3650"
+      step="1"
+      required
+      style="width: 80px"
+    />
+    days
+    <p>
+      Examples: 14 days ≈ 2 weeks, 30 days ≈ 1 month, 60 days ≈ 2 months,
+      90 days ≈ 3 months.
+    </p>
+    <button type="button" onclick="saveExpiringSoonDays()">
+      Save Expiring Domains
+    </button>
+    <p id="expiring-soon-status" role="status" aria-live="polite"></p>
+  </div>
+
   <div style="margin-top: 20px">
     <h3>Reservation</h3>
     <div id="reservation-view">
@@ -203,8 +226,24 @@
     const config = await configRes.json();
     const limitRes = await fetch("/api/settings/daily-use-limit");
     const limitData = await limitRes.json();
+    const expiringRes = await fetch("/api/settings/expiring-soon-days");
+    const expiringData = await expiringRes.json();
 
-    originalConfig = { config, limitData, restingConfig: null };
+    originalConfig = {
+      config,
+      limitData,
+      expiringSoonDays: expiringRes.ok ? expiringData.expiring_soon_days : null,
+      restingConfig: null,
+    };
+    if (expiringRes.ok) {
+      document.getElementById("expiring-soon-days").value =
+        expiringData.expiring_soon_days;
+    } else {
+      setExpiringSoonStatus(
+        expiringData.error || "Unable to load Expiring Domains settings.",
+        true,
+      );
+    }
 
     try {
       const restingRes = await fetch("/api/settings/resting-eligibility-config");
@@ -247,6 +286,53 @@
     if (!status) return;
     status.textContent = message;
     status.style.color = isError ? "#b00020" : "#176b2c";
+  }
+
+  function setExpiringSoonStatus(message, isError = false) {
+    const status = document.getElementById("expiring-soon-status");
+    if (!status) return;
+    status.textContent = message;
+    status.style.color = isError ? "#b00020" : "#176b2c";
+  }
+
+  function readExpiringSoonDays() {
+    const raw = document.getElementById("expiring-soon-days").value.trim();
+    if (!/^\d+$/.test(raw)) {
+      throw new Error("Enter a non-negative integer Expiring Soon window.");
+    }
+    const value = Number(raw);
+    if (!Number.isSafeInteger(value) || value > 3650) {
+      throw new Error("Expiring Soon window must be between 0 and 3650 days.");
+    }
+    return value;
+  }
+
+  async function saveExpiringSoonDays() {
+    let days;
+    try {
+      days = readExpiringSoonDays();
+    } catch (error) {
+      setExpiringSoonStatus(error.message, true);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/settings/expiring-soon-days", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expiring_soon_days: days }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to save Expiring Domains settings.");
+      }
+      originalConfig.expiringSoonDays = data.expiring_soon_days;
+      document.getElementById("expiring-soon-days").value =
+        data.expiring_soon_days;
+      setExpiringSoonStatus("Expiring Domains setting saved.");
+    } catch (error) {
+      setExpiringSoonStatus(error.message, true);
+    }
   }
 
   function populateRestingRules(config) {
