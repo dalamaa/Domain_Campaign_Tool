@@ -118,6 +118,8 @@ def build_campaign_mapping_preview(history_file, matching, domains, campaigns, h
                 elif existing_history or campaign.current_sequence or campaign.current_price:
                     classification = "CONFLICT_NEEDS_ATTENTION"
         last_contact = _parse_date(row[indexes["last_contact"]]) if indexes["last_contact"] is not None and indexes["last_contact"] < len(row) else None
+        if not base.get("rows") and "classification" not in base and last_contact:
+            base["status"] = CampaignStatus.ACTIVE.value
         start_date = _parse_date(row[indexes["start"]]) if indexes["start"] is not None and indexes["start"] < len(row) and row[indexes["start"]].strip() else None
         for history_row in base.get("rows", []):
             history_row["action_date"] = last_contact if history_row["sequence"] == base.get("current_sequence") else "UNKNOWN"

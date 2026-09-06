@@ -3,16 +3,19 @@ from app.models.models import db, EmailAccount
 from sqlalchemy import asc
 import csv
 import json
-import re
 from sqlalchemy import desc
 from datetime import datetime, timedelta
 
-bp = Blueprint('api', __name__, url_prefix='/api')
+from app.services.email_account_service import (
+    BulkEmailAccountValidationError,
+    build_bulk_preview,
+    lock_email_account_order,
+    parse_code,
+    persist_bulk_accounts,
+    suggest_profile_order,
+)
 
-def parse_code(code):
-    match = re.match(r"([A-Za-z]+)(\d+)", code)
-    if not match: return None, None
-    return match.group(1), int(match.group(2))
+bp = Blueprint('api', __name__, url_prefix='/api')
 
 @bp.route('/email-accounts', methods=['GET'])
 def get_email_accounts():
@@ -84,26 +87,69 @@ def update_email_account_status():
 @bp.route('/email-accounts/suggest-order', methods=['POST'])
 def suggest_order():
     code = request.json.get('code')
-    prefix, num = parse_code(code)
+    prefix, _ = parse_code(code)
     if not prefix: return jsonify({'error': 'Invalid code format'}), 400
 
-    # Get accounts with same prefix
     accounts = EmailAccount.query.all()
-    group_accounts = [a for a in accounts if parse_code(a.code)[0] == prefix]
+    return jsonify({'suggested_order': suggest_profile_order(code, accounts)})
 
-    if not group_accounts:
-        # End of overall sequence
-        return jsonify({'suggested_order': (db.session.query(db.func.max(EmailAccount.profile_order)).scalar() or 0) + 1})
 
-    # Find position based on numeric value
-    group_accounts.sort(key=lambda a: parse_code(a.code)[1])
-    for acc in group_accounts:
-        _, acc_num = parse_code(acc.code)
-        if num < acc_num:
-            return jsonify({'suggested_order': acc.profile_order})
+def _bulk_account_request():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        raise ValueError('A JSON object is required.')
+    enabled = data.get('enabled', True)
+    if type(enabled) is not bool:
+        raise ValueError('Enabled must be a boolean.')
+    return data.get('codes'), enabled
 
-    # After last in group
-    return jsonify({'suggested_order': max([a.profile_order for a in group_accounts]) + 1})
+
+@bp.route('/email-accounts/bulk/preview', methods=['POST'])
+@bp.route('/email-accounts/bulk-preview', methods=['POST'])
+def preview_bulk_email_accounts():
+    try:
+        codes, enabled = _bulk_account_request()
+        accounts = EmailAccount.query.order_by(
+            EmailAccount.profile_order, EmailAccount.code
+        ).all()
+        report = build_bulk_preview(codes, enabled, accounts)
+        return jsonify(report)
+    except ValueError as exc:
+        return jsonify({'valid': False, 'error': str(exc)}), 400
+
+
+@bp.route('/email-accounts/bulk', methods=['POST'])
+@bp.route('/email-accounts/bulk-add', methods=['POST'])
+def bulk_add_email_accounts():
+    try:
+        codes, enabled = _bulk_account_request()
+        accounts = lock_email_account_order()
+        report = build_bulk_preview(codes, enabled, accounts)
+        if not report['valid']:
+            db.session.rollback()
+            return jsonify(report), 400
+        new_accounts = persist_bulk_accounts(report, accounts)
+        db.session.commit()
+        return jsonify({
+            'success': True,
+            'accounts': [{
+                'code': account.code,
+                'group': account.group,
+                'order': account.profile_order,
+                'enabled': account.enabled,
+                'state': 'Available' if account.enabled else 'Disabled',
+            } for account in new_accounts],
+            'final_order': report['final_order'],
+        })
+    except BulkEmailAccountValidationError as exc:
+        db.session.rollback()
+        return jsonify(exc.report), 400
+    except ValueError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': 'Unable to add email accounts.'}), 500
 # New route to check order availability
 @bp.route('/email-accounts/check-order', methods=['POST'])
 def check_order():
@@ -137,13 +183,15 @@ def add_email_account():
     code = data['code'].upper()
     prefix, _ = parse_code(code)
     new_order = int(data['order'])
-
-    # Check for existing
-    existing = EmailAccount.query.get(code)
-
-    if existing and not data.get('overwrite'):
-        return jsonify({'error': 'Code already exists', 'existing': True}), 409
     try:
+        # Serialize this order-changing path with bulk insertion so a single
+        # add cannot calculate against an order that bulk insertion is moving.
+        accounts = lock_email_account_order()
+        existing = next((account for account in accounts if account.code == code), None)
+        if existing and not data.get('overwrite'):
+            db.session.rollback()
+            return jsonify({'error': 'Code already exists', 'existing': True}), 409
+
         if existing:
             # Handle Overwrite: delete first or update
             db.session.delete(existing)
@@ -736,8 +784,18 @@ def get_todays_campaigns():
 
 @bp.route('/domains', methods=['GET'])
 def get_domains():
-    from app.models.models import Domain, Campaign, CampaignStatus, CampaignHistory
-    domains = Domain.query.all()
+    from math import inf
+    from sqlalchemy.orm import selectinload
+    from app.models.models import (
+        Domain,
+        CampaignHistory,
+        CampaignEmailBlock,
+        EmailAccount,
+        HistoryEmailUsed,
+    )
+    from app.services.expiry_service import select_latest_campaign
+
+    domains = Domain.query.options(selectinload(Domain.campaigns)).all()
     results = []
     action_mapping = {
         'FIRST_OUTREACH': 'First Outreach',
@@ -746,20 +804,51 @@ def get_domains():
         'PRICE_REDUCTION': 'Price Reduction'
     }
     for d in domains:
-        c = Campaign.query.filter_by(domain_id=d.id).first()
-        has_history = bool(c and CampaignHistory.query.filter_by(campaign_id=c.id).first())
+        c = select_latest_campaign(d.campaigns)
+        latest = None
+        if c:
+            latest = CampaignHistory.query.filter_by(campaign_id=c.id).order_by(
+                CampaignHistory.sequence.desc(),
+                CampaignHistory.id.desc(),
+            ).first()
+        has_history = latest is not None
         has_values = has_history
 
-        # Get latest action's emails
+        # CampaignEmailBlock is the campaign-level association used by
+        # imports. Preserve HistoryEmailUsed as a fallback for older,
+        # normally-created campaigns that have no campaign block yet.
         latest_emails = []
-        if c and has_history:
-            latest = CampaignHistory.query.filter_by(campaign_id=c.id).order_by(CampaignHistory.sequence.desc()).first()
-            if latest:
-                # Debug print
-                print(f"DEBUG: Latest history {latest.id} for campaign {c.id}, found {len(latest.history_email_used)} emails.")
-                latest_emails = [e.email_code for e in latest.history_email_used]
+        if c:
+            blocks = CampaignEmailBlock.query.filter_by(campaign_id=c.id).order_by(
+                CampaignEmailBlock.id.asc()
+            ).all()
+            associated_codes = list(dict.fromkeys(block.email_code for block in blocks))
+            source_codes = associated_codes
+            if not source_codes and latest:
+                source_codes = list(dict.fromkeys(
+                    email_used.email_code
+                    for email_used in HistoryEmailUsed.query.filter_by(history_id=latest.id).order_by(
+                        HistoryEmailUsed.id.asc()
+                    ).all()
+                ))
 
-        raw_action = c.last_action if c else ''
+            if source_codes:
+                account_orders = {
+                    account.code: account.profile_order
+                    for account in EmailAccount.query.filter(
+                        EmailAccount.code.in_(source_codes)
+                    ).all()
+                }
+                latest_emails = sorted(
+                    source_codes,
+                    key=lambda code: (account_orders.get(code, inf), code),
+                )
+
+        raw_action = c.last_action if c and c.last_action else (
+            latest.action_type.value if latest else ''
+        )
+        if hasattr(raw_action, 'value'):
+            raw_action = raw_action.value
         friendly_action = action_mapping.get(str(raw_action), raw_action)
         results.append({
             'id': d.id,
@@ -1201,6 +1290,7 @@ def edit_campaign_action(campaign_id, sequence):
 @bp.route('/dashboard/first-follow-ups', methods=['GET'])
 def get_first_follow_ups():
     from app.models.models import Campaign, CampaignStatus, CampaignHistory, ActionType, Reservation, ReservationStatus
+    from app.services.campaign_email_service import get_campaign_email_codes
     from app.services.resting_eligibility_service import evaluate_resting_eligibility
     from app.services.settings_service import get_resting_eligibility_config
     from app.services.time_service import get_business_today
@@ -1234,7 +1324,7 @@ def get_first_follow_ups():
         if days_since < min_days:
             continue
 
-        emails_used = [e.email_code for e in latest.history_email_used]
+        emails_used = get_campaign_email_codes(camp, fallback_history=latest)
         res = Reservation.query.filter_by(
             campaign_id=camp.id, date=today, status=ReservationStatus.RESERVED
             ).first()
@@ -1267,6 +1357,7 @@ def get_first_follow_ups():
 @bp.route('/dashboard/normal-follow-ups', methods=['GET'])
 def get_normal_follow_ups():
     from app.models.models import Campaign, CampaignStatus, CampaignHistory, Reservation, ReservationStatus
+    from app.services.campaign_email_service import get_campaign_email_codes
     from app.services.resting_eligibility_service import evaluate_resting_eligibility
     from app.services.settings_service import get_resting_eligibility_config
     from app.services.time_service import get_business_today
@@ -1299,7 +1390,7 @@ def get_normal_follow_ups():
         if days_since < min_days:
             continue
 
-        emails_used = [e.email_code for e in latest.history_email_used]
+        emails_used = get_campaign_email_codes(camp, fallback_history=latest)
         res = Reservation.query.filter_by(
             campaign_id=camp.id, date=today, status=ReservationStatus.RESERVED
         ).first()

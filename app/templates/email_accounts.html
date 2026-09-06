@@ -5,6 +5,7 @@
 <!-- In app/templates/email_accounts.html -->
 <div class="action-bar" id="action-bar" style="display: block;">
     <button onclick="openAddModal()">+ Add Account</button>
+    <button id="bulk-add-btn" onclick="openBulkAddModal()">Bulk Add Accounts</button>
     <button id="move-up-btn" onclick="bulkMove(-1)" disabled>Move Up</button>
     <button id="move-down-btn" onclick="bulkMove(1)" disabled>Move Down</button>
     <button id="edit-btn" onclick="bulkToggle()" disabled>Enable/Disable</button>
@@ -47,7 +48,22 @@
     <button onclick="closeAddModal()">Cancel</button>
 </div>
 
+<div id="bulk-add-email-modal" class="modal" style="display:none; position:fixed; top:12%; left:25%; width:50%; background:white; padding:20px; border:1px solid #ccc; z-index:100;">
+    <h3>Bulk Add Email Accounts</h3>
+    <p>Paste one account code per line. Group and global order are derived from the existing account-ordering rules.</p>
+    <label for="bulk-account-codes">Codes:</label><br>
+    <textarea id="bulk-account-codes" rows="10" style="width:100%;" placeholder="Z03&#10;T11&#10;N05"></textarea><br>
+    <label for="bulk-account-enabled">New account state:</label>
+    <select id="bulk-account-enabled">
+      <option value="true">Enabled</option>
+      <option value="false">Disabled</option>
+    </select>
+    <div id="bulk-add-preview" style="margin-top:12px; white-space:pre-wrap;"></div>
+    <button type="button" onclick="previewBulkAdd()">Preview</button>
+    <button type="button" id="confirm-bulk-add-btn" onclick="confirmBulkAdd()" disabled>Confirm Add</button>
+    <button type="button" onclick="closeBulkAddModal()">Cancel</button>
+</div>
+
 <script src="{{ url_for('static', filename='js/shared.js') }}"></script>
 <script src="{{ url_for('static', filename='js/pages/email_accounts.js') }}"></script>
 {% endblock %}
-

@@ -1,7 +1,7 @@
 from datetime import date
 
 from app.models.models import (
-    ActionType, Campaign, CampaignEmailBlock, CampaignHistory,
+    ActionType, Campaign, CampaignEmailBlock, CampaignHistory, CampaignStatus,
     Domain, EmailAccount, HistoryEmailUsed, Reservation, db,
 )
 from app.services.bulk_import_persistence_service import persist_ready_import
@@ -69,6 +69,22 @@ def test_dormant_zero_accounts_and_unknown_start_date_are_allowed(app):
         campaign = Campaign.query.first()
         assert campaign.start_date is None and campaign.current_sequence == 0
         assert CampaignEmailBlock.query.count() == 0
+
+
+def test_known_contact_without_history_persists_active_zero_state(app):
+    with app.app_context():
+        add_account()
+        record = item(status="ACTIVE", codes=["M01"], progression=[])
+        result = persist_ready_import({"results": [record]})
+        campaign = Campaign.query.first()
+
+        assert result[0]["status"] == "IMPORTED"
+        assert campaign.status == CampaignStatus.ACTIVE
+        assert campaign.current_sequence == 0
+        assert campaign.current_price == 0
+        assert campaign.last_contact_date == date(2026, 8, 27)
+        assert CampaignHistory.query.count() == 0
+        assert CampaignEmailBlock.query.count() == 1
 
 
 def test_non_ready_and_sold_records_are_not_written(app):

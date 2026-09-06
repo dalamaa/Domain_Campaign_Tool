@@ -564,6 +564,26 @@ def test_step4b_blank_start_date_is_explicitly_unknown():
     assert result["results"][0]["classification"] == "NEW"
 
 
+def test_step4b_no_history_without_last_contact_remains_dormant():
+    result = map_preview(mapping_csv(last_contact=""))
+    item = result["results"][0]
+    assert item["proposed_status"] == "DORMANT"
+    assert item["proposed_current_sequence"] == 0
+    assert item["proposed_current_price"] == 0
+    assert item["last_contact"] is None
+    assert item["historical_progression"] == []
+
+
+def test_step4b_no_history_with_last_contact_is_active_without_progression():
+    result = map_preview(mapping_csv(last_contact="09/03/2026"))
+    item = result["results"][0]
+    assert item["proposed_status"] == "ACTIVE"
+    assert item["proposed_current_sequence"] == 0
+    assert item["proposed_current_price"] == 0
+    assert item["last_contact"] == "2026-09-03"
+    assert item["historical_progression"] == []
+
+
 def test_step4b_new_and_safe_to_attach_classifications():
     domain = SimpleNamespace(id=7, domain_name="example.com")
     new_result = map_preview(mapping_csv("N350"))

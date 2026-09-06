@@ -465,16 +465,13 @@ async function submitBulkImport() {
   });
 
   const data = await res.json().catch(() => ({}));
-  console.log("IMPORT STATUS:", res.status, res.ok);
-  console.log("FULL API RESPONSE:", data);
-  console.log("API MATCHING:", data.matching);
 
   if (res.ok) {
     console.log("API RESPONSE:", data);
 
     bulkImportState.matching = data.matching;
 
-    console.log("AFTER API ASSIGNMENT:", bulkImportState.matching);
+
     renderBulkImportReview();
   } else {
     const errorEl = document.getElementById("bulk-import-error");

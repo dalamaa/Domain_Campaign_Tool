@@ -184,6 +184,77 @@ function closeAddModal() {
   document.getElementById("add-email-modal").style.display = "none";
 }
 
+function openBulkAddModal() {
+  document.getElementById("bulk-add-email-modal").style.display = "block";
+  document.getElementById("bulk-add-preview").textContent = "";
+  document.getElementById("confirm-bulk-add-btn").disabled = true;
+}
+
+function closeBulkAddModal() {
+  document.getElementById("bulk-add-email-modal").style.display = "none";
+}
+
+function bulkAddPayload() {
+  return {
+    codes: document.getElementById("bulk-account-codes").value,
+    enabled: document.getElementById("bulk-account-enabled").value === "true",
+  };
+}
+
+function renderBulkAddPreview(data) {
+  const container = document.getElementById("bulk-add-preview");
+  const confirmButton = document.getElementById("confirm-bulk-add-btn");
+  if (!container || !confirmButton) return;
+
+  const lines = [];
+  if (data.error) lines.push(data.error);
+  (data.rows || []).forEach((row) => {
+    const group = row.group || "—";
+    const order = row.proposed_order == null ? "—" : row.proposed_order;
+    const state = row.enabled ? "Enabled" : "Disabled";
+    const suffix = row.error ? ` | ${row.error}` : "";
+    lines.push(`${row.code || "(blank)"} | Group ${group} | Proposed Order ${order} | ${state} | ${row.validation_status}${suffix}`);
+  });
+  if ((data.duplicate_codes || []).length) {
+    lines.push(`Duplicate codes: ${data.duplicate_codes.join(", ")}`);
+  }
+  if ((data.existing_codes || []).length) {
+    lines.push(`Already present: ${data.existing_codes.join(", ")}`);
+  }
+  if ((data.invalid_codes || []).length) {
+    lines.push(`Invalid codes: ${data.invalid_codes.join(", ")}`);
+  }
+  container.textContent = lines.join("\n");
+  confirmButton.disabled = data.valid !== true;
+}
+
+async function previewBulkAdd() {
+  const response = await fetch("/api/email-accounts/bulk/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(bulkAddPayload()),
+  });
+  const data = await response.json().catch(() => ({ error: "Unable to preview accounts." }));
+  renderBulkAddPreview(data);
+}
+
+async function confirmBulkAdd() {
+  const response = await fetch("/api/email-accounts/bulk", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(bulkAddPayload()),
+  });
+  const data = await response.json().catch(() => ({ error: "Unable to add email accounts." }));
+  if (!response.ok) {
+    renderBulkAddPreview(data);
+    return;
+  }
+  closeBulkAddModal();
+  document.getElementById("bulk-account-codes").value = "";
+  await renderEmailTable();
+  alert(`${data.accounts.length} email account${data.accounts.length === 1 ? "" : "s"} added.`);
+}
+
 // In app/static/js/pages/email_accounts.js
 
 const codeInput = document.getElementById("form-code");
