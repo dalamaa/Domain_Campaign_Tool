@@ -180,6 +180,31 @@
     <p id="expiring-soon-status" role="status" aria-live="polite"></p>
   </div>
 
+  <div style="margin-top: 20px" id="ready-for-campaign-settings">
+    <h3>Ready for Campaign</h3>
+    <label for="ready-for-campaign-days">
+      Resting campaigns become ready after:
+    </label>
+    <input
+      type="number"
+      id="ready-for-campaign-days"
+      min="0"
+      max="3650"
+      step="1"
+      required
+      style="width: 80px"
+    />
+    days since last contact
+    <p>
+      Dormant campaigns are always ready. Resting campaigns appear after this
+      many days have passed since their last contact.
+    </p>
+    <button type="button" onclick="saveReadyForCampaignDays()">
+      Save Ready for Campaign
+    </button>
+    <p id="ready-for-campaign-status" role="status" aria-live="polite"></p>
+  </div>
+
   <div style="margin-top: 20px">
     <h3>Reservation</h3>
     <div id="reservation-view">
@@ -228,11 +253,14 @@
     const limitData = await limitRes.json();
     const expiringRes = await fetch("/api/settings/expiring-soon-days");
     const expiringData = await expiringRes.json();
+    const readyRes = await fetch("/api/settings/ready-for-campaign-days");
+    const readyData = await readyRes.json();
 
     originalConfig = {
       config,
       limitData,
       expiringSoonDays: expiringRes.ok ? expiringData.expiring_soon_days : null,
+      readyForCampaignDays: readyRes.ok ? readyData.ready_for_campaign_days : null,
       restingConfig: null,
     };
     if (expiringRes.ok) {
@@ -241,6 +269,15 @@
     } else {
       setExpiringSoonStatus(
         expiringData.error || "Unable to load Expiring Domains settings.",
+        true,
+      );
+    }
+    if (readyRes.ok) {
+      document.getElementById("ready-for-campaign-days").value =
+        readyData.ready_for_campaign_days;
+    } else {
+      setReadyForCampaignStatus(
+        readyData.error || "Unable to load Ready for Campaign settings.",
         true,
       );
     }
@@ -295,6 +332,13 @@
     status.style.color = isError ? "#b00020" : "#176b2c";
   }
 
+  function setReadyForCampaignStatus(message, isError = false) {
+    const status = document.getElementById("ready-for-campaign-status");
+    if (!status) return;
+    status.textContent = message;
+    status.style.color = isError ? "#b00020" : "#176b2c";
+  }
+
   function readExpiringSoonDays() {
     const raw = document.getElementById("expiring-soon-days").value.trim();
     if (!/^\d+$/.test(raw)) {
@@ -332,6 +376,46 @@
       setExpiringSoonStatus("Expiring Domains setting saved.");
     } catch (error) {
       setExpiringSoonStatus(error.message, true);
+    }
+  }
+
+  function readReadyForCampaignDays() {
+    const raw = document.getElementById("ready-for-campaign-days").value.trim();
+    if (!/^\d+$/.test(raw)) {
+      throw new Error("Enter a non-negative integer Ready for Campaign window.");
+    }
+    const value = Number(raw);
+    if (!Number.isSafeInteger(value) || value > 3650) {
+      throw new Error("Ready for Campaign window must be between 0 and 3650 days.");
+    }
+    return value;
+  }
+
+  async function saveReadyForCampaignDays() {
+    let days;
+    try {
+      days = readReadyForCampaignDays();
+    } catch (error) {
+      setReadyForCampaignStatus(error.message, true);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/settings/ready-for-campaign-days", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ready_for_campaign_days: days }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to save Ready for Campaign settings.");
+      }
+      originalConfig.readyForCampaignDays = data.ready_for_campaign_days;
+      document.getElementById("ready-for-campaign-days").value =
+        data.ready_for_campaign_days;
+      setReadyForCampaignStatus("Ready for Campaign setting saved.");
+    } catch (error) {
+      setReadyForCampaignStatus(error.message, true);
     }
   }
 

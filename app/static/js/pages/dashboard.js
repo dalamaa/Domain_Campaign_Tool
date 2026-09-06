@@ -9,6 +9,11 @@ function syncCampaignStates() {
   });
 }
 
+function getFollowupResultCount(data) {
+  if (Number.isInteger(data.count)) return data.count;
+  return (data.due || []).length + (data.past_due || []).length;
+}
+
 async function refreshDashboard() {
   const res = await fetch("/api/dashboard/overview");
   const data = await res.json();
@@ -90,10 +95,12 @@ function renderSuggestedWork() {
   // Custom renderer for first-followup to use API data
   const renderFirstFollowups = async () => {
     const container = document.getElementById("first-followup");
+    const count = document.getElementById("first-followup-count");
     if (!container) return;
 
     const res = await fetch("/api/dashboard/first-follow-ups");
     const data = await res.json();
+    if (count) count.textContent = getFollowupResultCount(data);
 
     container.innerHTML = `
       <h4>Due</h4>
@@ -336,15 +343,82 @@ function renderSuggestedWork() {
     }
   };
 
+  const renderReadyForCampaign = async () => {
+    const container = document.getElementById("ready-for-campaign");
+    const count = document.getElementById("ready-for-campaign-count");
+    if (!container) return;
+
+    container.innerHTML = "<p>Loading Ready for Campaign...</p>";
+    try {
+      const response = await fetch("/api/dashboard/ready-for-campaign");
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to load Ready for Campaign.");
+      }
+
+      const domains = data.domains || [];
+      if (count) count.textContent = data.count ?? domains.length;
+      if (domains.length === 0) {
+        container.innerHTML =
+          "<p>No domains are currently ready for a campaign.</p>";
+        return;
+      }
+
+      const display = (value) => (value == null || value === "" ? "—" : value);
+      const sequenceDisplay = (value) =>
+        value == null ? "—" : value === 0 ? "Not started" : value;
+      container.innerHTML = `
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Domain</th>
+                <th>Status</th>
+                <th>Reason</th>
+                <th>Last Contact</th>
+                <th>Days Since</th>
+                <th>Sequence</th>
+                <th>Expiry</th>
+                <th>Days Left</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${domains
+                .map(
+                  (domain) => `
+                <tr>
+                  <td>${display(domain.domain_name)}</td>
+                  <td>${display(domain.campaign_status)}</td>
+                  <td>${display(domain.ready_reason)}</td>
+                  <td>${display(domain.last_contact_date)}</td>
+                  <td>${display(domain.days_since_last_contact)}</td>
+                  <td>${sequenceDisplay(domain.current_sequence)}</td>
+                  <td>${display(domain.expiry_date)}</td>
+                  <td>${display(domain.days_until_expiry)}</td>
+                </tr>`,
+                )
+                .join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+    } catch (error) {
+      if (count) count.textContent = "—";
+      container.innerHTML = `<p class="dashboard-error">${error.message}</p>`;
+    }
+  };
+
   renderFirstFollowups();
 
   // Render Normal Follow-ups
   const renderNormalFollowups = async () => {
     const container = document.getElementById("normal-followup");
+    const count = document.getElementById("normal-followup-count");
     if (!container) return;
 
     const res = await fetch("/api/dashboard/normal-follow-ups");
     const data = await res.json();
+    if (count) count.textContent = getFollowupResultCount(data);
     container.innerHTML = `
       <h4>Due</h4>
       <div class="table-container">${renderTable(data.due, true)}</div>
@@ -379,6 +453,7 @@ function renderSuggestedWork() {
   renderNormalFollowups();
   renderRestingSuggestions();
   renderExpiringSoon();
+  renderReadyForCampaign();
 }
 
 function reserveBlock(domain) {

@@ -245,6 +245,26 @@ def save_expiring_soon_days():
     except (TypeError, ValueError) as exc:
         return jsonify({'error': str(exc)}), 400
 
+@bp.route('/settings/ready-for-campaign-days', methods=['GET'])
+def get_ready_for_campaign_days_route():
+    from app.services.ready_for_campaign_service import get_ready_for_campaign_days
+    try:
+        return jsonify({'ready_for_campaign_days': get_ready_for_campaign_days()})
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 500
+
+@bp.route('/settings/ready-for-campaign-days', methods=['POST'])
+def save_ready_for_campaign_days():
+    from app.services.ready_for_campaign_service import update_ready_for_campaign_days
+    data = request.get_json(silent=True)
+    try:
+        if not isinstance(data, dict) or set(data) != {'ready_for_campaign_days'}:
+            raise ValueError('Ready for Campaign settings must contain ready_for_campaign_days.')
+        days = update_ready_for_campaign_days(data['ready_for_campaign_days'])
+        return jsonify({'success': True, 'ready_for_campaign_days': days})
+    except (TypeError, ValueError) as exc:
+        return jsonify({'error': str(exc)}), 400
+
 @bp.route('/dashboard/overview', methods=['GET'])
 def get_dashboard_overview():
     from app.models.models import Domain, Campaign, CampaignStatus
@@ -321,6 +341,86 @@ def get_expiring_soon():
     return jsonify({
         'business_today': today.isoformat(),
         'expiring_soon_days': threshold_days,
+        'count': len(results),
+        'domains': results,
+    })
+
+@bp.route('/dashboard/ready-for-campaign', methods=['GET'])
+def get_ready_for_campaign():
+    from math import inf
+    from sqlalchemy.orm import selectinload
+    from app.models.models import CampaignStatus, Domain
+    from app.services.expiry_service import days_until_expiry, select_latest_campaign
+    from app.services.ready_for_campaign_service import (
+        evaluate_ready_for_campaign,
+        get_ready_for_campaign_days,
+    )
+    from app.services.time_service import get_business_today
+
+    today = get_business_today()
+    threshold_days = get_ready_for_campaign_days()
+    results = []
+    domains = Domain.query.options(selectinload(Domain.campaigns)).all()
+
+    for domain in domains:
+        if str(domain.status).upper() in {'SOLD', 'EXPIRED'}:
+            continue
+
+        campaign = select_latest_campaign(domain.campaigns)
+        if campaign is None:
+            continue
+
+        eligibility = evaluate_ready_for_campaign(
+            campaign,
+            business_today=today,
+            threshold_days=threshold_days,
+        )
+        if not eligibility['eligible']:
+            continue
+
+        days_until = days_until_expiry(domain.expiry_date, today)
+        days_since = eligibility['days_since_last_contact']
+        if eligibility['reason_code'] == 'dormant':
+            ready_reason = 'Dormant / ready to work'
+        else:
+            ready_reason = f'Rested {days_since} days since last contact'
+
+        results.append({
+            'domain_id': domain.id,
+            'domain_name': domain.domain_name,
+            'domain_status': domain.status,
+            'campaign_id': campaign.id,
+            'campaign_status': campaign.status.value,
+            'current_sequence': campaign.current_sequence,
+            'current_price': campaign.current_price,
+            'last_contact_date': (
+                campaign.last_contact_date.isoformat()
+                if campaign.last_contact_date else None
+            ),
+            'days_since_last_contact': days_since,
+            'expiry_date': domain.expiry_date.isoformat() if domain.expiry_date else None,
+            'days_until_expiry': days_until,
+            'handled_by': campaign.handled_by,
+            'campaign_start_date': campaign.start_date.isoformat() if campaign.start_date else None,
+            'ready_reason_code': eligibility['reason_code'],
+            'ready_reason': ready_reason,
+        })
+
+    def sort_key(item):
+        expiry_days = item['days_until_expiry']
+        age_days = item['days_since_last_contact']
+        return (
+            0 if expiry_days is not None else 1,
+            expiry_days if expiry_days is not None else inf,
+            -(age_days if age_days is not None else -1),
+            item['domain_name'].lower(),
+            item['domain_id'],
+        )
+
+    results.sort(key=sort_key)
+    return jsonify({
+        'business_today': today.isoformat(),
+        'ready_for_campaign_days': threshold_days,
         'count': len(results),
         'domains': results,
     })

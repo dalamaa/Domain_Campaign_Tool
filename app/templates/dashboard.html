@@ -22,13 +22,13 @@
     <h2>Suggested Work</h2>
     <div class="accordion">
       <button onclick="toggleAccordion('first-followup')">
-        First Follow-ups
+        First Follow-ups (<span id="first-followup-count">0</span>)
       </button>
       <div id="first-followup" class="content"></div>
     </div>
     <div class="accordion">
       <button onclick="toggleAccordion('normal-followup')">
-        Normal Follow-ups
+        Normal Follow-ups (<span id="normal-followup-count">0</span>)
       </button>
       <div id="normal-followup" class="content"></div>
     </div>
@@ -43,6 +43,12 @@
         Expiring Soon (<span id="expiring-soon-count">0</span>)
       </button>
       <div id="expiring-soon" class="content"></div>
+    </div>
+    <div class="accordion">
+      <button onclick="toggleAccordion('ready-for-campaign')">
+        Ready for Campaign (<span id="ready-for-campaign-count">0</span>)
+      </button>
+      <div id="ready-for-campaign" class="content"></div>
     </div>
   </section>
   <!-- Today's Campaigns -->
