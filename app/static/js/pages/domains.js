@@ -342,7 +342,7 @@ async function bulkDeleteDomains() {
   for (let id of selected) {
     const res = await fetch(`/api/domains/${id}`, { method: "DELETE" });
     if (!res.ok) {
-      const err = await res.json();
+      const err = await res.json().catch(() => ({}));
       alert(
         `Failed to delete domain ID ${id}: ${err.error || "Unknown error"}`,
       );

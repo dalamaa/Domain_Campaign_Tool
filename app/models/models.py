@@ -37,7 +37,11 @@ class Domain(db.Model):
     status = db.Column(String, nullable=False, default="AVAILABLE")
     notes = db.Column(db.Text)
     created_at = db.Column(DateTime, default=datetime.utcnow)
-    campaigns = relationship("Campaign", back_populates="domain")
+    campaigns = relationship(
+        "Campaign",
+        back_populates="domain",
+        cascade="all, delete-orphan",
+    )
 
 class Campaign(db.Model):
     __tablename__ = 'campaigns'
@@ -57,9 +61,21 @@ class Campaign(db.Model):
     updated_at = db.Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     domain = relationship("Domain", back_populates="campaigns")
-    email_blocks = relationship("CampaignEmailBlock", back_populates="campaign")
-    reservations = relationship("Reservation", back_populates="campaign")
-    history = relationship("CampaignHistory", back_populates="campaign")
+    email_blocks = relationship(
+        "CampaignEmailBlock",
+        back_populates="campaign",
+        cascade="all, delete-orphan",
+    )
+    reservations = relationship(
+        "Reservation",
+        back_populates="campaign",
+        cascade="all, delete-orphan",
+    )
+    history = relationship(
+        "CampaignHistory",
+        back_populates="campaign",
+        cascade="all, delete-orphan",
+    )
 
 class EmailAccount(db.Model):
     __tablename__ = 'email_accounts'
@@ -117,7 +133,11 @@ class CampaignHistory(db.Model):
     notes = db.Column(db.Text)
 
     campaign = relationship("Campaign", back_populates="history")
-    history_email_used = relationship("HistoryEmailUsed", back_populates="history")
+    history_email_used = relationship(
+        "HistoryEmailUsed",
+        back_populates="history",
+        cascade="all, delete-orphan",
+    )
     __table_args__ = (UniqueConstraint('campaign_id', 'sequence', name='uix_campaign_sequence'),)
 
     def __init__(self, **kwargs):

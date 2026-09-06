@@ -765,12 +765,20 @@ def edit_domain(id):
 
 @bp.route('/domains/<int:id>', methods=['DELETE'])
 def delete_domain(id):
-    from app.models.models import Domain, Campaign
-    dom = Domain.query.get_or_404(id)
-    # This assumes cascading deletes are handled by models
-    db.session.delete(dom)
-    db.session.commit()
-    return jsonify({'success': True})
+    from sqlalchemy.exc import SQLAlchemyError
+    from app.models.models import Domain
+
+    dom = Domain.query.get(id)
+    if dom is None:
+        return jsonify({'error': 'Domain not found.'}), 404
+
+    try:
+        db.session.delete(dom)
+        db.session.commit()
+        return jsonify({'success': True})
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({'error': 'Unable to delete domain.'}), 500
 
 @bp.route('/domains/import', methods=['POST'])
 def import_domains():

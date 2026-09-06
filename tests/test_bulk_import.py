@@ -256,6 +256,34 @@ def test_campaign_history_history_requires_last_contact():
     assert "Last Contact is missing" in result["error"]
 
 
+@pytest.mark.parametrize("history_content", [
+    "Domain,Email Sent #1,Last Contact\nsold.example.com,SOLD,\n",
+    "Domain,Email Sent #1\nsold.example.com,SOLD\n",
+])
+def test_sold_marker_does_not_require_last_contact_or_create_history(history_content):
+    history_file = match_csv(history_content)
+    matching = match_bulk_import_files(
+        history_file,
+        match_csv("Domain,M01\nsold.example.com,M01\n"),
+    )
+
+    assert matching["ok"] is True
+
+    mapping = build_campaign_mapping_preview(
+        history_file,
+        matching,
+        [],
+        [],
+        [],
+    )
+    item = mapping["results"][0]
+    assert item["classification"] == "SOLD_SOURCE_MARKER"
+    assert item["proposed_status"] is None
+    assert item["proposed_current_sequence"] == 0
+    assert item["proposed_current_price"] == 0
+    assert item["historical_progression"] == []
+
+
 def test_invalid_campaign_history_domains_are_rejected():
     for value in ("not a domain", "https://example.com", "person@example.com"):
         result = match_bulk_import_files(

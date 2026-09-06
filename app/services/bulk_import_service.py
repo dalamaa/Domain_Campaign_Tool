@@ -89,9 +89,15 @@ def match_bulk_import_files(campaign_history_file, email_usage_file, valid_email
             continue
         if _has_email_sent_header(history_header):
             email_sent_values = [row[index].strip() for index, cell in enumerate(history_header) if "email sent" in cell.lower() and index < len(row)]
-            if any(email_sent_values) and not any("last contact" in cell.lower() for cell in history_header):
+            # SOLD is an existing source marker, not an Email Sent history value.
+            # Leave all other values on the existing history validation path.
+            has_email_sent_history = any(
+                value and value.lower() != "sold"
+                for value in email_sent_values
+            )
+            if has_email_sent_history and not any("last contact" in cell.lower() for cell in history_header):
                 return {"ok": False, "error": f"Campaign History row {row_number} has history but no Last Contact column.", "duplicates": []}
-            if any(email_sent_values):
+            if has_email_sent_history:
                 last_contact_index = next((index for index, cell in enumerate(history_header) if "last contact" in cell.lower()), None)
                 if last_contact_index is None or last_contact_index >= len(row) or not row[last_contact_index].strip():
                     return {"ok": False, "error": f"Campaign History row {row_number} has Email Sent history but Last Contact is missing.", "duplicates": []}
