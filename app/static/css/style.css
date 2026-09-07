@@ -2,6 +2,25 @@ body {
   font-family: sans-serif;
   padding: 20px;
 }
+.login-card {
+  max-width: 420px;
+  margin: 10vh auto;
+  padding: 24px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background: #fff;
+}
+.login-card form {
+  display: grid;
+  gap: 8px;
+}
+.login-card input {
+  padding: 8px;
+  margin-bottom: 8px;
+}
+.login-error {
+  color: #b00020;
+}
 .dashboard {
   padding: 20px;
 }

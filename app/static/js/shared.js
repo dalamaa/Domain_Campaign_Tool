@@ -1,4 +1,16 @@
 // Shared data and state
+if (typeof window !== "undefined" && typeof window.fetch === "function") {
+  const authenticatedFetch = window.fetch.bind(window);
+  window.fetch = async (...args) => {
+    const response = await authenticatedFetch(...args);
+    if (response.status === 401 && window.location.pathname !== "/login") {
+      const next = `${window.location.pathname}${window.location.search}`;
+      window.location.assign(`/login?next=${encodeURIComponent(next)}`);
+    }
+    return response;
+  };
+}
+
 const allEmailCodes = [
   "D03",
   "D04",
