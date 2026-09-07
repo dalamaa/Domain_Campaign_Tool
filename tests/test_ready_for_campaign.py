@@ -9,6 +9,7 @@ from app.services.ready_for_campaign_service import (
     get_ready_for_campaign_days,
     update_ready_for_campaign_days,
 )
+from app.services.settings_service import update_resting_eligibility_config
 
 
 TODAY = date(2026, 9, 5)
@@ -105,20 +106,38 @@ def test_ready_endpoint_applies_dormant_and_resting_rules(client, app, monkeypat
             sequence=5,
             last_contact_date=TODAY - timedelta(days=75),
         )
+        resting_recently = add_domain("resting-recently.example.com", TODAY + timedelta(days=45))
+        recently_resting_campaign = add_campaign(
+            resting_recently,
+            CampaignStatus.RESTING,
+            last_contact_date=TODAY - timedelta(days=60),
+        )
+        recently_resting_campaign.rest_start_date = TODAY - timedelta(days=6)
         add_campaign(
             add_domain("resting-young.example.com", TODAY + timedelta(days=10)),
             CampaignStatus.RESTING,
             last_contact_date=TODAY - timedelta(days=59),
         )
-        add_campaign(
+        resting_unknown = add_campaign(
             add_domain("resting-unknown.example.com", TODAY + timedelta(days=5)),
             CampaignStatus.RESTING,
             last_contact_date=None,
         )
-        add_campaign(
+        resting_unknown.rest_start_date = TODAY - timedelta(days=100)
+        active = add_campaign(
             add_domain("active.example.com", TODAY + timedelta(days=1)),
             CampaignStatus.ACTIVE,
             last_contact_date=TODAY - timedelta(days=365),
+        )
+        add_campaign(
+            add_domain("active-young.example.com", TODAY + timedelta(days=2)),
+            CampaignStatus.ACTIVE,
+            last_contact_date=TODAY - timedelta(days=59),
+        )
+        add_campaign(
+            add_domain("active-unknown.example.com", TODAY + timedelta(days=3)),
+            CampaignStatus.ACTIVE,
+            last_contact_date=None,
         )
         db.session.commit()
 
@@ -130,15 +149,97 @@ def test_ready_endpoint_applies_dormant_and_resting_rules(client, app, monkeypat
         dormant_campaign.id,
         exact_campaign.id,
         old_campaign.id,
+        recently_resting_campaign.id,
+        active.id,
     }
     dormant_item = next(item for item in data["domains"] if item["campaign_id"] == dormant_campaign.id)
     assert dormant_item["ready_reason_code"] == "dormant"
-    assert dormant_item["ready_reason"] == "Dormant / ready to work"
+    assert dormant_item["ready_reason"] == "Campaign is dormant and ready to work."
     assert dormant_item["days_since_last_contact"] is None
     exact_item = next(item for item in data["domains"] if item["campaign_id"] == exact_campaign.id)
     assert exact_item["ready_reason_code"] == "resting_cooldown"
     assert exact_item["days_since_last_contact"] == 60
-    assert exact_item["ready_reason"] == "Rested 60 days since last contact"
+    assert exact_item["ready_reason"] == "Last contacted 60 days ago; campaign is currently RESTING."
+    recently_resting_item = next(item for item in data["domains"] if item["campaign_id"] == recently_resting_campaign.id)
+    assert recently_resting_item["days_since_last_contact"] == 60
+    assert recently_resting_item["ready_reason_code"] == "resting_cooldown"
+    active_item = next(item for item in data["domains"] if item["campaign_id"] == active.id)
+    assert active_item["ready_reason_code"] == "active_inactivity"
+    assert active_item["ready_reason"] == "Last contacted 365 days ago; campaign is still ACTIVE."
+    assert resting_unknown.id not in {item["campaign_id"] for item in data["domains"]}
+
+
+def test_ready_contact_threshold_applies_to_active_and_resting_without_resetting_at_rest(client, app, monkeypatch):
+    monkeypatch.setattr("app.services.time_service.get_business_today", lambda: TODAY)
+    with app.app_context():
+        update_ready_for_campaign_days(30)
+        active_domain = add_domain("active-threshold.example.com", TODAY + timedelta(days=20))
+        active = add_campaign(
+            active_domain,
+            CampaignStatus.ACTIVE,
+            last_contact_date=TODAY - timedelta(days=30),
+        )
+        active.rest_start_date = TODAY - timedelta(days=1)
+        resting_domain = add_domain("resting-threshold.example.com", TODAY + timedelta(days=21))
+        resting = add_campaign(
+            resting_domain,
+            CampaignStatus.RESTING,
+            last_contact_date=TODAY - timedelta(days=30),
+        )
+        resting.rest_start_date = TODAY - timedelta(days=2)
+        below_domain = add_domain("active-below-threshold.example.com", TODAY + timedelta(days=22))
+        below = add_campaign(
+            below_domain,
+            CampaignStatus.ACTIVE,
+            last_contact_date=TODAY - timedelta(days=29),
+        )
+        db.session.commit()
+
+        before = {
+            campaign.id: (campaign.status, campaign.rest_start_date, campaign.rest_end_date)
+            for campaign in (active, resting, below)
+        }
+        response = client.get("/api/dashboard/ready-for-campaign")
+        db.session.expire_all()
+        after = {
+            campaign.id: (campaign.status, campaign.rest_start_date, campaign.rest_end_date)
+            for campaign in (active, resting, below)
+        }
+
+    ids = {item["campaign_id"] for item in response.get_json()["domains"]}
+    assert active.id in ids
+    assert resting.id in ids
+    assert below.id not in ids
+    assert before == after
+
+    reasons = {item["campaign_id"]: item["ready_reason"] for item in response.get_json()["domains"]}
+    assert reasons[active.id] == "Last contacted 30 days ago; campaign is still ACTIVE."
+    assert reasons[resting.id] == "Last contacted 30 days ago; campaign is currently RESTING."
+
+
+def test_stale_active_can_overlap_resting_suggestions(client, app, monkeypatch):
+    monkeypatch.setattr("app.services.time_service.get_business_today", lambda: TODAY)
+    with app.app_context():
+        update_ready_for_campaign_days(60)
+        update_resting_eligibility_config({
+            "sequence": {"enabled": False, "threshold": 6},
+            "days_since_last_contact": {"enabled": True, "threshold": 50},
+            "campaign_age": {"enabled": False, "threshold": 50},
+            "known_activity_age": {"enabled": False, "threshold": 50},
+        })
+        domain = add_domain("stale-active-overlap.example.com", TODAY + timedelta(days=30))
+        campaign = add_campaign(
+            domain,
+            CampaignStatus.ACTIVE,
+            last_contact_date=TODAY - timedelta(days=75),
+        )
+        db.session.commit()
+
+        ready = client.get("/api/dashboard/ready-for-campaign").get_json()
+        resting = client.get("/api/dashboard/resting-suggestions").get_json()
+
+    assert campaign.id in {item["campaign_id"] for item in ready["domains"]}
+    assert campaign.id in {item["campaign_id"] for item in resting["suggestions"]}
 
 
 def test_ready_endpoint_excludes_unavailable_domains_and_is_read_only(client, app, monkeypatch):

@@ -7,6 +7,31 @@ from app.models.models import ActionType, CampaignStatus
 from app.services.bulk_import_service import normalize_domain, _read_rows
 
 
+USER_HANDLED_BY_ALIASES = {"michael", "micheal", "mike"}
+
+
+def classify_handled_by(value):
+    """Classify source ownership using whole-name tokens, not substrings."""
+    source_value = (value or "").strip()
+    if not source_value:
+        return {"value": None, "ownership": "USER_OWNED", "user_owned": True}
+
+    tokens = re.findall(r"[a-z]+", source_value.casefold())
+    has_user_alias = any(token in USER_HANDLED_BY_ALIASES for token in tokens)
+    has_other_name = any(token not in USER_HANDLED_BY_ALIASES for token in tokens)
+    if not has_user_alias:
+        ownership = "EXTERNALLY_HANDLED"
+    elif has_other_name:
+        ownership = "USER_OWNED_SHARED"
+    else:
+        ownership = "USER_OWNED"
+    return {
+        "value": source_value,
+        "ownership": ownership,
+        "user_owned": has_user_alias,
+    }
+
+
 def parse_price(value):
     raw = value.strip()
     if not raw:
@@ -45,6 +70,7 @@ def _history_rows(file_storage):
         "expiry": next((i for i, cell in enumerate(header) if cell.strip().lower() == "expiry date"), None),
         "last_contact": next((i for i, cell in enumerate(header) if "last contact" in cell.lower()), None),
         "start": next((i for i, cell in enumerate(header) if "sequence start date" in cell.lower()), None),
+        "handled_by": next((i for i, cell in enumerate(header) if cell.strip().lower() == "handled by"), None),
     }
     for row_number, row in enumerate(rows[1:], start=2):
         if not row or domain_index >= len(row) or not normalize_domain(row[domain_index]):
@@ -101,29 +127,66 @@ def build_campaign_mapping_preview(history_file, matching, domains, campaigns, h
         original = row[domain_index].strip()
         key = normalize_domain(original)
         result = next(item for item in matching["results"] if item["normalized_domain"] == key)
-        base = _proposed_history([value for _, value in email_columns])
-        if "classification" in base:
-            classification = base["classification"]
-        elif not result["matched"]:
-            classification = "UNMATCHED"
+        handled_by = row[indexes["handled_by"]].strip() if indexes["handled_by"] is not None and indexes["handled_by"] < len(row) else ""
+        ownership = classify_handled_by(handled_by)
+        last_contact = None
+        start_date = None
+        if ownership["user_owned"]:
+            last_contact = _parse_date(row[indexes["last_contact"]]) if indexes["last_contact"] is not None and indexes["last_contact"] < len(row) else None
+            start_date = _parse_date(row[indexes["start"]]) if indexes["start"] is not None and indexes["start"] < len(row) and row[indexes["start"]].strip() else None
+        domain = domain_by_key.get(key)
+        existing = campaigns_by_domain.get(domain.id, []) if domain else []
+        email_codes = result.get("email_usage_codes", [])
+        has_email_usage = bool(email_codes)
+        classification_reason = None
+
+        if ownership["ownership"] == "EXTERNALLY_HANDLED":
+            classification = "SKIP_EXTERNALLY_HANDLED"
+            classification_reason = f"Currently handled by {ownership['value']}"
+            base = {"status": None, "current_sequence": 0, "current_price": 0, "rows": [], "warnings": []}
         else:
-            domain = domain_by_key.get(key)
-            existing = campaigns_by_domain.get(domain.id, []) if domain else []
-            classification = "NEW" if not domain else "SAFE_TO_ATTACH" if not existing else "SAFE_NEW_CAMPAIGN"
-            if existing:
-                campaign = existing[0]
-                existing_history = histories_by_campaign.get(campaign.id, [])
-                if existing_history and campaign.current_sequence == base.get("current_sequence") and campaign.current_price == base.get("current_price"):
-                    classification = "ALREADY_PRESENT"
-                elif existing_history or campaign.current_sequence or campaign.current_price:
+            base = _proposed_history([value for _, value in email_columns])
+            if not base.get("rows") and "classification" not in base and last_contact:
+                base["status"] = CampaignStatus.ACTIVE.value
+            has_progression = bool(base.get("rows"))
+            has_last_contact = bool(last_contact)
+            if "classification" in base:
+                classification = base["classification"]
+            elif has_last_contact or has_progression:
+                if not has_email_usage:
                     classification = "CONFLICT_NEEDS_ATTENTION"
-        last_contact = _parse_date(row[indexes["last_contact"]]) if indexes["last_contact"] is not None and indexes["last_contact"] < len(row) else None
-        if not base.get("rows") and "classification" not in base and last_contact:
-            base["status"] = CampaignStatus.ACTIVE.value
-        start_date = _parse_date(row[indexes["start"]]) if indexes["start"] is not None and indexes["start"] < len(row) and row[indexes["start"]].strip() else None
+                    classification_reason = "Campaign activity exists, but no email association was found."
+                elif not result["matched"]:
+                    classification = "UNMATCHED"
+                else:
+                    classification = "NEW" if not domain else "SAFE_TO_ATTACH" if not existing else "SAFE_NEW_CAMPAIGN"
+                    if existing:
+                        campaign = existing[0]
+                        existing_history = histories_by_campaign.get(campaign.id, [])
+                        if existing_history and campaign.current_sequence == base.get("current_sequence") and campaign.current_price == base.get("current_price"):
+                            classification = "ALREADY_PRESENT"
+                        elif existing_history or campaign.current_sequence or campaign.current_price:
+                            classification = "CONFLICT_NEEDS_ATTENTION"
+            elif result["matched"] and domain and existing:
+                classification = "SKIP_NO_CURRENT_CAMPAIGN_EVIDENCE"
+                classification_reason = "Email associations exist, but no Last Contact or campaign progression indicates a current campaign."
+            elif "classification" not in base and not result["matched"]:
+                classification = "UNMATCHED"
+            else:
+                classification = "NEW" if not domain else "SAFE_TO_ATTACH" if not existing else "SAFE_NEW_CAMPAIGN"
+        has_progression = bool(base.get("rows"))
+        has_last_contact = bool(last_contact)
         for history_row in base.get("rows", []):
             history_row["action_date"] = last_contact if history_row["sequence"] == base.get("current_sequence") else "UNKNOWN"
         warnings = list(base.get("warnings", []))
+        if (
+            ownership["user_owned"]
+            and has_last_contact
+            and has_email_usage
+            and not has_progression
+            and classification in {"NEW", "SAFE_TO_ATTACH", "SAFE_NEW_CAMPAIGN"}
+        ):
+            warnings.append("Last Contact and email associations exist, but Email Sent progression is missing.")
         if start_date is None:
             warnings.append("UNKNOWN_START_DATE")
         preview.append({
@@ -135,7 +198,12 @@ def build_campaign_mapping_preview(history_file, matching, domains, campaigns, h
             "expiry_date": _parse_date(row[indexes["expiry"]]) if indexes["expiry"] is not None and indexes["expiry"] < len(row) and row[indexes["expiry"]].strip() else None,
             "start_date": start_date, "start_date_status": "UNKNOWN_START_DATE" if start_date is None else "KNOWN",
             "historical_progression": base.get("rows", []),
-            "email_usage_codes": result.get("email_usage_codes", []), "warnings": warnings,
+            "email_usage_codes": email_codes,
+            "handled_by": ownership["value"],
+            "ownership": ownership["ownership"],
+            "user_owned": ownership["user_owned"],
+            "classification_reason": classification_reason,
+            "warnings": warnings,
         })
     counts = {}
     for item in preview:

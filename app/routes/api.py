@@ -492,9 +492,11 @@ def get_ready_for_campaign():
         days_until = days_until_expiry(domain.expiry_date, today)
         days_since = eligibility['days_since_last_contact']
         if eligibility['reason_code'] == 'dormant':
-            ready_reason = 'Dormant / ready to work'
+            ready_reason = 'Campaign is dormant and ready to work.'
+        elif eligibility['reason_code'] == 'active_inactivity':
+            ready_reason = f'Last contacted {days_since} days ago; campaign is still ACTIVE.'
         else:
-            ready_reason = f'Rested {days_since} days since last contact'
+            ready_reason = f'Last contacted {days_since} days ago; campaign is currently RESTING.'
 
         results.append({
             'domain_id': domain.id,

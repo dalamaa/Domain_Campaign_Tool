@@ -7,6 +7,8 @@ FINAL_STATUSES = (
     "SOLD_SOURCE_MARKER",
     "SKIP_UNMATCHED",
     "SKIP_ALREADY_PRESENT",
+    "SKIP_EXTERNALLY_HANDLED",
+    "SKIP_NO_CURRENT_CAMPAIGN_EVIDENCE",
 )
 
 _SAFE_MAPPING = {"NEW", "SAFE_TO_ATTACH", "SAFE_NEW_CAMPAIGN"}
@@ -47,6 +49,8 @@ def build_import_eligibility(mapping, matching, conflict_selections=None):
             status = "INVALID_SOURCE_DATA"
         elif classification == "SOLD_SOURCE_MARKER":
             status = "SOLD_SOURCE_MARKER"
+        elif classification in {"SKIP_EXTERNALLY_HANDLED", "SKIP_NO_CURRENT_CAMPAIGN_EVIDENCE"}:
+            status = classification
         else:
             if invalid_codes:
                 reasons.append("Invalid email account codes: " + ", ".join(invalid_codes))
@@ -68,6 +72,7 @@ def build_import_eligibility(mapping, matching, conflict_selections=None):
             "mapping_classification": classification,
             "validated_campaign_email_codes": effective_codes,
             "blocking_reasons": reasons,
+            "classification_reason": item.get("classification_reason"),
             "warnings": list(item.get("warnings", [])),
         })
 

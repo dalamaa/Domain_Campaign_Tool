@@ -643,8 +643,8 @@ function continueBulkImportReview() {
 
 function renderImportEligibility(eligibility) {
   const container = document.getElementById("bulk-import-eligibility");
-  const summaryOrder = ["READY_TO_IMPORT", "BLOCKED_NEEDS_ATTENTION", "INVALID_SOURCE_DATA", "SOLD_SOURCE_MARKER", "SKIP_UNMATCHED", "SKIP_ALREADY_PRESENT"];
-  const categoryOrder = ["BLOCKED_NEEDS_ATTENTION", "INVALID_SOURCE_DATA", "SKIP_UNMATCHED", "SOLD_SOURCE_MARKER", "SKIP_ALREADY_PRESENT", "READY_TO_IMPORT"];
+  const summaryOrder = ["READY_TO_IMPORT", "BLOCKED_NEEDS_ATTENTION", "INVALID_SOURCE_DATA", "SOLD_SOURCE_MARKER", "SKIP_UNMATCHED", "SKIP_EXTERNALLY_HANDLED", "SKIP_NO_CURRENT_CAMPAIGN_EVIDENCE", "SKIP_ALREADY_PRESENT"];
+  const categoryOrder = ["BLOCKED_NEEDS_ATTENTION", "INVALID_SOURCE_DATA", "SKIP_UNMATCHED", "SOLD_SOURCE_MARKER", "SKIP_EXTERNALLY_HANDLED", "SKIP_NO_CURRENT_CAMPAIGN_EVIDENCE", "SKIP_ALREADY_PRESENT", "READY_TO_IMPORT"];
   container.innerHTML = "<h4>Final Import Eligibility</h4>";
   const summary = document.createElement("div");
   summary.textContent = summaryOrder.map((key) => `${key}: ${eligibility.summary[key] || 0}`).join(" | ");
@@ -713,7 +713,8 @@ function formatImportEligibilityLine(item) {
     `${item.proposed_status || ""} | Sequence ${item.proposed_current_sequence} | Price ${item.proposed_current_price} | ` +
     `Last Contact ${item.last_contact || "UNKNOWN"} | Start ${item.start_date || "UNKNOWN_START_DATE"} | ` +
     `Email Accounts: ${(item.validated_campaign_email_codes || []).join(", ") || "NONE"}`;
-  const reasons = (item.blocking_reasons || []).concat(item.warnings || []);
+  const reasons = [item.classification_reason].filter(Boolean)
+    .concat(item.blocking_reasons || [], item.warnings || []);
   if (reasons.length) line += ` | ${reasons.join("; ")}`;
   return line;
 }
@@ -819,7 +820,9 @@ function renderCampaignMappingPreview(mapping) {
     row.style.marginTop = "8px";
     row.textContent = `${item.domain} | ${item.classification} | ${item.proposed_status || ""} | ` +
       `Sequence ${item.proposed_current_sequence} | Price ${item.proposed_current_price} | ` +
-      `Last Contact ${item.last_contact || "UNKNOWN"} | Start ${item.start_date || "UNKNOWN_START_DATE"}`;
+      `Last Contact ${item.last_contact || "UNKNOWN"} | Start ${item.start_date || "UNKNOWN_START_DATE"}` +
+      `${item.handled_by ? ` | Handled By ${item.handled_by}` : ""}` +
+      `${item.classification_reason ? ` | ${item.classification_reason}` : ""}`;
     if (item.warnings.length) row.textContent += ` | ${item.warnings.join("; ")}`;
     list.appendChild(row);
   });

@@ -96,6 +96,7 @@ def _persist_one(item):
         status=status,
         start_date=start.date() if start else None,
         last_contact_date=_as_date(item.get("last_contact")),
+        handled_by=item.get("handled_by") or None,
         current_sequence=item.get("proposed_current_sequence", 0),
         current_price=item.get("proposed_current_price", 0),
     )

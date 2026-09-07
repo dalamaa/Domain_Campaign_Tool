@@ -58,13 +58,17 @@ def evaluate_ready_for_campaign(campaign, business_today, threshold_days=None):
         }
 
     if (
-        campaign.status == CampaignStatus.RESTING
+        campaign.status in {CampaignStatus.ACTIVE, CampaignStatus.RESTING}
         and days_since_last_contact is not None
         and days_since_last_contact >= threshold_days
     ):
         return {
             "eligible": True,
-            "reason_code": "resting_cooldown",
+            "reason_code": (
+                "active_inactivity"
+                if campaign.status == CampaignStatus.ACTIVE
+                else "resting_cooldown"
+            ),
             "days_since_last_contact": days_since_last_contact,
         }
 
