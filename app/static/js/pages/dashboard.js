@@ -1,3 +1,197 @@
+const DASHBOARD_SECTION_ORDER_DEFAULT = [
+  "first_followups",
+  "normal_followups",
+  "resting_suggestions",
+  "expiring_soon",
+  "ready_for_campaign",
+];
+let dashboardSectionOrder = null;
+
+function normalizeDashboardSectionOrder(order, availableSectionIds = null) {
+  const knownSectionIds = Array.from(
+    new Set(availableSectionIds || DASHBOARD_SECTION_ORDER_DEFAULT),
+  );
+  const normalized = [];
+  if (Array.isArray(order)) {
+    order.forEach((sectionId) => {
+      if (
+        typeof sectionId === "string" &&
+        knownSectionIds.includes(sectionId) &&
+        !normalized.includes(sectionId)
+      ) {
+        normalized.push(sectionId);
+      }
+    });
+  }
+  return normalized.concat(
+    knownSectionIds.filter(
+      (sectionId) => !normalized.includes(sectionId),
+    ),
+  );
+}
+
+function getDashboardSectionElements() {
+  return Array.from(
+    document.querySelectorAll(
+      ".suggested-work .dashboard-section[data-dashboard-section]",
+    ),
+  );
+}
+
+function getCurrentDashboardSectionOrder() {
+  const sectionIds = getDashboardSectionElements().map(
+    (section) => section.dataset.dashboardSection,
+  );
+  return normalizeDashboardSectionOrder(sectionIds, sectionIds);
+}
+
+function applyDashboardSectionOrder(order) {
+  const container = document.querySelector(".suggested-work");
+  if (!container) return;
+
+  const sections = new Map(
+    getDashboardSectionElements().map((section) => [
+      section.dataset.dashboardSection,
+      section,
+    ]),
+  );
+  normalizeDashboardSectionOrder(order, Array.from(sections.keys())).forEach(
+    (sectionId) => {
+      const section = sections.get(sectionId);
+      if (section) container.appendChild(section);
+    },
+  );
+}
+
+function setDashboardSectionOrderStatus(message, isError = false) {
+  const status = document.getElementById("dashboard-section-order-status");
+  if (!status) return;
+  status.textContent = message;
+  status.style.color = isError ? "#b00020" : "#28632d";
+}
+
+async function saveDashboardSectionOrder(order, previousOrder) {
+  try {
+    const response = await fetch("/api/settings/dashboard-section-order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Unable to save dashboard section order.");
+    }
+    dashboardSectionOrder = normalizeDashboardSectionOrder(
+      data.order || order,
+      getDashboardSectionElements().map(
+        (section) => section.dataset.dashboardSection,
+      ),
+    );
+    applyDashboardSectionOrder(dashboardSectionOrder);
+    setDashboardSectionOrderStatus("Section order saved.");
+  } catch (error) {
+    dashboardSectionOrder = normalizeDashboardSectionOrder(
+      previousOrder,
+      getDashboardSectionElements().map(
+        (section) => section.dataset.dashboardSection,
+      ),
+    );
+    applyDashboardSectionOrder(dashboardSectionOrder);
+    setDashboardSectionOrderStatus(
+      "Unable to save section order; previous order restored.",
+      true,
+    );
+  }
+}
+
+function initializeDashboardSectionSorting() {
+  const container = document.querySelector(".suggested-work");
+  if (!container || container.dataset.sectionSortingInitialized === "true") {
+    return;
+  }
+  container.dataset.sectionSortingInitialized = "true";
+
+  getDashboardSectionElements().forEach((section) => {
+    const handle = section.querySelector(".dashboard-section-drag-handle");
+    if (!handle) return;
+
+    handle.addEventListener("dragstart", (event) => {
+      section.classList.add("dragging");
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData(
+          "text/plain",
+          section.dataset.dashboardSection,
+        );
+      }
+      event.stopPropagation();
+    });
+
+    handle.addEventListener("dragend", () => {
+      section.classList.remove("dragging");
+    });
+
+    handle.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+
+    section.addEventListener("dragover", (event) => {
+      const dragging = container.querySelector(".dashboard-section.dragging");
+      if (!dragging || dragging === section) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+
+      const bounds = section.getBoundingClientRect();
+      const insertBefore = event.clientY < bounds.top + bounds.height / 2;
+      if (insertBefore) {
+        container.insertBefore(dragging, section);
+      } else {
+        container.insertBefore(dragging, section.nextSibling);
+      }
+    });
+
+    section.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      const dragging = container.querySelector(".dashboard-section.dragging");
+      if (!dragging) return;
+
+      const previousOrder = normalizeDashboardSectionOrder(
+        dashboardSectionOrder || getCurrentDashboardSectionOrder(),
+      );
+      const nextOrder = getCurrentDashboardSectionOrder();
+      if (nextOrder.join("|") === previousOrder.join("|")) return;
+      dashboardSectionOrder = nextOrder;
+      await saveDashboardSectionOrder(nextOrder, previousOrder);
+    });
+  });
+}
+
+async function loadDashboardSectionOrder() {
+  if (dashboardSectionOrder) {
+    applyDashboardSectionOrder(dashboardSectionOrder);
+    initializeDashboardSectionSorting();
+    return;
+  }
+
+  let order = DASHBOARD_SECTION_ORDER_DEFAULT;
+  try {
+    const response = await fetch("/api/settings/dashboard-section-order");
+    const data = await response.json();
+    if (response.ok) order = data.order;
+  } catch (error) {
+    // The default order keeps the dashboard usable if settings are unavailable.
+  }
+  dashboardSectionOrder = normalizeDashboardSectionOrder(
+    order,
+    getDashboardSectionElements().map(
+      (section) => section.dataset.dashboardSection,
+    ),
+  );
+  applyDashboardSectionOrder(dashboardSectionOrder);
+  initializeDashboardSectionSorting();
+}
+
 function syncCampaignStates() {
   mockCampaigns.forEach((c) => {
     const blocks = c.suggestedBlock;
@@ -30,6 +224,7 @@ async function refreshDashboard() {
   // Preserve mock logic for the rest of the board
   syncCampaignStates();
   updateReservationBoard();
+  await loadDashboardSectionOrder();
   renderSuggestedWork();
   renderTodaysCampaigns();
 }

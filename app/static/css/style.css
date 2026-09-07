@@ -28,6 +28,25 @@ body {
   background: #eee;
   cursor: pointer;
 }
+.dashboard-section-drag-handle {
+  display: inline-block;
+  margin-right: 8px;
+  cursor: grab;
+  user-select: none;
+  color: #666;
+  letter-spacing: -2px;
+}
+.dashboard-section-drag-handle:active {
+  cursor: grabbing;
+}
+.dashboard-section.dragging {
+  opacity: 0.5;
+}
+#dashboard-section-order-status {
+  margin-left: 10px;
+  font-size: 0.75em;
+  font-weight: normal;
+}
 .content {
   display: none;
   padding: 10px;
@@ -118,4 +137,3 @@ tr:active {
 .action-bar button {
   margin-right: 5px;
 }
-

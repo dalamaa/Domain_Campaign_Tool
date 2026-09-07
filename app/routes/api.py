@@ -376,6 +376,23 @@ def save_ready_for_campaign_days():
     except (TypeError, ValueError) as exc:
         return jsonify({'error': str(exc)}), 400
 
+@bp.route('/settings/dashboard-section-order', methods=['GET'])
+def get_dashboard_section_order_route():
+    from app.services.dashboard_section_order_service import get_dashboard_section_order
+    return jsonify({'order': get_dashboard_section_order()})
+
+@bp.route('/settings/dashboard-section-order', methods=['POST'])
+def save_dashboard_section_order():
+    from app.services.dashboard_section_order_service import update_dashboard_section_order
+    data = request.get_json(silent=True)
+    try:
+        if not isinstance(data, dict) or set(data) != {'order'}:
+            raise ValueError('Dashboard section order settings must contain order.')
+        order = update_dashboard_section_order(data['order'])
+        return jsonify({'success': True, 'order': order})
+    except (TypeError, ValueError) as exc:
+        return jsonify({'error': str(exc)}), 400
+
 @bp.route('/dashboard/overview', methods=['GET'])
 def get_dashboard_overview():
     from app.models.models import Domain, Campaign, CampaignStatus
