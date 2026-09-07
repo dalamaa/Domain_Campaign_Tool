@@ -22,7 +22,11 @@ def create_app(config_class=Config):
                 os.environ.get('FLASK_RUN_FROM_CLI') == 'true'
                 and flask_command == 'db'
             )
-            if not app.config.get('TESTING') and not is_migration_command:
+            if (
+                app.config.get('SCHEDULER_ENABLED', False)
+                and not app.config.get('TESTING')
+                and not is_migration_command
+            ):
                 from app.scheduler import init_scheduler
                 init_scheduler(app)
         except Exception as e:
