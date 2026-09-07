@@ -120,11 +120,22 @@ thead th {
   opacity: 0.5;
   background: #e0f7fa;
 }
-tr {
+tr[draggable="true"] {
   cursor: grab;
 }
-tr:active {
+tr[draggable="true"]:active {
   cursor: grabbing;
+}
+
+.dashboard-sort-button {
+  width: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: inherit;
 }
 
 .action-bar {

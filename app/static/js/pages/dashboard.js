@@ -6,6 +6,7 @@ const DASHBOARD_SECTION_ORDER_DEFAULT = [
   "ready_for_campaign",
 ];
 let dashboardSectionOrder = null;
+const dashboardTableSortState = {};
 
 function normalizeDashboardSectionOrder(order, availableSectionIds = null) {
   const knownSectionIds = Array.from(
@@ -192,6 +193,111 @@ async function loadDashboardSectionOrder() {
   initializeDashboardSectionSorting();
 }
 
+function dashboardSortIsUnknown(value, type) {
+  if (
+    value == null ||
+    value === "" ||
+    ["n/a", "—", "unknown", "null"].includes(String(value).trim().toLowerCase())
+  ) {
+    return true;
+  }
+  if (type === "number") return !Number.isFinite(Number(value));
+  if (type === "date") return Number.isNaN(Date.parse(value));
+  return false;
+}
+
+function compareDashboardSortValues(left, right, type, direction) {
+  const leftUnknown = dashboardSortIsUnknown(left, type);
+  const rightUnknown = dashboardSortIsUnknown(right, type);
+  if (leftUnknown || rightUnknown) {
+    if (leftUnknown && rightUnknown) return 0;
+    return leftUnknown ? 1 : -1;
+  }
+
+  let comparison;
+  if (type === "number") {
+    comparison = Number(left) - Number(right);
+  } else if (type === "date") {
+    comparison = Date.parse(left) - Date.parse(right);
+  } else {
+    comparison = String(left).localeCompare(String(right), undefined, {
+      sensitivity: "base",
+    });
+  }
+  return comparison * direction;
+}
+
+function dashboardSortAttribute(key) {
+  return `data-sort-${key.replace(/_/g, "-")}`;
+}
+
+function updateDashboardSortIndicators(table, sortKey, direction) {
+  table.querySelectorAll("[data-sort-indicator]").forEach((indicator) => {
+    indicator.textContent = "↕";
+  });
+  const activeIndicator = table.querySelector(
+    `[data-sort-indicator="${sortKey}"]`,
+  );
+  if (activeIndicator) activeIndicator.textContent = direction === 1 ? "▲" : "▼";
+  table.querySelectorAll("th[data-sort-column]").forEach((header) => {
+    header.removeAttribute("aria-sort");
+  });
+  const activeHeader = table.querySelector(`th[data-sort-column="${sortKey}"]`);
+  if (activeHeader) {
+    activeHeader.setAttribute("aria-sort", direction === 1 ? "ascending" : "descending");
+  }
+}
+
+function sortDashboardTable(table, tableId, column) {
+  if (!table) return;
+  const previous = dashboardTableSortState[tableId];
+  const direction =
+    previous && previous.key === column.key
+      ? previous.direction * -1
+      : column.defaultDirection === "desc"
+        ? -1
+        : 1;
+  dashboardTableSortState[tableId] = { key: column.key, direction };
+
+  const body = table.tBodies[0];
+  if (!body) return;
+  const rows = Array.from(body.rows);
+  rows
+    .map((row, index) => ({ row, index }))
+    .sort((left, right) => {
+      const attribute = dashboardSortAttribute(column.key);
+      const comparison = compareDashboardSortValues(
+        left.row.getAttribute(attribute),
+        right.row.getAttribute(attribute),
+        column.type,
+        direction,
+      );
+      return comparison || left.index - right.index;
+    })
+    .forEach(({ row }) => body.appendChild(row));
+  updateDashboardSortIndicators(table, column.key, direction);
+}
+
+function setupDashboardSortableTable(table, tableId, columns) {
+  if (!table) return;
+  delete dashboardTableSortState[tableId];
+  table.querySelectorAll("button[data-sort-key]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const column = columns.find((item) => item.key === button.dataset.sortKey);
+      if (column) sortDashboardTable(table, tableId, column);
+    });
+  });
+}
+
+function renderDashboardSortHeaders(columns) {
+  return columns
+    .map(
+      (column) =>
+        `<th data-sort-column="${column.key}"><button type="button" class="dashboard-sort-button" data-sort-key="${column.key}" title="Sort by ${column.label}">${column.label} <span data-sort-indicator="${column.key}">↕</span></button></th>`,
+    )
+    .join("");
+}
+
 function syncCampaignStates() {
   mockCampaigns.forEach((c) => {
     const blocks = c.suggestedBlock;
@@ -299,10 +405,20 @@ function renderSuggestedWork() {
 
     container.innerHTML = `
       <h4>Due</h4>
-      <div class="table-container">${renderTable(data.due)}</div>
+      <div class="table-container">${renderTable(data.due, false, "first_followup_due")}</div>
       <h4>Past Due</h4>
-      <div class="table-container">${renderTable(data.past_due)}</div>
+      <div class="table-container">${renderTable(data.past_due, false, "first_followup_past_due")}</div>
     `;
+    setupDashboardSortableTable(
+      container.querySelector('table[data-sort-table="first_followup_due"]'),
+      "first_followup_due",
+      followupSortColumns(false),
+    );
+    setupDashboardSortableTable(
+      container.querySelector('table[data-sort-table="first_followup_past_due"]'),
+      "first_followup_past_due",
+      followupSortColumns(false),
+    );
 
     // Attach event delegation for Reserve/Unreserve
     container.querySelectorAll("button[data-action]").forEach((btn) => {
@@ -346,18 +462,28 @@ function renderSuggestedWork() {
     return buttons;
   };
 
-  const renderTable = (list, isNormal = false) => `
-    <table>
+  const followupSortColumns = (isNormal) => [
+    { key: "domain", label: "Domain", type: "text", defaultDirection: "asc" },
+    {
+      key: "days",
+      label: `Days Since ${isNormal ? "Contact" : "Outreach"}`,
+      type: "number",
+      defaultDirection: "desc",
+    },
+  ];
+
+  const renderTable = (list, isNormal = false, tableId = "followup") => `
+    <table data-sort-table="${tableId}">
       <thead>
-        <tr><th>Domain</th><th>Days Since ${isNormal ? "Contact" : "Outreach"}</th><th>Emails Used</th><th>Reservation</th><th>Rest</th></tr>
+        <tr>${renderDashboardSortHeaders(followupSortColumns(isNormal))}<th>Emails Used</th><th>Reservation</th><th>Rest</th></tr>
       </thead>
       <tbody>
         ${list
           .map(
             (c) => `
-        <tr>
+        <tr data-sort-domain="${c.domain}" data-sort-days="${isNormal ? c.days_since_contact ?? "" : c.days_since_outreach ?? ""}">
           <td>${c.domain}</td>
-          <td>${isNormal ? c.days_since_contact || "N/A" : c.days_since_outreach}</td>
+          <td>${isNormal ? c.days_since_contact ?? "N/A" : c.days_since_outreach ?? "N/A"}</td>
           <td>${c.emails_used.length > 0 ? c.emails_used.join(", ") : "—"}</td>
           <td>${getResButtons(c)}</td>
           <td>${c.resting_suggested ? '<span class="rest-suggested" title="Rest suggested">🪙 Rest</span>' : ""}</td>
@@ -390,18 +516,21 @@ function renderSuggestedWork() {
       }
 
       const formatDays = (value) => (value == null ? "—" : `${value} days`);
+      const columns = [
+        { key: "domain", label: "Domain", type: "text", defaultDirection: "asc" },
+        { key: "sequence", label: "Sequence", type: "number", defaultDirection: "asc" },
+        { key: "last_contact", label: "Last Contact", type: "date", defaultDirection: "asc" },
+        { key: "campaign_age", label: "Campaign Age", type: "number", defaultDirection: "desc" },
+        { key: "known_activity_age", label: "Known Activity Age", type: "number", defaultDirection: "desc" },
+        { key: "expiry", label: "Expiry", type: "date", defaultDirection: "asc" },
+      ];
 
       container.innerHTML = `
         <div class="table-container">
-          <table>
+          <table data-sort-table="resting_suggestions">
             <thead>
               <tr>
-                <th>Domain</th>
-                <th>Sequence</th>
-                <th>Last Contact</th>
-                <th>Campaign Age</th>
-                <th>Known Activity Age</th>
-                <th>Expiry</th>
+                ${renderDashboardSortHeaders(columns)}
                 <th>Reasons</th>
                 <th>Action</th>
               </tr>
@@ -410,7 +539,14 @@ function renderSuggestedWork() {
               ${suggestions
                 .map(
                   (campaign) => `
-                <tr>
+                <tr
+                  data-sort-domain="${campaign.domain}"
+                  data-sort-sequence="${campaign.eligibility_metrics.current_sequence ?? ""}"
+                  data-sort-last-contact="${campaign.last_contact_date || ""}"
+                  data-sort-campaign-age="${campaign.eligibility_metrics.campaign_age_days ?? ""}"
+                  data-sort-known-activity-age="${campaign.eligibility_metrics.known_activity_age_days ?? ""}"
+                  data-sort-expiry="${campaign.expiry_date || ""}"
+                >
                   <td>${campaign.domain}</td>
                   <td>${campaign.eligibility_metrics.current_sequence ?? "—"}</td>
                   <td>${campaign.last_contact_date || "—"}<br />
@@ -441,6 +577,12 @@ function renderSuggestedWork() {
           </table>
         </div>
       `;
+
+      setupDashboardSortableTable(
+        container.querySelector('table[data-sort-table="resting_suggestions"]'),
+        "resting_suggestions",
+        columns,
+      );
 
       container.querySelectorAll("button[data-action='rest']").forEach((button) => {
         button.onclick = async () => {
@@ -499,25 +641,36 @@ function renderSuggestedWork() {
       const display = (value) => (value == null || value === "" ? "—" : value);
       const sequenceDisplay = (value) =>
         value == null ? "—" : value === 0 ? "Not started" : value;
+      const columns = [
+        { key: "domain", label: "Domain", type: "text", defaultDirection: "asc" },
+        { key: "expiry", label: "Expiry", type: "date", defaultDirection: "asc" },
+        { key: "days_left", label: "Days Left", type: "number", defaultDirection: "asc" },
+        { key: "campaign", label: "Campaign", type: "text", defaultDirection: "asc" },
+        { key: "sequence", label: "Sequence", type: "number", defaultDirection: "asc" },
+        { key: "last_contact", label: "Last Contact", type: "date", defaultDirection: "asc" },
+        { key: "days_since_last_contact", label: "Days Since Last Contact", type: "number", defaultDirection: "desc" },
+      ];
       container.innerHTML = `
         <div class="table-container">
-          <table>
+          <table data-sort-table="expiring_soon">
             <thead>
               <tr>
-                <th>Domain</th>
-                <th>Expiry</th>
-                <th>Days Left</th>
-                <th>Campaign</th>
-                <th>Sequence</th>
-                <th>Last Contact</th>
-                <th>Days Since Last Contact</th>
+                ${renderDashboardSortHeaders(columns)}
               </tr>
             </thead>
             <tbody>
               ${domains
                 .map(
                   (domain) => `
-                <tr>
+                <tr
+                  data-sort-domain="${domain.domain_name || ""}"
+                  data-sort-expiry="${domain.expiry_date || ""}"
+                  data-sort-days-left="${domain.days_until_expiry ?? ""}"
+                  data-sort-campaign="${domain.campaign_status || ""}"
+                  data-sort-sequence="${domain.current_sequence ?? ""}"
+                  data-sort-last-contact="${domain.last_contact_date || ""}"
+                  data-sort-days-since-last-contact="${domain.days_since_last_contact ?? ""}"
+                >
                   <td>${display(domain.domain_name)}</td>
                   <td>${display(domain.expiry_date)}</td>
                   <td>${display(domain.days_until_expiry)}</td>
@@ -532,6 +685,11 @@ function renderSuggestedWork() {
           </table>
         </div>
       `;
+      setupDashboardSortableTable(
+        container.querySelector('table[data-sort-table="expiring_soon"]'),
+        "expiring_soon",
+        columns,
+      );
     } catch (error) {
       if (count) count.textContent = "—";
       container.innerHTML = `<p class="dashboard-error">${error.message}</p>`;
@@ -562,26 +720,38 @@ function renderSuggestedWork() {
       const display = (value) => (value == null || value === "" ? "—" : value);
       const sequenceDisplay = (value) =>
         value == null ? "—" : value === 0 ? "Not started" : value;
+      const columns = [
+        { key: "domain", label: "Domain", type: "text", defaultDirection: "asc" },
+        { key: "status", label: "Status", type: "text", defaultDirection: "asc" },
+        { key: "last_contact", label: "Last Contact", type: "date", defaultDirection: "asc" },
+        { key: "days_since", label: "Days Since", type: "number", defaultDirection: "desc" },
+        { key: "sequence", label: "Sequence", type: "number", defaultDirection: "asc" },
+        { key: "expiry", label: "Expiry", type: "date", defaultDirection: "asc" },
+        { key: "days_left", label: "Days Left", type: "number", defaultDirection: "asc" },
+      ];
       container.innerHTML = `
         <div class="table-container">
-          <table>
+          <table data-sort-table="ready_for_campaign">
             <thead>
               <tr>
-                <th>Domain</th>
-                <th>Status</th>
+                ${renderDashboardSortHeaders(columns.slice(0, 2))}
                 <th>Reason</th>
-                <th>Last Contact</th>
-                <th>Days Since</th>
-                <th>Sequence</th>
-                <th>Expiry</th>
-                <th>Days Left</th>
+                ${renderDashboardSortHeaders(columns.slice(2))}
               </tr>
             </thead>
             <tbody>
               ${domains
                 .map(
                   (domain) => `
-                <tr>
+                <tr
+                  data-sort-domain="${domain.domain_name || ""}"
+                  data-sort-status="${domain.campaign_status || ""}"
+                  data-sort-last-contact="${domain.last_contact_date || ""}"
+                  data-sort-days-since="${domain.days_since_last_contact ?? ""}"
+                  data-sort-sequence="${domain.current_sequence ?? ""}"
+                  data-sort-expiry="${domain.expiry_date || ""}"
+                  data-sort-days-left="${domain.days_until_expiry ?? ""}"
+                >
                   <td>${display(domain.domain_name)}</td>
                   <td>${display(domain.campaign_status)}</td>
                   <td>${display(domain.ready_reason)}</td>
@@ -597,6 +767,11 @@ function renderSuggestedWork() {
           </table>
         </div>
       `;
+      setupDashboardSortableTable(
+        container.querySelector('table[data-sort-table="ready_for_campaign"]'),
+        "ready_for_campaign",
+        columns,
+      );
     } catch (error) {
       if (count) count.textContent = "—";
       container.innerHTML = `<p class="dashboard-error">${error.message}</p>`;
@@ -616,10 +791,20 @@ function renderSuggestedWork() {
     if (count) count.textContent = getFollowupResultCount(data);
     container.innerHTML = `
       <h4>Due</h4>
-      <div class="table-container">${renderTable(data.due, true)}</div>
+      <div class="table-container">${renderTable(data.due, true, "normal_followup_due")}</div>
       <h4>Past Due</h4>
-      <div class="table-container">${renderTable(data.past_due, true)}</div>
+      <div class="table-container">${renderTable(data.past_due, true, "normal_followup_past_due")}</div>
     `;
+    setupDashboardSortableTable(
+      container.querySelector('table[data-sort-table="normal_followup_due"]'),
+      "normal_followup_due",
+      followupSortColumns(true),
+    );
+    setupDashboardSortableTable(
+      container.querySelector('table[data-sort-table="normal_followup_past_due"]'),
+      "normal_followup_past_due",
+      followupSortColumns(true),
+    );
 
     // Attach event delegation for Reserve/Unreserve
     container.querySelectorAll("button[data-action]").forEach((btn) => {
