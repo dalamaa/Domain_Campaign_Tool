@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import string
 from dataclasses import dataclass
 
 from sqlalchemy import text
@@ -18,10 +19,114 @@ def parse_code(code):
     """Return the existing code prefix and numeric suffix convention."""
     if not isinstance(code, str):
         return None, None
-    match = re.match(r"([A-Za-z]+)(\d+)", code)
+    match = _CODE_PATTERN.fullmatch(code.strip())
     if not match:
         return None, None
-    return match.group(1), int(match.group(2))
+    value = match.group(0)
+    prefix = re.match(r"[A-Za-z]+", value).group(0)
+    return prefix.upper(), int(value[len(prefix):])
+
+
+class EmailCodeValidationError(ValueError):
+    """A user-correctable email-code validation failure."""
+
+    def __init__(self, errors):
+        self.errors = errors
+        super().__init__("; ".join(error["message"] for error in errors))
+
+
+def _format_code_error(raw_code):
+    displayed = str(raw_code).strip() if raw_code is not None else ""
+    normalized = displayed.upper()
+    punctuation_removed = normalized.rstrip(string.punctuation)
+
+    if punctuation_removed and punctuation_removed != normalized and _CODE_PATTERN.fullmatch(punctuation_removed):
+        message = (
+            f"{displayed or '(blank)'}: Invalid email code format. "
+            f"Remove punctuation. Did you mean {punctuation_removed}?"
+        )
+    elif normalized.isdigit():
+        message = (
+            f"{displayed or '(blank)'}: Invalid email code format. "
+            "Expected something like M12."
+        )
+    else:
+        message = (
+            f"{displayed or '(blank)'}: Invalid email code format. "
+            "Expected something like M12."
+        )
+    return {
+        "code": normalized,
+        "kind": "format",
+        "message": message,
+    }
+
+
+def validate_email_codes(codes, *, require_nonempty=False, check_exists=True):
+    """Normalize and validate a submitted email-code list in one place.
+
+    Whitespace around codes is ignored and codes are normalized to uppercase.
+    Invalid formats, unknown accounts, and duplicate submissions are reported
+    together so the caller can identify every field that needs correction.
+    """
+    if codes is None:
+        codes = []
+    if isinstance(codes, str):
+        codes = re.split(r"[,\s]+", codes.strip()) if codes.strip() else []
+    if not isinstance(codes, (list, tuple)):
+        raise EmailCodeValidationError([{
+            "code": "",
+            "kind": "format",
+            "message": "Email account codes must be provided as a list.",
+        }])
+
+    normalized = []
+    errors = []
+    for raw_code in codes:
+        if not isinstance(raw_code, str) or not raw_code.strip():
+            continue
+        code = raw_code.strip().upper()
+        if not _CODE_PATTERN.fullmatch(code):
+            errors.append(_format_code_error(raw_code))
+            continue
+        normalized.append(code)
+
+    counts = {}
+    for code in normalized:
+        counts[code] = counts.get(code, 0) + 1
+    for code in dict.fromkeys(normalized):
+        if counts[code] > 1:
+            errors.append({
+                "code": code,
+                "kind": "duplicate",
+                "message": f"Email account {code} was entered more than once.",
+            })
+
+    if normalized and check_exists:
+        existing = {
+            account.code
+            for account in EmailAccount.query.filter(
+                EmailAccount.code.in_(set(normalized))
+            ).all()
+        }
+        for code in dict.fromkeys(normalized):
+            if code not in existing:
+                errors.append({
+                    "code": code,
+                    "kind": "unknown",
+                    "message": f"Email account {code} does not exist.",
+                })
+
+    if require_nonempty and not normalized:
+        errors.append({
+            "code": "",
+            "kind": "required",
+            "message": "No email account was entered. Please select at least one email account before saving.",
+        })
+
+    if errors:
+        raise EmailCodeValidationError(errors)
+    return normalized
 
 
 def suggest_profile_order(code, accounts):
@@ -93,7 +198,7 @@ def _make_row(raw_code, enabled):
             "proposed_order": None,
             "enabled": enabled,
             "validation_status": "invalid",
-            "error": "Code must contain letters followed by digits.",
+            "error": _format_code_error(raw_code)["message"],
         }
 
     group, _ = parse_code(code)

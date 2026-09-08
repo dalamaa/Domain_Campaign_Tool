@@ -293,7 +293,7 @@ codeInput.onblur = async (e) => {
 };
 
 async function saveNewAccount() {
-  const code = document.getElementById("form-code").value.toUpperCase();
+  const code = document.getElementById("form-code").value.trim().toUpperCase();
   const group = document.getElementById("form-group").value;
   const order = parseInt(document.getElementById("form-order").value);
 
@@ -361,6 +361,9 @@ async function saveNewAccount() {
   if (res.ok) {
     closeAddModal();
     renderEmailTable();
+  } else {
+    const result = await res.json().catch(() => ({}));
+    alert(result.error || "Unable to save email account.");
   }
 }
 

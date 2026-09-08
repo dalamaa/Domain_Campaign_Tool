@@ -8,14 +8,24 @@ from datetime import datetime, timedelta
 
 from app.services.email_account_service import (
     BulkEmailAccountValidationError,
+    EmailCodeValidationError,
     build_bulk_preview,
     lock_email_account_order,
     parse_code,
     persist_bulk_accounts,
     suggest_profile_order,
+    validate_email_codes,
 )
 
 bp = Blueprint('api', __name__, url_prefix='/api')
+
+
+def _email_code_validation_response(exc):
+    return jsonify({
+        'success': False,
+        'error': str(exc),
+        'errors': exc.errors,
+    }), 400
 
 @bp.route('/email-accounts', methods=['GET'])
 def get_email_accounts():
@@ -86,9 +96,13 @@ def update_email_account_status():
 
 @bp.route('/email-accounts/suggest-order', methods=['POST'])
 def suggest_order():
-    code = request.json.get('code')
-    prefix, _ = parse_code(code)
-    if not prefix: return jsonify({'error': 'Invalid code format'}), 400
+    code = (request.get_json(silent=True) or {}).get('code')
+    try:
+        code = validate_email_codes(
+            [code], require_nonempty=True, check_exists=False
+        )[0]
+    except EmailCodeValidationError as exc:
+        return _email_code_validation_response(exc)
 
     accounts = EmailAccount.query.all()
     return jsonify({'suggested_order': suggest_profile_order(code, accounts)})
@@ -162,7 +176,7 @@ def check_order():
 
 @bp.route('/email-accounts/check-code', methods=['GET'])
 def check_code():
-    code = request.args.get('code', '').upper()
+    code = request.args.get('code', '').strip().upper()
     acc = EmailAccount.query.get(code)
     if acc:
         return jsonify({
@@ -179,8 +193,13 @@ def check_code():
 
 @bp.route('/email-accounts/add', methods=['POST'])
 def add_email_account():
-    data = request.json
-    code = data['code'].upper()
+    data = request.get_json(silent=True) or {}
+    try:
+        code = validate_email_codes(
+            [data.get('code')], require_nonempty=True, check_exists=False
+        )[0]
+    except EmailCodeValidationError as exc:
+        return _email_code_validation_response(exc)
     prefix, _ = parse_code(code)
     new_order = int(data['order'])
     try:
@@ -205,9 +224,9 @@ def add_email_account():
         db.session.add(new_account)
         db.session.commit()
         return jsonify({'success': True})
-    except Exception as e:
+    except Exception:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Unable to save email account.'}), 500
 
 @bp.route('/email-accounts/<code>', methods=['DELETE'])
 def delete_email_account(code):
@@ -664,6 +683,35 @@ def rest_campaign(campaign_id):
             'error': 'Unable to move campaign to Resting.',
         }), 500
 
+
+@bp.route('/campaigns/<int:campaign_id>/reset', methods=['POST'])
+def reset_campaign(campaign_id):
+    from sqlalchemy.exc import SQLAlchemyError
+    from app.services.campaign_reset_service import (
+        CampaignResetError,
+        reset_current_campaign,
+    )
+
+    try:
+        result = reset_current_campaign(campaign_id)
+        db.session.commit()
+        return jsonify({'success': True, **result})
+    except CampaignResetError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), exc.status_code
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': 'Unable to reset campaign. No changes were saved.',
+        }), 500
+    except Exception:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': 'Unable to reset campaign. No changes were saved.',
+        }), 500
+
 @bp.route('/settings/reset-config', methods=['GET'])
 def get_reset_config():
     from app.services.settings_service import get_setting
@@ -871,6 +919,7 @@ def get_domains():
         friendly_action = action_mapping.get(str(raw_action), raw_action)
         results.append({
             'id': d.id,
+            'campaign_id': c.id if c else None,
             'domain': d.domain_name,
             'expiry': d.expiry_date.isoformat() if d.expiry_date else '',
             'status': c.status.value if c else '',
@@ -919,7 +968,8 @@ def add_domain():
 @bp.route('/domains/<int:id>/email-accounts', methods=['GET'])
 def get_domain_email_accounts(id):
     from app.models.models import Campaign, CampaignEmailBlock
-    camp = Campaign.query.filter_by(domain_id=id).first()
+    from app.services.expiry_service import select_latest_campaign
+    camp = select_latest_campaign(Campaign.query.filter_by(domain_id=id).all())
     if not camp: return jsonify([])
     return jsonify([{'code': b.email_code} for b in camp.email_blocks])
 
@@ -1061,7 +1111,8 @@ def final_import_domains():
 @bp.route('/domains/<int:id>/campaign-status', methods=['GET'])
 def get_campaign_status(id):
     from app.models.models import Campaign
-    camp = Campaign.query.filter_by(domain_id=id).first()
+    from app.services.expiry_service import select_latest_campaign
+    camp = select_latest_campaign(Campaign.query.filter_by(domain_id=id).all())
     if not camp:
         return jsonify({'error': 'Campaign not found'}), 404
     return jsonify({'status': camp.status.value})
@@ -1069,7 +1120,8 @@ def get_campaign_status(id):
 @bp.route('/domains/<int:id>/history', methods=['GET'])
 def get_campaign_history(id):
     from app.models.models import Campaign, CampaignHistory
-    camp = Campaign.query.filter_by(domain_id=id).first()
+    from app.services.expiry_service import select_latest_campaign
+    camp = select_latest_campaign(Campaign.query.filter_by(domain_id=id).all())
     if not camp:
         return jsonify({'error': 'Campaign not found'}), 404
 
@@ -1089,7 +1141,8 @@ def check_history_action(id):
     data = request.json
     new_seq = int(data.get('seq'))
 
-    camp = Campaign.query.filter_by(domain_id=id).first()
+    from app.services.expiry_service import select_latest_campaign
+    camp = select_latest_campaign(Campaign.query.filter_by(domain_id=id).all())
     if not camp:
         return jsonify({'error': 'Campaign not found'}), 404
 
@@ -1111,7 +1164,8 @@ def update_campaign_history(id):
     data = request.json
     seq = int(data.get('seq'))
 
-    camp = Campaign.query.filter_by(domain_id=camp.id).first()
+    from app.services.expiry_service import select_latest_campaign
+    camp = select_latest_campaign(Campaign.query.filter_by(domain_id=id).all())
     if not camp:
         return jsonify({'error': 'Campaign not found'}), 404
 
@@ -1208,20 +1262,19 @@ def add_campaign_action(campaign_id):
     from app.services.campaign_service import create_new_action, sync_campaign_state
     from app.models.models import ActionType, Campaign, CampaignStatus
     from datetime import datetime
-    data = request.json
-    email_codes = data.get('email_codes', [])
-    if not email_codes:
-        # Check if it's the first action (FIRST_OUTREACH), as emails are mandatory there
-        if data.get('action_type') == ActionType.FIRST_OUTREACH.value:
-            return jsonify({'error': 'No email account was entered. Please select at least one email account before saving.'}), 400
+    data = request.get_json(silent=True) or {}
 
     try:
+        if db.session.get(Campaign, campaign_id) is None:
+            return jsonify({'success': False, 'error': 'Campaign not found.'}), 404
         action_type = ActionType(data['action_type'])
+        email_codes = validate_email_codes(
+            data.get('email_codes', []),
+            require_nonempty=action_type == ActionType.FIRST_OUTREACH,
+        )
         action_date = datetime.fromisoformat(data['action_date'].replace('Z', ''))
         price = int(data['price_after'])
         notes = data.get('notes', '')
-        email_codes = data.get('email_codes', [])
-
         new_hist = create_new_action(campaign_id, action_type, action_date, price, notes, email_codes)
         # Synchronize campaign state
         sync_campaign_state(campaign_id)
@@ -1232,9 +1285,12 @@ def add_campaign_action(campaign_id):
 
             db.session.commit()
         return jsonify({'success': True, 'sequence': new_hist.sequence}), 201
-    except Exception as e:
+    except EmailCodeValidationError as exc:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 400
+        return _email_code_validation_response(exc)
+    except Exception:
+        db.session.rollback()
+        return jsonify({'error': 'Unable to save campaign action.'}), 400
 
 @bp.route('/campaigns/<int:campaign_id>/actions', methods=['GET'])
 def get_campaign_actions(campaign_id):
@@ -1277,18 +1333,18 @@ def edit_campaign_action(campaign_id, sequence):
     from app.services.campaign_service import update_existing_action
     from app.models.models import ActionType, Campaign, CampaignStatus
     from datetime import datetime
-    data = request.json
-    email_codes = data.get('email_codes', [])
-    if not email_codes:
-        return jsonify({'error': 'No email account was entered. Please select at least one email account before saving.'}), 400
+    data = request.get_json(silent=True) or {}
 
     try:
+        if db.session.get(Campaign, campaign_id) is None:
+            return jsonify({'success': False, 'error': 'Campaign not found.'}), 404
         action_type = ActionType(data['action_type'])
+        email_codes = validate_email_codes(
+            data.get('email_codes', []), require_nonempty=True
+        )
         action_date = datetime.fromisoformat(data['action_date'].replace('Z', ''))
         price = int(data['price_after'])
         notes = data.get('notes', '')
-        email_codes = data.get('email_codes', [])
-
         hist = update_existing_action(campaign_id, sequence, action_type, action_date, price, notes, email_codes)
         if not hist:
             return jsonify({'error': 'Not found'}), 404
@@ -1302,9 +1358,12 @@ def edit_campaign_action(campaign_id, sequence):
             'sequence': hist.sequence,
             'edited_at': hist.edited_at.isoformat()
         }})
-    except Exception as e:
+    except EmailCodeValidationError as exc:
         db.session.rollback()
-        return jsonify({'error': str(e)}), 400
+        return _email_code_validation_response(exc)
+    except Exception:
+        db.session.rollback()
+        return jsonify({'error': 'Unable to save campaign action changes.'}), 400
 
 @bp.route('/dashboard/first-follow-ups', methods=['GET'])
 def get_first_follow_ups():

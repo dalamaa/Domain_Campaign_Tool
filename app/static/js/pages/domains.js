@@ -213,6 +213,7 @@ function updateDomainActionBar() {
   const delBtn = document.getElementById("delete-btn");
   const bulkEditBtn = document.getElementById("bulk-edit-btn");
   const actionBtn = document.getElementById("action-btn");
+  const resetBtn = document.getElementById("reset-campaign-btn");
 
   // Edit button: enabled exactly 1 record selected
   if (editBtn) editBtn.disabled = count !== 1;
@@ -222,9 +223,55 @@ function updateDomainActionBar() {
 
   // Action button: enabled exactly 1 record selected
   if (actionBtn) actionBtn.disabled = count !== 1;
+  if (resetBtn) resetBtn.disabled = count !== 1;
 
   // Delete button: enabled if anything is selected
   if (delBtn) delBtn.disabled = count === 0;
+}
+
+function selectedDomainRecord() {
+  const id = Array.from(selectedDomains)[0];
+  return domains.find((domain) => domain.id == id) || null;
+}
+
+function campaignIdForDomainRecord(record) {
+  return record && record.campaign_id != null ? record.campaign_id : null;
+}
+
+async function resetSelectedCampaign() {
+  if (selectedDomains.size !== 1) return;
+  const record = selectedDomainRecord();
+  const campaignId = campaignIdForDomainRecord(record);
+  if (!record || campaignId == null) {
+    alert("This domain has no campaign to reset.");
+    return;
+  }
+
+  const confirmed = confirm(
+    `Reset campaign for ${record.domain}?\n\n` +
+      "This permanently removes the current campaign's:\n" +
+      "- history\n- associated email accounts\n" +
+      "- sequence/price/contact state\n- reservations\n\n" +
+      "The Domain itself, expiry date, and domain-level data will remain.",
+  );
+  if (!confirmed) return;
+
+  const typed = prompt(`Type ${record.domain} to confirm the campaign reset:`);
+  if (typed === null || typed.trim().toLowerCase() !== record.domain.trim().toLowerCase()) {
+    alert("Campaign reset cancelled. The domain name did not match.");
+    return;
+  }
+
+  const response = await fetch(`/api/campaigns/${campaignId}/reset`, { method: "POST" });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    alert(result.error || "Unable to reset campaign.");
+    return;
+  }
+  selectedDomains.delete(record.id);
+  updateDomainActionBar();
+  alert(`Campaign for ${record.domain} was reset.`);
+  await renderDomainTable();
 }
 
 // 2. Add bulkEditSelected function
@@ -946,8 +993,13 @@ function closeActionModal() {
 
 async function setActionMode(mode) {
   const container = document.getElementById("action-mode-content");
-  const campaignId = Array.from(selectedDomains)[0];
-  const campaign = domains.find((d) => d.id == campaignId);
+  const record = selectedDomainRecord();
+  const campaignId = campaignIdForDomainRecord(record);
+  const campaign = record;
+  if (campaignId == null) {
+    container.innerHTML = "<p>This domain has no campaign.</p>";
+    return;
+  }
 
   const tabNew = document.getElementById("tab-new");
   const tabEdit = document.getElementById("tab-edit");
@@ -1078,7 +1130,7 @@ async function loadActionForEdit(campaignId) {
   originalEmailCodes = usedEmails; // Store original
   const emailCodes = usedEmails.join(", ");
 
-  const campaign = domains.find((d) => d.id == campaignId);
+  const campaign = domains.find((d) => d.campaign_id == campaignId);
   const currentStatus = campaign ? campaign.status : "DORMANT";
   const container = document.getElementById("edit-action-fields");
   container.innerHTML = `
@@ -1201,12 +1253,13 @@ async function saveNewAction(campaignId) {
     body: JSON.stringify(payload),
   });
 
+  const result = await res.json().catch(() => ({}));
   if (res.ok) {
     alert("Action saved!");
     closeActionModal();
     renderDomainTable();
   } else {
-    alert("Failed to save action");
+    alert(result.error || "Failed to save action");
   }
 }
 
@@ -1238,13 +1291,14 @@ async function saveEditAction(campaignId, seq) {
     body: JSON.stringify(payload),
   });
 
+  const result = await res.json().catch(() => ({}));
   if (res.ok) {
     alert("Changes saved!");
     closeActionModal();
     // Re-fetch domain table to update status, cache-bust
     await renderDomainTable();
   } else {
-    alert("Failed to save changes");
+    alert(result.error || "Failed to save changes");
   }
 }
 
