@@ -1,11 +1,6 @@
 import sys
 import flask 
-print("PYTHON:", sys.executable)
-print("VERSION:", sys.version)
-
 import psycopg2
-print("PSYCOPG2:", psycopg2.__version__)
-
 
 from app import create_app
 
