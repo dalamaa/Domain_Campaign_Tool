@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import string
 from dataclasses import dataclass
 
 from sqlalchemy import text
@@ -38,17 +37,17 @@ class EmailCodeValidationError(ValueError):
 def _format_code_error(raw_code):
     displayed = str(raw_code).strip() if raw_code is not None else ""
     normalized = displayed.upper()
-    punctuation_removed = normalized.rstrip(string.punctuation)
+    dot_removed = normalized.strip(".")
 
-    if punctuation_removed and punctuation_removed != normalized and _CODE_PATTERN.fullmatch(punctuation_removed):
+    if dot_removed and dot_removed != normalized and _CODE_PATTERN.fullmatch(dot_removed):
         message = (
-            f"{displayed or '(blank)'}: Invalid email code format. "
-            f"Remove punctuation. Did you mean {punctuation_removed}?"
+            f"{displayed or '(blank)'}: Invalid email code. "
+            f"Remove the dot. Did you mean {dot_removed}?"
         )
     elif normalized.isdigit():
         message = (
-            f"{displayed or '(blank)'}: Invalid email code format. "
-            "Expected something like M12."
+            f"{displayed or '(blank)'}: Invalid email code. "
+            "Email codes need a letter prefix, for example T05."
         )
     else:
         message = (
@@ -82,9 +81,11 @@ def validate_email_codes(codes, *, require_nonempty=False, check_exists=True):
 
     normalized = []
     errors = []
+    submitted_values = False
     for raw_code in codes:
         if not isinstance(raw_code, str) or not raw_code.strip():
             continue
+        submitted_values = True
         code = raw_code.strip().upper()
         if not _CODE_PATTERN.fullmatch(code):
             errors.append(_format_code_error(raw_code))
@@ -117,7 +118,7 @@ def validate_email_codes(codes, *, require_nonempty=False, check_exists=True):
                     "message": f"Email account {code} does not exist.",
                 })
 
-    if require_nonempty and not normalized:
+    if require_nonempty and not submitted_values:
         errors.append({
             "code": "",
             "kind": "required",

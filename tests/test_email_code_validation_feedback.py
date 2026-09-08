@@ -44,8 +44,9 @@ def test_missing_prefix_has_clear_error(client, app):
     response = client.post(f"/api/campaigns/{campaign_id}/actions", json=_action(campaign_id, ["12"]))
 
     assert response.status_code == 400
-    assert "Invalid email code format" in response.json["error"]
-    assert "Expected something like M12" in response.json["error"]
+    assert response.json["error"] == (
+        "12: Invalid email code. Email codes need a letter prefix, for example T05."
+    )
 
 
 def test_trailing_punctuation_has_safe_suggestion(client, app):
@@ -53,8 +54,19 @@ def test_trailing_punctuation_has_safe_suggestion(client, app):
     response = client.post(f"/api/campaigns/{campaign_id}/actions", json=_action(campaign_id, ["T05."]))
 
     assert response.status_code == 400
-    assert "Remove punctuation" in response.json["error"]
-    assert "Did you mean T05?" in response.json["error"]
+    assert response.json["error"] == (
+        "T05.: Invalid email code. Remove the dot. Did you mean T05?"
+    )
+
+
+def test_leading_dot_has_safe_suggestion(client, app):
+    campaign_id = _campaign(app)
+    response = client.post(f"/api/campaigns/{campaign_id}/actions", json=_action(campaign_id, [".T03"]))
+
+    assert response.status_code == 400
+    assert response.json["error"] == (
+        ".T03: Invalid email code. Remove the dot. Did you mean T03?"
+    )
 
 
 def test_unknown_formatted_code_is_distinguished_from_format_error(client, app):
@@ -90,14 +102,27 @@ def test_multiple_invalid_codes_are_each_explained(client, app):
     campaign_id = _campaign(app)
     response = client.post(
         f"/api/campaigns/{campaign_id}/actions",
-        json=_action(campaign_id, ["12", "T05.", "T05"]),
+        json=_action(campaign_id, ["T02.", ".T03", "05"]),
     )
 
     assert response.status_code == 400
     messages = [item["message"] for item in response.json["errors"]]
-    assert any("12" in message and "M12" in message for message in messages)
-    assert any("T05." in message and "Did you mean T05?" in message for message in messages)
-    assert any(message == "Email account T05 does not exist." for message in messages)
+    assert messages == [
+        "T02.: Invalid email code. Remove the dot. Did you mean T02?",
+        ".T03: Invalid email code. Remove the dot. Did you mean T03?",
+        "05: Invalid email code. Email codes need a letter prefix, for example T05.",
+    ]
+    assert "No email account was entered" not in response.json["error"]
+
+
+def test_empty_input_gets_only_required_error(client, app):
+    campaign_id = _campaign(app)
+    response = client.post(f"/api/campaigns/{campaign_id}/actions", json=_action(campaign_id, []))
+
+    assert response.status_code == 400
+    assert response.json["error"] == (
+        "No email account was entered. Please select at least one email account before saving."
+    )
 
 
 def test_edit_action_uses_the_same_validation_messages(client, app):
@@ -110,7 +135,7 @@ def test_edit_action_uses_the_same_validation_messages(client, app):
         json={**_action(campaign_id, ["T05."]), "action_type": ActionType.FOLLOW_UP.value},
     )
     assert response.status_code == 400
-    assert "Did you mean T05?" in response.json["error"]
+    assert "Remove the dot. Did you mean T05?" in response.json["error"]
 
 
 def test_manual_email_account_entry_uses_the_same_format_feedback(client):
@@ -120,5 +145,4 @@ def test_manual_email_account_entry_uses_the_same_format_feedback(client):
     )
 
     assert response.status_code == 400
-    assert "Remove punctuation" in response.json["error"]
-    assert "Did you mean T05?" in response.json["error"]
+    assert "Remove the dot. Did you mean T05?" in response.json["error"]
