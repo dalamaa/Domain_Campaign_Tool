@@ -218,6 +218,18 @@
       <button onclick="cancelEdit('reservation')">Cancel</button>
     </div>
   </div>
+
+  <div style="margin-top: 20px" id="backup-export">
+    <h3>Backup / Export</h3>
+    <p>Download a read-only copy of the current domains, campaigns, history, reservations, email accounts, and safe business settings.</p>
+    <a href="/api/backup/export.xlsx" download>
+      <button type="button">Export XLSX</button>
+    </a>
+    <a href="/api/backup/export.zip" download>
+      <button type="button">Export CSV Backup (.zip)</button>
+    </a>
+    <p>Restore/import is not available yet.</p>
+  </div>
 </div>
 
 <script src="{{ url_for('static', filename='js/shared.js') }}"></script>

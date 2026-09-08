@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_file
 from app.models.models import db, EmailAccount
 from sqlalchemy import asc
 import csv
@@ -18,6 +18,30 @@ from app.services.email_account_service import (
 )
 
 bp = Blueprint('api', __name__, url_prefix='/api')
+
+
+@bp.route('/backup/export.xlsx', methods=['GET'])
+def export_backup_xlsx():
+    from app.services.backup_export_service import build_xlsx_export, export_filename
+
+    return send_file(
+        build_xlsx_export(),
+        as_attachment=True,
+        download_name=export_filename('xlsx'),
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+
+
+@bp.route('/backup/export.zip', methods=['GET'])
+def export_backup_zip():
+    from app.services.backup_export_service import build_csv_zip_export, export_filename
+
+    return send_file(
+        build_csv_zip_export(),
+        as_attachment=True,
+        download_name=export_filename('zip'),
+        mimetype='application/zip',
+    )
 
 
 def _email_code_validation_response(exc):
