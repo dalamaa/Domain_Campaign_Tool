@@ -2,9 +2,12 @@
 
 import csv
 import io
+import json
+import subprocess
 import zipfile
 from collections import OrderedDict
-from datetime import date, datetime
+from datetime import date, datetime, timezone
+from pathlib import Path
 
 from openpyxl import Workbook
 from openpyxl.styles import Font
@@ -21,6 +24,11 @@ from app.models.models import (
     Setting,
 )
 from app.services.time_service import get_business_today
+
+
+EXACT_BACKUP_FORMAT_NAME = 'domain-campaign-exact-backup'
+EXACT_BACKUP_FORMAT_VERSION = 1
+EXACT_BACKUP_APPLICATION = 'Domain Campaign Tool'
 
 
 # The key is a business setting, while the value is the stable export filename
@@ -61,6 +69,10 @@ DATASET_COLUMNS = OrderedDict([
     ('settings', ['key', 'value']),
 ])
 
+DATASET_SHEET_NAMES = OrderedDict(
+    (name, name.replace('_', ' ').title()) for name in DATASET_COLUMNS
+)
+
 _SENSITIVE_SETTING_MARKERS = (
     'PASSWORD', 'SECRET', 'DATABASE', 'TOKEN', 'CREDENTIAL', 'SESSION',
     'AUTH', 'USERNAME',
@@ -96,6 +108,81 @@ def _campaign_context():
             'campaign_created_at': campaign.created_at,
         }
     return contexts
+
+
+def _git_revision():
+    """Return the current revision when local Git metadata is available."""
+    try:
+        project_root = Path(__file__).resolve().parents[2]
+        result = subprocess.run(
+            ['git', 'rev-parse', 'HEAD'],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            timeout=1,
+            check=True,
+        )
+        revision = result.stdout.strip()
+        return revision or None
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+
+
+def _schema_revision():
+    """Schema revision is optional and never queries the database."""
+    return None
+
+
+def build_manifest(datasets, *, business_date=None, exported_at=None):
+    """Build manifest metadata for the supplied exact-backup datasets."""
+    business_date = business_date or get_business_today()
+    exported_at = exported_at or datetime.now(timezone.utc)
+    return {
+        'format_name': EXACT_BACKUP_FORMAT_NAME,
+        'format_version': EXACT_BACKUP_FORMAT_VERSION,
+        'application': EXACT_BACKUP_APPLICATION,
+        'exported_at': exported_at.isoformat(),
+        'business_date': business_date.isoformat(),
+        'git_revision': _git_revision(),
+        'schema_revision': _schema_revision(),
+        'datasets': [
+            {
+                'dataset': name,
+                'filename': f'{name}.csv',
+                'sheet_name': DATASET_SHEET_NAMES[name],
+                'columns': list(columns),
+                'row_count': len(rows),
+            }
+            for name, columns, rows in datasets
+        ],
+    }
+
+
+def _write_manifest_sheet(sheet, manifest):
+    for key in (
+        'format_name', 'format_version', 'application', 'exported_at',
+        'business_date', 'git_revision', 'schema_revision',
+    ):
+        sheet.append([key, manifest[key] if manifest[key] is not None else ''])
+    sheet.append([])
+    sheet.append(['dataset', 'sheet_name', 'filename', 'columns', 'row_count'])
+    for dataset in manifest['datasets']:
+        sheet.append([
+            dataset['dataset'],
+            dataset['sheet_name'],
+            dataset['filename'],
+            json.dumps(dataset['columns'], ensure_ascii=False),
+            dataset['row_count'],
+        ])
+    for cell in sheet[1]:
+        cell.font = Font(bold=True)
+    header_row = 9
+    for cell in sheet[header_row]:
+        cell.font = Font(bold=True)
+    sheet.freeze_panes = f'A{header_row + 1}'
+    for index in range(1, 6):
+        values = [str(sheet.cell(row, index).value or '') for row in range(1, sheet.max_row + 1)]
+        sheet.column_dimensions[sheet.cell(1, index).column_letter].width = min(max(map(len, values)) + 2, 80)
 
 
 def build_export_datasets():
@@ -285,8 +372,10 @@ def build_export_datasets():
 def build_xlsx_export():
     workbook = Workbook()
     workbook.remove(workbook.active)
-    for name, columns, rows in build_export_datasets():
-        sheet = workbook.create_sheet(name.replace('_', ' ').title())
+    datasets = build_export_datasets()
+    manifest = build_manifest(datasets)
+    for name, columns, rows in datasets:
+        sheet = workbook.create_sheet(DATASET_SHEET_NAMES[name])
         sheet.append(columns)
         for cell in sheet[1]:
             cell.font = Font(bold=True)
@@ -297,6 +386,7 @@ def build_xlsx_export():
             values = [str(row[column]) if row[column] != '' else '' for row in rows]
             width = min(max([len(column), *(len(value) for value in values)] or [len(column)]) + 2, 45)
             sheet.column_dimensions[chr(64 + index) if index <= 26 else sheet.cell(1, index).column_letter].width = width
+    _write_manifest_sheet(workbook.create_sheet('Manifest'), manifest)
     output = io.BytesIO()
     workbook.save(output)
     output.seek(0)
@@ -305,13 +395,19 @@ def build_xlsx_export():
 
 def build_csv_zip_export():
     output = io.BytesIO()
+    datasets = build_export_datasets()
+    manifest = build_manifest(datasets)
     with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
-        for name, columns, rows in build_export_datasets():
+        for name, columns, rows in datasets:
             csv_output = io.StringIO(newline='')
             writer = csv.DictWriter(csv_output, fieldnames=columns, lineterminator='\n')
             writer.writeheader()
             writer.writerows(rows)
             archive.writestr(f'{name}.csv', csv_output.getvalue().encode('utf-8'))
+        archive.writestr(
+            'manifest.json',
+            json.dumps(manifest, ensure_ascii=False, indent=2).encode('utf-8'),
+        )
     output.seek(0)
     return output
 

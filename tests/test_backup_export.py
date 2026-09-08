@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 import zipfile
 from datetime import date, datetime
 
@@ -147,7 +148,7 @@ def test_xlsx_export_contains_expected_data_and_safe_values(app, client):
     assert workbook.sheetnames == [
         'Domains', 'Campaigns', 'Campaign History', 'History Email Used',
         'Email Accounts', 'Campaign Email Associations', 'Reservations',
-        'Reservation Email Links', 'Settings',
+        'Reservation Email Links', 'Settings', 'Manifest',
     ]
     domains = list(workbook['Domains'].values)
     assert domains[1][1:5] == ('example.com', '2030-01-02', 'SOLD', 'Keep this domain note')
@@ -176,7 +177,7 @@ def test_csv_zip_export_has_normalized_files_and_logical_references(app, client)
             'domains.csv', 'campaigns.csv', 'campaign_history.csv',
             'history_email_used.csv', 'email_accounts.csv',
             'campaign_email_associations.csv', 'reservations.csv',
-            'reservation_email_links.csv', 'settings.csv',
+            'reservation_email_links.csv', 'settings.csv', 'manifest.json',
         ]
         campaigns = list(csv.DictReader(io.StringIO(archive.read('campaigns.csv').decode('utf-8'))))
         assert {row['lifecycle_ordinal'] for row in campaigns if row['domain_name'] == 'example.com'} == {'1', '2'}
@@ -209,3 +210,71 @@ def test_export_is_read_only_and_empty_database_still_has_headers(app, client):
             EmailAccount.query.count(), Reservation.query.count(), Setting.query.count(),
         ]
     assert before == after == [0, 0, 0, 0, 0, 0]
+
+
+def test_exact_zip_manifest_describes_every_csv_without_changing_csv_data(app, client):
+    with app.app_context():
+        _seed_export_data()
+    _authenticated(client)
+    response = client.get('/api/backup/export.zip')
+    with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+        manifest = json.loads(archive.read('manifest.json'))
+        assert manifest['format_name'] == 'domain-campaign-exact-backup'
+        assert manifest['format_version'] == 1
+        assert manifest['application'] == 'Domain Campaign Tool'
+        datetime.fromisoformat(manifest['exported_at'])
+        date.fromisoformat(manifest['business_date'])
+        assert len(manifest['datasets']) == 9
+        for dataset in manifest['datasets']:
+            rows = list(csv.reader(io.StringIO(archive.read(dataset['filename']).decode('utf-8'))))
+            assert dataset['columns'] == rows[0]
+            assert dataset['row_count'] == len(rows) - 1
+        assert 'manifest.json' in archive.namelist()
+
+
+def test_exact_xlsx_manifest_matches_all_data_sheets(app, client):
+    with app.app_context():
+        _seed_export_data()
+    _authenticated(client)
+    workbook = load_workbook(io.BytesIO(client.get('/api/backup/export.xlsx').data), read_only=False)
+    manifest = workbook['Manifest']
+    metadata = {
+        row[0].value: row[1].value
+        for row in manifest.iter_rows(min_row=1, max_row=7)
+    }
+    assert metadata['format_name'] == 'domain-campaign-exact-backup'
+    assert metadata['format_version'] == 1
+    assert metadata['application'] == 'Domain Campaign Tool'
+    datetime.fromisoformat(metadata['exported_at'])
+    date.fromisoformat(metadata['business_date'])
+    assert metadata['schema_revision'] in ('', None)
+    assert [cell.value for cell in manifest[9]] == [
+        'dataset', 'sheet_name', 'filename', 'columns', 'row_count',
+    ]
+    for row in manifest.iter_rows(min_row=10, max_row=18, values_only=True):
+        dataset, sheet_name, _filename, columns_json, row_count = row
+        sheet = workbook[sheet_name]
+        assert json.loads(columns_json) == [cell.value for cell in sheet[1]]
+        assert row_count == sheet.max_row - 1
+
+
+def test_exact_empty_export_manifest_has_zero_dataset_counts(app, client):
+    _authenticated(client)
+    with zipfile.ZipFile(io.BytesIO(client.get('/api/backup/export.zip').data)) as archive:
+        manifest = json.loads(archive.read('manifest.json'))
+        assert all(dataset['row_count'] == 0 for dataset in manifest['datasets'])
+
+
+def test_unavailable_optional_manifest_metadata_does_not_break_export(app, client, monkeypatch):
+    with app.app_context():
+        _seed_export_data()
+    _authenticated(client)
+    import app.services.backup_export_service as export_service
+    monkeypatch.setattr(export_service, '_git_revision', lambda: None)
+    monkeypatch.setattr(export_service, '_schema_revision', lambda: None)
+    response = client.get('/api/backup/export.zip')
+    assert response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
+        manifest = json.loads(archive.read('manifest.json'))
+        assert manifest['git_revision'] is None
+        assert manifest['schema_revision'] is None
