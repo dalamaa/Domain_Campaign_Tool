@@ -220,13 +220,21 @@
   </div>
 
   <div style="margin-top: 20px" id="backup-export">
-    <h3>Backup / Export</h3>
-    <p>Download a read-only copy of the current domains, campaigns, history, reservations, email accounts, and safe business settings.</p>
+    <h3>Exact App Backup</h3>
+    <p>Complete normalized application snapshot intended for exact disaster recovery.</p>
     <a href="/api/backup/export.xlsx" download>
       <button type="button">Export XLSX</button>
     </a>
     <a href="/api/backup/export.zip" download>
       <button type="button">Export CSV Backup (.zip)</button>
+    </a>
+    <h3 style="margin-top: 20px">Spreadsheet Export</h3>
+    <p>Human-readable campaign export for Excel, Google Sheets, email/archive, or fallback reconstruction.</p>
+    <a href="/api/export/spreadsheet.xlsx" download>
+      <button type="button">Export XLSX</button>
+    </a>
+    <a href="/api/export/spreadsheet.zip" download>
+      <button type="button">Export CSV (.zip)</button>
     </a>
     <p>Restore/import is not available yet.</p>
   </div>

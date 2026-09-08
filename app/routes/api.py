@@ -44,6 +44,36 @@ def export_backup_zip():
     )
 
 
+@bp.route('/export/spreadsheet.xlsx', methods=['GET'])
+def export_spreadsheet_xlsx():
+    from app.services.spreadsheet_export_service import (
+        build_spreadsheet_xlsx,
+        spreadsheet_export_filename,
+    )
+
+    return send_file(
+        build_spreadsheet_xlsx(),
+        as_attachment=True,
+        download_name=spreadsheet_export_filename('xlsx'),
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+
+
+@bp.route('/export/spreadsheet.zip', methods=['GET'])
+def export_spreadsheet_zip():
+    from app.services.spreadsheet_export_service import (
+        build_spreadsheet_csv_zip,
+        spreadsheet_export_filename,
+    )
+
+    return send_file(
+        build_spreadsheet_csv_zip(),
+        as_attachment=True,
+        download_name=spreadsheet_export_filename('zip'),
+        mimetype='application/zip',
+    )
+
+
 def _email_code_validation_response(exc):
     return jsonify({
         'success': False,
