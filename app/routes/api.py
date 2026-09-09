@@ -44,6 +44,41 @@ def export_backup_zip():
     )
 
 
+@bp.route('/backup/restore/validate', methods=['POST'])
+def validate_backup_restore():
+    from app.services.backup_restore_service import preflight_backup
+
+    result = preflight_backup(request.files.get('file'))
+    if result['valid']:
+        return jsonify(result)
+    status_code = 409 if result['database_empty'] is False else 400
+    return jsonify(result), status_code
+
+
+@bp.route('/backup/restore', methods=['POST'])
+def restore_backup_route():
+    from app.services.backup_restore_service import (
+        CONFIRMATION_TEXT,
+        BackupRestoreError,
+        restore_backup,
+    )
+
+    if request.form.get('confirmation') != CONFIRMATION_TEXT:
+        return jsonify({
+            'success': False,
+            'error': f"Type '{CONFIRMATION_TEXT}' to confirm restore.",
+        }), 400
+    try:
+        counts = restore_backup(request.files.get('file'))
+        return jsonify({'success': True, 'restored': counts})
+    except BackupRestoreError as exc:
+        return jsonify({
+            'success': False,
+            'error': str(exc),
+            'errors': exc.errors,
+        }), exc.status_code
+
+
 @bp.route('/export/spreadsheet.xlsx', methods=['GET'])
 def export_spreadsheet_xlsx():
     from app.services.spreadsheet_export_service import (

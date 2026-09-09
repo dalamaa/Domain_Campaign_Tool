@@ -236,7 +236,23 @@
     <a href="/api/export/spreadsheet.zip" download>
       <button type="button">Export CSV (.zip)</button>
     </a>
-    <p>Restore/import is not available yet.</p>
+  </div>
+
+  <div style="margin-top: 20px" id="exact-backup-restore">
+    <h3>Restore Exact App Backup</h3>
+    <p>
+      Only a normalized Exact App Backup ZIP is supported. Restore is allowed
+      only when the operational database is empty; backups cannot be merged.
+      Environment credentials and authentication secrets are not restored.
+    </p>
+    <label for="exact-backup-restore-file">Choose Exact Backup ZIP:</label>
+    <input id="exact-backup-restore-file" type="file" accept=".zip,application/zip" />
+    <button type="button" onclick="validateExactBackup()">Validate Backup</button>
+    <p id="exact-backup-restore-status" role="status" aria-live="polite"></p>
+    <pre id="exact-backup-restore-summary" style="display: none; white-space: pre-wrap"></pre>
+    <button id="exact-backup-restore-button" type="button" onclick="restoreExactBackup()" style="display: none">
+      Restore Backup
+    </button>
   </div>
 </div>
 
@@ -631,6 +647,91 @@
     });
     if (res.ok) alert("Timezone saved.");
     else alert("Error saving timezone.");
+  }
+
+  let exactBackupValidated = false;
+  let exactBackupValidatedFile = null;
+
+  function setExactBackupRestoreStatus(message, isError = false) {
+    const status = document.getElementById("exact-backup-restore-status");
+    status.textContent = message;
+    status.style.color = isError ? "#b00020" : "#176b2c";
+  }
+
+  function selectedExactBackupFile() {
+    return document.getElementById("exact-backup-restore-file").files[0];
+  }
+
+  async function validateExactBackup() {
+    const file = selectedExactBackupFile();
+    exactBackupValidated = false;
+    exactBackupValidatedFile = null;
+    document.getElementById("exact-backup-restore-button").style.display = "none";
+    document.getElementById("exact-backup-restore-summary").style.display = "none";
+    if (!file) {
+      setExactBackupRestoreStatus("Choose an Exact App Backup ZIP first.", true);
+      return;
+    }
+    const form = new FormData();
+    form.append("file", file);
+    try {
+      const response = await fetch("/api/backup/restore/validate", {
+        method: "POST",
+        body: form,
+      });
+      const data = await response.json();
+      if (!response.ok || !data.valid) {
+        throw new Error((data.errors || [data.error || "Backup validation failed."]).join("\n"));
+      }
+      exactBackupValidated = true;
+      exactBackupValidatedFile = file;
+      const summary = document.getElementById("exact-backup-restore-summary");
+      summary.textContent = [
+        `Format: ${data.format_name} v${data.format_version}`,
+        `Exported at: ${data.exported_at}`,
+        `Business date: ${data.business_date}`,
+        `Database empty: ${data.database_empty}`,
+        "Dataset counts:",
+        ...Object.entries(data.datasets).map(([name, count]) => `  ${name}: ${count}`),
+      ].join("\n");
+      summary.style.display = "block";
+      document.getElementById("exact-backup-restore-button").style.display = "inline-block";
+      setExactBackupRestoreStatus("Backup validated. Review the counts before restoring.");
+    } catch (error) {
+      setExactBackupRestoreStatus(error.message, true);
+    }
+  }
+
+  async function restoreExactBackup() {
+    const file = selectedExactBackupFile();
+    if (!exactBackupValidated || exactBackupValidatedFile !== file || !file) {
+      setExactBackupRestoreStatus("Validate the selected Exact Backup ZIP first.", true);
+      return;
+    }
+    const confirmation = window.prompt("Type RESTORE EXACT BACKUP to continue.");
+    if (confirmation !== "RESTORE EXACT BACKUP") {
+      setExactBackupRestoreStatus("Restore cancelled.", true);
+      return;
+    }
+    const form = new FormData();
+    form.append("file", file);
+    form.append("confirmation", confirmation);
+    try {
+      const response = await fetch("/api/backup/restore", {
+        method: "POST",
+        body: form,
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error((data.errors || [data.error || "Restore failed."]).join("\n"));
+      }
+      setExactBackupRestoreStatus("Exact App Backup restored successfully.");
+      exactBackupValidated = false;
+      exactBackupValidatedFile = null;
+      document.getElementById("exact-backup-restore-button").style.display = "none";
+    } catch (error) {
+      setExactBackupRestoreStatus(error.message, true);
+    }
   }
 
   function getModeData(type) {

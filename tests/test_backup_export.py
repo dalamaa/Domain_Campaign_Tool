@@ -132,7 +132,7 @@ def test_settings_page_exposes_export_controls(client):
     assert 'id="backup-export"' in html
     assert '/api/backup/export.xlsx' in html
     assert '/api/backup/export.zip' in html
-    assert 'Restore/import is not available yet.' in html
+    assert 'Restore Exact App Backup' in html
 
 
 def test_xlsx_export_contains_expected_data_and_safe_values(app, client):
