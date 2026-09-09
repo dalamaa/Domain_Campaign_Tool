@@ -359,6 +359,15 @@ async function renderTodaysCampaigns() {
     .join("");
 }
 
+function reservationBoardStatePresentation(state) {
+  if (state === "AVAILABLE") return { className: "available", label: "Unreserved" };
+  if (state === "RESERVED") return { className: "reserved", label: state };
+  if (state === "USED") return { className: "used", label: state };
+  if (state === "COMPLETED_TODAY") return { className: "completed-today", label: state.replace("_", " ") };
+  if (state === "DISABLED") return { className: "disabled", label: state };
+  return { className: "", label: String(state || "").replace("_", " ") };
+}
+
 async function updateReservationBoard() {
   const res = await fetch("/api/dashboard/reservation-board");
   const data = await res.json();
@@ -366,16 +375,14 @@ async function updateReservationBoard() {
   if (!list) return;
   list.innerHTML = data
     .map((acc) => {
-      let stateClass = "";
-      let stateLabel = acc.state.replace("_", " ");
+      const presentation = reservationBoardStatePresentation(acc.state);
+      const stateClass = presentation.className;
+      const stateLabel = presentation.label;
       let domainLabel = "";
 
-      if (acc.state === "UNRESERVED") stateClass = "unreserved";
-      else if (acc.state === "RESERVED") {
-        stateClass = "reserved";
+      if (acc.state === "RESERVED") {
         domainLabel = `<br><small>${(acc.reserved_domains || []).join("<br>")}</small>`;
-      } else if (acc.state === "USED") stateClass = "used";
-      else if (acc.state === "DISABLED") stateClass = "disabled";
+      }
 
       return `
         <div class="acc-item ${stateClass}">
