@@ -174,6 +174,6 @@ def test_dashboard_contains_resting_suggestions_accordion(client):
     assert "Unable to load Resting suggestions." in dashboard_js
     assert "dashboard-error" in dashboard_js
     assert "catch (error)" in dashboard_js
-    assert "campaign.trigger_reasons" in dashboard_js
-    assert "reason.text" in dashboard_js
+    assert '<th>Reasons</th>' not in dashboard_js
+    assert 'title="Move to Resting"' in dashboard_js
     assert "eligibility_metrics" in dashboard_js

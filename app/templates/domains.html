@@ -2,99 +2,69 @@
 <div class="domain-management">
   <h2>Domains / Campaigns</h2>
 
-  <div class="action-bar" id="domain-action-bar" style="display: block">
+  <div class="action-bar" id="domain-action-bar">
     <input
       type="text"
       placeholder="Search domains..."
       oninput="updateSearch(this.value)"
     />
     <span id="domain-count"></span>
-    <button onclick="openBulkImportModal()">
+    <button class="btn btn-primary" type="button" onclick="openBulkImportModal()">
       Import CSV
     </button>
-    <button onclick="openModal()">+ Add Domain</button>
-    <button id="edit-btn" onclick="editSelected()" disabled>Edit</button>
-    <button id="delete-btn" onclick="bulkDeleteDomains()" disabled>
+    <button class="btn btn-primary" type="button" onclick="openModal()">+ Add Domain</button>
+    <button class="btn btn-secondary" id="edit-btn" type="button" onclick="editSelected()" disabled>Edit</button>
+    <button class="btn btn-danger" id="delete-btn" type="button" onclick="bulkDeleteDomains()" disabled>
       Delete
     </button>
-    <button id="bulk-edit-btn" onclick="openBulkModal()" disabled>
+    <button class="btn btn-secondary" id="bulk-edit-btn" type="button" onclick="openBulkModal()" disabled>
       Bulk Edit
     </button>
-    <button id="action-btn" onclick="openActionModal()" disabled>Action</button>
-    <button id="reset-campaign-btn" onclick="resetSelectedCampaign()" disabled>
+    <button class="btn btn-secondary" id="action-btn" type="button" onclick="openActionModal()" disabled>Action</button>
+    <button class="btn btn-danger" id="reset-campaign-btn" type="button" onclick="resetSelectedCampaign()" disabled>
       Reset Campaign
     </button>
   </div>
 
-  <div class="table-container" style="max-height: 600px; overflow-y: auto">
+  <div class="table-container">
     <table id="domain-table">
       <thead>
         <tr>
-          <th style="position: sticky; top: 0; background: #eee">
+          <th>
             <input
               type="checkbox"
               id="select-all-checkbox"
               onchange="toggleSelectAll(this)"
             />
           </th>
-          <th
-            style="position: sticky; top: 0; background: #eee; cursor: pointer"
-            onclick="sortTable('domain')"
-          >
+          <th onclick="sortTable('domain')">
             Domain ↕
           </th>
-          <th
-            style="position: sticky; top: 0; background: #eee; cursor: pointer"
-            onclick="sortTable('createdAt')"
-          >
+          <th onclick="sortTable('createdAt')">
             Added ↕
           </th>
-          <th
-            style="position: sticky; top: 0; background: #eee; cursor: pointer"
-            onclick="sortTable('expiry')"
-          >
+          <th onclick="sortTable('expiry')">
             Expiry ↕
           </th>
-          <th
-            style="position: sticky; top: 0; background: #eee; cursor: pointer"
-            onclick="sortTable('daysLeft')"
-          >
+          <th onclick="sortTable('daysLeft')">
             Days Left ↕
           </th>
-          <th
-            style="position: sticky; top: 0; background: #eee; cursor: pointer"
-            onclick="sortTable('status')"
-          >
+          <th onclick="sortTable('status')">
             Status ↕
           </th>
-          <th
-            style="position: sticky; top: 0; background: #eee; cursor: pointer"
-            onclick="sortTable('price')"
-          >
+          <th onclick="sortTable('price')">
             Price ↕
           </th>
-          <th
-            style="position: sticky; top: 0; background: #eee; cursor: pointer"
-            onclick="sortTable('daysSince')"
-          >
+          <th onclick="sortTable('daysSince')">
             Days Since ↕
           </th>
-          <th
-            style="position: sticky; top: 0; background: #eee; cursor: pointer"
-            onclick="sortTable('seq')"
-          >
+          <th onclick="sortTable('seq')">
             Seq ↕
           </th>
-          <th
-            style="position: sticky; top: 0; background: #eee; cursor: pointer"
-            onclick="sortTable('lastAction')"
-          >
+          <th onclick="sortTable('lastAction')">
             Last Action ↕
           </th>
-          <th
-            style="position: sticky; top: 0; background: #eee; cursor: pointer"
-            onclick="sortTable('latestEmails')"
-          >
+          <th onclick="sortTable('latestEmails')">
             Email Used ↕
           </th>
         </tr>
@@ -109,17 +79,6 @@
 <div
   id="history-modal"
   class="modal"
-  style="
-    display: none;
-    position: fixed;
-    top: 20%;
-    left: 20%;
-    width: 60%;
-    background: white;
-    padding: 20px;
-    border: 1px solid #ccc;
-    z-index: 100;
-  "
 >
   <h3 id="history-modal-domain">Campaign History</h3>
   <div style="max-height: 400px; overflow-y: auto">
@@ -135,36 +94,25 @@
       <tbody id="history-table-body"></tbody>
     </table>
   </div>
-  <button onclick="closeHistoryModal()">Close</button>
+  <button class="btn btn-secondary" type="button" onclick="closeHistoryModal()">Close</button>
 </div>
 <div
   id="action-modal"
   class="modal"
-  style="
-    display: none;
-    position: fixed;
-    top: 10%;
-    left: 30%;
-    width: 40%;
-    background: white;
-    padding: 20px;
-    border: 1px solid #ccc;
-    z-index: 200;
-  "
 >
   <h3>Campaign Action</h3>
   <div style="margin-bottom: 15px">
     <button
       id="tab-new"
       onclick="setActionMode('new')"
-      style="padding: 8px 16px; margin-right: 5px; cursor: pointer"
+      class="btn btn-primary btn-compact"
     >
       New Action
     </button>
     <button
       id="tab-edit"
       onclick="setActionMode('edit')"
-      style="padding: 8px 16px; cursor: pointer"
+      class="btn btn-secondary btn-compact"
     >
       Edit History
     </button>
@@ -172,21 +120,11 @@
   <hr />
   <div id="action-mode-content"></div>
   <br />
-  <button onclick="closeActionModal()">Cancel</button>
+  <button class="btn btn-secondary" type="button" onclick="closeActionModal()">Cancel</button>
 </div>
 <div
   id="domain-modal"
   class="modal"
-  style="
-    display: none;
-    position: fixed;
-    top: 20%;
-    left: 30%;
-    background: white;
-    padding: 20px;
-    border: 1px solid #ccc;
-    z-index: 100;
-  "
 >
   <h3 id="modal-title">Edit Domain</h3>
   <input type="hidden" id="edit-id" />
@@ -197,7 +135,7 @@
 
   <div class="form-group">
     <label>Expiry Date: <input type="date" id="form-expiry" disabled /></label>
-    <button onclick="toggleField('form-expiry')">✎</button>
+    <button class="btn btn-subtle btn-compact" type="button" onclick="toggleField('form-expiry')">✎</button>
   </div>
   <div class="form-group">
     <label
@@ -209,24 +147,14 @@
         <option value="EXPIRED">Expired</option>
       </select></label
     >
-    <button onclick="toggleField('form-status')">✎</button>
+    <button class="btn btn-subtle btn-compact" type="button" onclick="toggleField('form-status')">✎</button>
   </div>
-  <button onclick="saveDomain()">Save</button>
-  <button onclick="closeModal()">Cancel</button>
+  <button class="btn btn-primary" type="button" onclick="saveDomain()">Save</button>
+  <button class="btn btn-secondary" type="button" onclick="closeModal()">Cancel</button>
 </div>
 <div
   id="bulk-edit-modal"
   class="modal"
-  style="
-    display: none;
-    position: fixed;
-    top: 20%;
-    left: 30%;
-    background: white;
-    padding: 20px;
-    border: 1px solid #ccc;
-    z-index: 100;
-  "
 >
   <h3>Bulk Edit Domains</h3>
   <input type="hidden" id="bulk-ids" />
@@ -295,47 +223,21 @@
     Edit
     <input type="number" id="bulk-price" disabled /> </label
   ><br />
-  <button onclick="saveBulkEdit()">Save Bulk Update</button>
-  <button onclick="closeBulkModal()">Cancel</button>
+  <button class="btn btn-primary" type="button" onclick="saveBulkEdit()">Save Bulk Update</button>
+  <button class="btn btn-secondary" type="button" onclick="closeBulkModal()">Cancel</button>
 </div>
 
 <div
   id="side-panel"
   class="hidden"
-  style="
-    position: fixed;
-    right: 0;
-    top: 0;
-    width: 300px;
-    height: 100%;
-    border-left: 1px solid #000;
-    background: #fff;
-    padding: 20px;
-  "
 >
-  <button onclick="hideSidePanel()">Close</button>
+  <button class="btn btn-secondary" type="button" onclick="hideSidePanel()">Close</button>
   <div id="panel-content"></div>
 </div>
 
 <div
   id="bulk-import-modal"
   class="modal"
-  style="
-    display: none;
-    position: fixed;
-    height: 90vh;
-    top: 5%;
-    left: 20%;
-    width: 60%;
-    max-height: 90vh;
-    box-sizing: border-box;
-    overflow: hidden;
-    flex-direction: column;
-    background: white;
-    padding: 20px;
-    border: 1px solid #ccc;
-    z-index: 100;
-  "
 >
   <h3>Bulk Import</h3>
   <div style="margin-bottom: 16px;">
@@ -383,15 +285,15 @@
   <div style="flex: 0 0 auto; padding-top: 8px;">
     <div id="bulk-import-confirmation" style="display:none; border:1px solid #ccc; padding:10px; margin-bottom:8px;">
       <div id="bulk-import-confirmation-text"></div>
-      <button id="bulk-import-confirm-btn" type="button">Import</button>
-      <button id="bulk-import-cancel-confirm-btn" type="button">Cancel</button>
+      <button class="btn btn-primary" id="bulk-import-confirm-btn" type="button">Import</button>
+      <button class="btn btn-secondary" id="bulk-import-cancel-confirm-btn" type="button">Cancel</button>
     </div>
     <div id="bulk-import-result" style="display:none; margin-bottom:8px;"></div>
     <div id="bulk-import-blocked-reason" style="color: #b00020; margin-bottom: 8px;"></div>
-    <button id="bulk-import-continue-btn" onclick="submitBulkImport()" disabled>
+    <button class="btn btn-primary" id="bulk-import-continue-btn" type="button" onclick="submitBulkImport()" disabled>
       Review matching
     </button>
-    <button onclick="closeBulkImportModal()">Cancel</button>
+    <button class="btn btn-secondary" type="button" onclick="closeBulkImportModal()">Cancel</button>
   </div>
 </div>
 

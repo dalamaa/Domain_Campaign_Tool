@@ -211,8 +211,10 @@ def test_followup_table_renders_rest_indicator_conditionally(client):
     html = client.get("/").get_data(as_text=True)
     dashboard_js = open("app/static/js/pages/dashboard.js").read()
     assert "resting_suggested" in dashboard_js
-    assert "🪙 Rest" in dashboard_js
+    assert ">R</span>" in dashboard_js
+    assert 'title="Rest suggested"' in dashboard_js
+    assert 'aria-label="Rest suggested"' in dashboard_js
     assert "c.resting_suggested ?" in dashboard_js
-    assert 'class="rest-suggested"' in dashboard_js
+    assert 'class="rest-suggested rest-indicator"' in dashboard_js
     assert 'id="first-followup"' in html
     assert 'id="normal-followup"' in html

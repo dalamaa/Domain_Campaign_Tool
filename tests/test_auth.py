@@ -67,6 +67,18 @@ def test_valid_credentials_create_session_and_allow_page_and_api(auth_client):
     assert b'test-password' not in api_response.data
 
 
+def test_authenticated_pages_render_the_shared_sidebar(auth_client):
+    login(auth_client)
+
+    for path in ('/', '/domains', '/email-accounts', '/settings'):
+        response = auth_client.get(path)
+        html = response.get_data(as_text=True)
+
+        assert response.status_code == 200
+        assert html.count('class="app-sidebar"') == 1
+        assert 'class="app-content"' in html
+
+
 def test_invalid_credentials_are_rejected_generically(auth_client):
     response = auth_client.post(
         '/login',

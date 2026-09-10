@@ -349,6 +349,6 @@ def test_ready_endpoint_sorting_and_ui_contract(client, app, monkeypatch):
     assert 'id="ready-for-campaign"' in html
     assert "/api/dashboard/ready-for-campaign" in script
     assert "No domains are currently ready for a campaign." in script
-    assert "ready_reason" in script
-    assert "value == null || value === \"\" ? \"—\" : value" in script
+    assert '<th>Reason</th>' not in script
+    assert "ready_reason" not in script
     assert "dashboard-error" in script

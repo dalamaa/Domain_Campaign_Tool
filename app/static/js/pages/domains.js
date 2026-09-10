@@ -1031,6 +1031,7 @@ async function setActionMode(mode) {
   if (mode === "new") {
     // Determine default emails
     let defaultEmails = "";
+    let exactEmails = [];
     if (campaign && campaign.hasValues) {
       // Fetch last action's emails
       const res = await fetch(`/api/campaigns/${campaignId}/actions`);
@@ -1041,9 +1042,26 @@ async function setActionMode(mode) {
           `/api/campaigns/${campaignId}/actions/${lastAction.sequence}/emails`,
         );
         const usedEmails = await emailRes.json();
-        defaultEmails = usedEmails.join(", ");
+        if (Array.isArray(usedEmails)) exactEmails = usedEmails;
       }
     }
+    // New Action uses the exact latest usage when recorded.  Imported
+    // campaigns have no per-action mappings, so the operational endpoint
+    // safely supplies their campaign-level associations instead.
+    if (!exactEmails.length) {
+      try {
+        const operationalRes = await fetch(
+          `/api/campaigns/${campaignId}/operational-emails`,
+        );
+        const operational = await operationalRes.json();
+        if (operationalRes.ok && Array.isArray(operational.codes)) {
+          exactEmails = operational.codes;
+        }
+      } catch (_error) {
+        // Leave the display blank if the optional operational lookup fails.
+      }
+    }
+    defaultEmails = exactEmails.join(", ");
 
     container.innerHTML = `
     <div id="email-edit-container">

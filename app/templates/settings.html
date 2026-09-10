@@ -6,13 +6,13 @@
     <select id="timezone-select" style="width: 300px; padding: 5px">
       <!-- Populated by JS -->
     </select>
-    <button onclick="saveTimezone()">Save Timezone</button>
+    <button class="btn btn-primary" type="button" onclick="saveTimezone()">Save Timezone</button>
   </div>
   <div style="margin-top: 20px">
     <h3>First Follow-up</h3>
     <div id="first-view">
       <p>Current: <span id="first-display"></span></p>
-      <button onclick="editSection('first')">Change</button>
+      <button class="btn btn-secondary" type="button" onclick="editSection('first')">Change</button>
     </div>
     <div id="first-edit" style="display: none">
       <label
@@ -38,8 +38,8 @@
       <input type="number" id="first-min" style="width: 60px" disabled /> To
       <input type="number" id="first-max" style="width: 60px" disabled />
       days<br />
-      <button onclick="saveSection('first')">Save</button>
-      <button onclick="cancelEdit('first')">Cancel</button>
+      <button class="btn btn-primary" type="button" onclick="saveSection('first')">Save</button>
+      <button class="btn btn-secondary" type="button" onclick="cancelEdit('first')">Cancel</button>
     </div>
   </div>
 
@@ -47,7 +47,7 @@
     <h3>Normal Follow-up</h3>
     <div id="normal-view">
       <p>Current: <span id="normal-display"></span></p>
-      <button onclick="editSection('normal')">Change</button>
+      <button class="btn btn-secondary" type="button" onclick="editSection('normal')">Change</button>
     </div>
     <div id="normal-edit" style="display: none">
       <label
@@ -73,8 +73,8 @@
       <input type="number" id="normal-min" style="width: 60px" disabled /> To
       <input type="number" id="normal-max" style="width: 60px" disabled />
       days<br />
-      <button onclick="saveSection('normal')">Save</button>
-      <button onclick="cancelEdit('normal')">Cancel</button>
+      <button class="btn btn-primary" type="button" onclick="saveSection('normal')">Save</button>
+      <button class="btn btn-secondary" type="button" onclick="cancelEdit('normal')">Cancel</button>
     </div>
   </div>
 
@@ -153,7 +153,7 @@
       />
       <span>days</span>
     </div>
-    <button type="button" onclick="saveRestingRules()">Save Resting Rules</button>
+    <button class="btn btn-primary" type="button" onclick="saveRestingRules()">Save Resting Rules</button>
     <p id="resting-rules-status" role="status" aria-live="polite"></p>
   </div>
 
@@ -174,7 +174,7 @@
       Examples: 14 days ≈ 2 weeks, 30 days ≈ 1 month, 60 days ≈ 2 months,
       90 days ≈ 3 months.
     </p>
-    <button type="button" onclick="saveExpiringSoonDays()">
+    <button class="btn btn-primary" type="button" onclick="saveExpiringSoonDays()">
       Save Expiring Domains
     </button>
     <p id="expiring-soon-status" role="status" aria-live="polite"></p>
@@ -199,7 +199,7 @@
       Dormant campaigns are always ready. Resting campaigns appear after this
       many days have passed since their last contact.
     </p>
-    <button type="button" onclick="saveReadyForCampaignDays()">
+    <button class="btn btn-primary" type="button" onclick="saveReadyForCampaignDays()">
       Save Ready for Campaign
     </button>
     <p id="ready-for-campaign-status" role="status" aria-live="polite"></p>
@@ -209,13 +209,13 @@
     <h3>Reservation</h3>
     <div id="reservation-view">
       <p>Current: <span id="reservation-display"></span></p>
-      <button onclick="editSection('reservation')">Change</button>
+      <button class="btn btn-secondary" type="button" onclick="editSection('reservation')">Change</button>
     </div>
     <div id="reservation-edit" style="display: none">
       <input type="number" id="daily-use-limit" style="width: 100px" />
       campaigns per email account per day<br />
-      <button onclick="saveSection('reservation')">Save</button>
-      <button onclick="cancelEdit('reservation')">Cancel</button>
+      <button class="btn btn-primary" type="button" onclick="saveSection('reservation')">Save</button>
+      <button class="btn btn-secondary" type="button" onclick="cancelEdit('reservation')">Cancel</button>
     </div>
   </div>
 
@@ -223,18 +223,18 @@
     <h3>Exact App Backup</h3>
     <p>Complete normalized application snapshot intended for exact disaster recovery.</p>
     <a href="/api/backup/export.xlsx" download>
-      <button type="button">Export XLSX</button>
+      <button class="btn btn-secondary" type="button">Export XLSX</button>
     </a>
     <a href="/api/backup/export.zip" download>
-      <button type="button">Export CSV Backup (.zip)</button>
+      <button class="btn btn-secondary" type="button">Export CSV Backup (.zip)</button>
     </a>
-    <h3 style="margin-top: 20px">Spreadsheet Export</h3>
+    <h3>Spreadsheet Export</h3>
     <p>Human-readable campaign export for Excel, Google Sheets, email/archive, or fallback reconstruction.</p>
     <a href="/api/export/spreadsheet.xlsx" download>
-      <button type="button">Export XLSX</button>
+      <button class="btn btn-secondary" type="button">Export XLSX</button>
     </a>
     <a href="/api/export/spreadsheet.zip" download>
-      <button type="button">Export CSV (.zip)</button>
+      <button class="btn btn-secondary" type="button">Export CSV (.zip)</button>
     </a>
   </div>
 
@@ -247,10 +247,10 @@
     </p>
     <label for="exact-backup-restore-file">Choose Exact Backup ZIP:</label>
     <input id="exact-backup-restore-file" type="file" accept=".zip,application/zip" />
-    <button type="button" onclick="validateExactBackup()">Validate Backup</button>
+    <button class="btn btn-secondary" type="button" onclick="validateExactBackup()">Validate Backup</button>
     <p id="exact-backup-restore-status" role="status" aria-live="polite"></p>
     <pre id="exact-backup-restore-summary" style="display: none; white-space: pre-wrap"></pre>
-    <button id="exact-backup-restore-button" type="button" onclick="restoreExactBackup()" style="display: none">
+    <button class="btn btn-danger" id="exact-backup-restore-button" type="button" onclick="restoreExactBackup()" style="display: none">
       Restore Backup
     </button>
   </div>

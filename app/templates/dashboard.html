@@ -21,35 +21,35 @@
   <section class="suggested-work">
     <h2>Suggested Work <span id="dashboard-section-order-status" role="status" aria-live="polite"></span></h2>
     <div class="accordion dashboard-section" data-dashboard-section="first_followups">
-      <button onclick="toggleAccordion('first-followup')">
+      <button class="accordion-toggle" type="button" onclick="toggleAccordion('first-followup')">
         <span class="dashboard-section-drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag First Follow-ups">⋮⋮</span>
         First Follow-ups (<span id="first-followup-count">0</span>)
       </button>
       <div id="first-followup" class="content"></div>
     </div>
     <div class="accordion dashboard-section" data-dashboard-section="normal_followups">
-      <button onclick="toggleAccordion('normal-followup')">
+      <button class="accordion-toggle" type="button" onclick="toggleAccordion('normal-followup')">
         <span class="dashboard-section-drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag Normal Follow-ups">⋮⋮</span>
         Normal Follow-ups (<span id="normal-followup-count">0</span>)
       </button>
       <div id="normal-followup" class="content"></div>
     </div>
     <div class="accordion dashboard-section" data-dashboard-section="resting_suggestions">
-      <button onclick="toggleAccordion('resting-suggestions')">
+      <button class="accordion-toggle" type="button" onclick="toggleAccordion('resting-suggestions')">
         <span class="dashboard-section-drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag Resting Suggestions">⋮⋮</span>
         Resting Suggestions (<span id="resting-suggestions-count">0</span>)
       </button>
       <div id="resting-suggestions" class="content"></div>
     </div>
     <div class="accordion dashboard-section" data-dashboard-section="expiring_soon">
-      <button onclick="toggleAccordion('expiring-soon')">
+      <button class="accordion-toggle" type="button" onclick="toggleAccordion('expiring-soon')">
         <span class="dashboard-section-drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag Expiring Soon">⋮⋮</span>
         Expiring Soon (<span id="expiring-soon-count">0</span>)
       </button>
       <div id="expiring-soon" class="content"></div>
     </div>
     <div class="accordion dashboard-section" data-dashboard-section="ready_for_campaign">
-      <button onclick="toggleAccordion('ready-for-campaign')">
+      <button class="accordion-toggle" type="button" onclick="toggleAccordion('ready-for-campaign')">
         <span class="dashboard-section-drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag Ready for Campaign">⋮⋮</span>
         Ready for Campaign (<span id="ready-for-campaign-count">0</span>)
       </button>
@@ -59,7 +59,8 @@
   <!-- Today's Campaigns -->
   <section id="todays-campaigns">
     <h2>Today's Campaigns</h2>
-    <table id="todays-campaigns-table">
+    <div class="table-container">
+      <table id="todays-campaigns-table">
       <thead>
         <tr>
           <th>Domain</th>
@@ -73,23 +74,24 @@
       <tbody>
         <!-- Placeholder for content -->
       </tbody>
-    </table>
+      </table>
+    </div>
   </section>
   <!-- Reservation Board -->
   <section id="reservation-board">
     <h2>Reservation Board</h2>
-    <div class="legend" style="margin-bottom: 10px; font-size: 0.8em">
-      <span style="color: #28a745">●</span> Unreserved
-      <span style="color: #ffc107">●</span> Reserved
-      <span style="color: #6c757d">●</span> Used
-      <span style="color: #dc3545">●</span> Disabled
+    <div class="legend" aria-label="Reservation status legend">
+      <span class="legend-item badge-success"><span class="status-dot">●</span> Unreserved</span>
+      <span class="legend-item badge-warning"><span class="status-dot">●</span> Reserved</span>
+      <span class="legend-item badge-neutral"><span class="status-dot">●</span> Used</span>
+      <span class="legend-item badge-danger"><span class="status-dot">●</span> Disabled</span>
     </div>
     <div id="email-accounts-list" class="grid-board"></div>
   </section>
 </div>
 <!-- Side Panel -->
 <div id="side-panel" class="hidden">
-  <button onclick="hideSidePanel()">Close</button>
+  <button class="btn btn-secondary" type="button" onclick="hideSidePanel()">Close</button>
   <div id="panel-content"></div>
 </div>
 

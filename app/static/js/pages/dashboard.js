@@ -292,8 +292,10 @@ function setupDashboardSortableTable(table, tableId, columns) {
 function renderDashboardSortHeaders(columns) {
   return columns
     .map(
-      (column) =>
-        `<th data-sort-column="${column.key}"><button type="button" class="dashboard-sort-button" data-sort-key="${column.key}" title="Sort by ${column.label}">${column.label} <span data-sort-indicator="${column.key}">↕</span></button></th>`,
+      (column) => {
+        const sortLabel = column.sortLabel || `Sort by ${column.label}`;
+        return `<th${column.className ? ` class="${column.className}"` : ""} data-sort-column="${column.key}"><button type="button" class="dashboard-sort-button" data-sort-key="${column.key}" title="${sortLabel}" aria-label="${sortLabel}">${column.label} <span data-sort-indicator="${column.key}">↕</span></button></th>`;
+      },
     )
     .join("");
 }
@@ -426,13 +428,26 @@ async function reserveFromDashboardButton(button, campaignId) {
   }
 }
 
+function escapeDashboardHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderDashboardDomain(domain) {
+  const value = domain == null || domain === "" ? "—" : String(domain);
+  const escapedValue = escapeDashboardHtml(value);
+  return `<span class="dashboard-domain-value" title="${escapedValue}" aria-label="${escapedValue}">${escapedValue}</span>`;
+}
+
 function renderDashboardEmailSummary(codes) {
   const values = Array.isArray(codes) ? codes.filter(Boolean) : [];
   if (values.length === 0) return '<span class="compact-email-list">—</span>';
-  const visible = values.slice(0, 3).join(", ");
-  const suffix = values.length > 3 ? ` +${values.length - 3}` : "";
   const full = values.join(", ");
-  return `<span class="compact-email-list" title="${full}">${visible}${suffix}</span>`;
+  return `<span class="compact-email-list" title="${full}" aria-label="Operational emails: ${full}">${full}</span>`;
 }
 
 function renderDashboardLastContact(campaign) {
@@ -440,7 +455,7 @@ function renderDashboardLastContact(campaign) {
   const date = campaign.last_contact_date;
   if (days == null) return '<span class="dashboard-muted">—</span>';
   const title = date ? ` title="${date}"` : "";
-  return `<span class="last-contact"${title}>${days}d ago</span>`;
+  return `<span class="last-contact"${title}>${days}d</span>`;
 }
 
 function renderDashboardExpiry(campaign) {
@@ -452,15 +467,57 @@ function renderDashboardExpiry(campaign) {
   return `<span class="expiry-${severity}"${title}>${days}d</span>`;
 }
 
+function renderDashboardDays(value, label = "") {
+  if (value == null) return '<span class="dashboard-muted">—</span>';
+  const title = label
+    ? ` title="${escapeDashboardHtml(`${label}: ${value} days`)}"`
+    : "";
+  return `<span class="dashboard-day-value"${title}>${value}d</span>`;
+}
+
+function renderDashboardStatus(status) {
+  const normalized = String(status || "").toUpperCase();
+  const labels = {
+    ACTIVE: "Active",
+    RESTING: "Resting",
+    DORMANT: "Dormant",
+  };
+  const fullLabel = labels[normalized];
+  if (!fullLabel) return '<span class="dashboard-muted">—</span>';
+  const abbreviation = normalized.charAt(0);
+  return `<span class="dashboard-status-badge" title="${fullLabel}" aria-label="${fullLabel}">${abbreviation}</span>`;
+}
+
 function renderDashboardSequence(sequence) {
   if (sequence == null) return '<span class="dashboard-muted">—</span>';
   return `<span class="sequence-badge">S${sequence}</span>`;
 }
 
-function renderDashboardPriceProgression(progression) {
-  const value = progression || "";
-  if (!value) return '<span class="compact-price-progression">—</span>';
-  return `<span class="compact-price-progression" title="${value}">${value}</span>`;
+function renderDashboardPriceProgression(progression, progressionItems = []) {
+  const items = Array.isArray(progressionItems) ? progressionItems : [];
+  const rawValue = progression || "";
+  if (!rawValue && items.length === 0) {
+    return '<span class="compact-price-progression">—</span>';
+  }
+
+  const value = items.length > 0
+    ? items.map((item) => (item.price == null ? "—" : item.price)).join(" › ")
+    : String(rawValue)
+        .split(" › ")
+        .map((item) => item.replace(/^[NP](?=\d)/, ""))
+        .join(" › ");
+  const tooltip = items.length > 0
+    ? items
+        .map((item) => {
+          const sequence = item.sequence == null ? "Unsequenced" : `S${item.sequence}`;
+          const action = item.action_type || "Unknown action";
+          const price = item.price == null ? "—" : `$${item.price}`;
+          const date = item.action_date ? ` (${item.action_date})` : "";
+          return `${sequence}: ${price} — ${action}${date}`;
+        })
+        .join("\n")
+    : `Price progression: ${rawValue}`;
+  return `<span class="compact-price-progression" title="${tooltip}" aria-label="Price progression: ${value}">${value}</span>`;
 }
 
 function renderSuggestedWork() {
@@ -518,14 +575,14 @@ function renderSuggestedWork() {
     let buttons = "";
 
     if (res.state === "Reserved" && res.reserved_by === c.domain) {
-      buttons = `<button data-action="reserve" data-campaign-id="${c.campaign_id}" disabled>Reserve</button>
-                     <button data-action="unreserve" data-campaign-id="${c.campaign_id}">Unreserve</button>`;
+      buttons = `<button type="button" class="dashboard-reservation-button" data-action="reserve" data-campaign-id="${c.campaign_id}" title="Reserve campaign" aria-label="Reserve campaign" disabled>+</button>
+                     <button type="button" class="dashboard-reservation-button" data-action="unreserve" data-campaign-id="${c.campaign_id}" title="Unreserve campaign" aria-label="Unreserve campaign">×</button>`;
     } else if (res.state === "Reserved") {
-      buttons = `<button data-action="reserve" data-campaign-id="${c.campaign_id}" disabled>Reserve</button>
-                     <button data-action="unreserve" data-campaign-id="${c.campaign_id}" disabled>Unreserve</button> ⚠`;
+      buttons = `<button type="button" class="dashboard-reservation-button" data-action="reserve" data-campaign-id="${c.campaign_id}" title="Reserve campaign" aria-label="Reserve campaign" disabled>+</button>
+                     <button type="button" class="dashboard-reservation-button" data-action="unreserve" data-campaign-id="${c.campaign_id}" title="Unreserve campaign" aria-label="Unreserve campaign" disabled>×</button> ⚠`;
     } else {
-      buttons = `<button data-action="reserve" data-campaign-id="${c.campaign_id}">Reserve</button>
-                     <button data-action="unreserve" data-campaign-id="${c.campaign_id}" disabled>Unreserve</button>`;
+      buttons = `<button type="button" class="dashboard-reservation-button" data-action="reserve" data-campaign-id="${c.campaign_id}" title="Reserve campaign" aria-label="Reserve campaign">+</button>
+                     <button type="button" class="dashboard-reservation-button" data-action="unreserve" data-campaign-id="${c.campaign_id}" title="Unreserve campaign" aria-label="Unreserve campaign" disabled>×</button>`;
     }
 
     return buttons;
@@ -533,13 +590,13 @@ function renderSuggestedWork() {
 
   const followupSortColumns = () => [
     { key: "domain", label: "Domain", type: "text", defaultDirection: "asc" },
-    { key: "last_contact", label: "Last Contact", type: "date", defaultDirection: "desc" },
-    { key: "expiry", label: "Expiring", type: "number", defaultDirection: "asc" },
-    { key: "sequence", label: "Sequence", type: "number", defaultDirection: "asc" },
+    { key: "last_contact", label: "LC", sortLabel: "Sort by Last Contact", type: "date", defaultDirection: "desc", className: "dashboard-metric-column" },
+    { key: "expiry", label: "Expiry", type: "number", defaultDirection: "asc", className: "dashboard-metric-column" },
+    { key: "sequence", label: "Seq", type: "number", defaultDirection: "asc", className: "dashboard-metric-column" },
   ];
 
   const renderTable = (list, isNormal = false, tableId = "followup") => `
-    <table data-sort-table="${tableId}">
+    <table class="dashboard-suggested-table dashboard-followup-table" data-sort-table="${tableId}">
       <thead>
         <tr>
           ${renderDashboardSortHeaders([followupSortColumns()[0]])}
@@ -556,14 +613,14 @@ function renderSuggestedWork() {
           data-sort-last-contact="${c.last_contact_date || ""}"
           data-sort-expiry="${c.days_until_expiry ?? ""}"
           data-sort-sequence="${c.current_sequence ?? ""}">
-          <td>${c.domain}</td>
-          <td>${renderDashboardEmailSummary(c.operational_emails || c.emails_used)}</td>
-          <td>${renderDashboardLastContact(c)}</td>
-          <td>${renderDashboardExpiry(c)}</td>
-          <td>${renderDashboardSequence(c.current_sequence)}</td>
-          <td>${renderDashboardPriceProgression(c.price_progression)}</td>
-          <td>${getResButtons(c)}</td>
-          <td>${c.resting_suggested ? '<span class="rest-suggested" title="Rest suggested">🪙 Rest</span>' : ""}</td>
+          <td class="dashboard-domain-cell">${renderDashboardDomain(c.domain)}</td>
+          <td class="dashboard-email-cell">${renderDashboardEmailSummary(c.operational_emails || c.emails_used)}</td>
+          <td class="dashboard-metric-column">${renderDashboardLastContact(c)}</td>
+          <td class="dashboard-metric-column">${renderDashboardExpiry(c)}</td>
+          <td class="dashboard-metric-column">${renderDashboardSequence(c.current_sequence)}</td>
+          <td class="dashboard-price-cell">${renderDashboardPriceProgression(c.price_progression, c.price_progression_items)}</td>
+          <td class="dashboard-reservation-cell">${getResButtons(c)}</td>
+          <td class="dashboard-rest-cell">${c.resting_suggested ? '<span class="rest-suggested rest-indicator" title="Rest suggested" aria-label="Rest suggested">R</span>' : ""}</td>
         </tr>`,
           )
           .join("")}
@@ -592,26 +649,25 @@ function renderSuggestedWork() {
         return;
       }
 
-      const formatDays = (value) => (value == null ? "—" : `${value} days`);
       const columns = [
         { key: "domain", label: "Domain", type: "text", defaultDirection: "asc" },
-        { key: "sequence", label: "Sequence", type: "number", defaultDirection: "asc" },
-        { key: "last_contact", label: "Last Contact", type: "date", defaultDirection: "asc" },
-        { key: "campaign_age", label: "Campaign Age", type: "number", defaultDirection: "desc" },
-        { key: "known_activity_age", label: "Known Activity Age", type: "number", defaultDirection: "desc" },
-        { key: "expiry", label: "Expiry", type: "date", defaultDirection: "asc" },
+        { key: "status", label: "Status", type: "text", defaultDirection: "asc", className: "dashboard-status-cell" },
+        { key: "last_contact", label: "LC", sortLabel: "Sort by Last Contact", type: "date", defaultDirection: "asc", className: "dashboard-metric-column" },
+        { key: "known_activity_age", label: "Known Activity", type: "number", defaultDirection: "desc", className: "dashboard-metric-column" },
+        { key: "expiry", label: "Expiry", type: "date", defaultDirection: "asc", className: "dashboard-metric-column" },
+        { key: "sequence", label: "Seq", type: "number", defaultDirection: "asc", className: "dashboard-metric-column" },
       ];
 
       container.innerHTML = `
         <div class="table-container">
-          <table data-sort-table="resting_suggestions">
+          <table class="dashboard-suggested-table dashboard-resting-table" data-sort-table="resting_suggestions">
             <thead>
               <tr>
-                ${renderDashboardSortHeaders(columns)}
+                ${renderDashboardSortHeaders(columns.slice(0, 2))}
                 <th>Email Used</th>
+                ${renderDashboardSortHeaders(columns.slice(2))}
                 <th>Price Progression</th>
-                <th>Reasons</th>
-                <th>Action</th>
+                <th>Rest</th>
               </tr>
             </thead>
             <tbody>
@@ -620,32 +676,33 @@ function renderSuggestedWork() {
                   (campaign) => `
                 <tr
                   data-sort-domain="${campaign.domain}"
+                  data-sort-status="${campaign.status || ""}"
                   data-sort-sequence="${campaign.eligibility_metrics.current_sequence ?? ""}"
                   data-sort-last-contact="${campaign.last_contact_date || ""}"
-                  data-sort-campaign-age="${campaign.eligibility_metrics.campaign_age_days ?? ""}"
                   data-sort-known-activity-age="${campaign.eligibility_metrics.known_activity_age_days ?? ""}"
                   data-sort-expiry="${campaign.expiry_date || ""}"
                 >
-                  <td>${campaign.domain}</td>
-                  <td>${renderDashboardSequence(campaign.current_sequence)}</td>
-                  <td>${campaign.last_contact_date || "—"}<br />
-                    <small>${formatDays(campaign.eligibility_metrics.days_since_last_contact)}</small>
-                  </td>
-                  <td>${formatDays(campaign.eligibility_metrics.campaign_age_days)}</td>
-                  <td>${formatDays(campaign.eligibility_metrics.known_activity_age_days)}</td>
-                  <td>${renderDashboardExpiry(campaign)}</td>
-                  <td>${renderDashboardEmailSummary(campaign.operational_emails)}</td>
-                  <td>${renderDashboardPriceProgression(campaign.price_progression)}</td>
-                  <td><ul>${(campaign.trigger_reasons || [])
-                    .map((reason) => `<li>${reason.text}</li>`)
-                    .join("")}</ul></td>
-                  <td>
+                  <td class="dashboard-domain-cell">${renderDashboardDomain(campaign.domain)}</td>
+                  <td class="dashboard-status-cell">${renderDashboardStatus(campaign.status || "ACTIVE")}</td>
+                  <td class="dashboard-email-cell">${renderDashboardEmailSummary(campaign.operational_emails)}</td>
+                  <td class="dashboard-metric-column">${renderDashboardLastContact({
+                    last_contact_date: campaign.last_contact_date,
+                    days_since_last_contact: campaign.eligibility_metrics.days_since_last_contact,
+                  })}</td>
+                  <td class="dashboard-metric-column">${renderDashboardDays(campaign.eligibility_metrics.known_activity_age_days, "Known activity age")}</td>
+                  <td class="dashboard-metric-column">${renderDashboardExpiry(campaign)}</td>
+                  <td class="dashboard-metric-column">${renderDashboardSequence(campaign.current_sequence)}</td>
+                  <td class="dashboard-price-cell">${renderDashboardPriceProgression(campaign.price_progression, campaign.price_progression_items)}</td>
+                  <td class="dashboard-rest-cell">
                     <button
                       type="button"
+                      class="dashboard-rest-action"
                       data-action="rest"
                       data-campaign-id="${campaign.campaign_id}"
                       data-domain="${campaign.domain}"
-                    >Move to Resting</button>
+                      title="Move to Resting"
+                      aria-label="Move to Resting"
+                    >R</button>
                   </td>
                 </tr>`,
                 )
@@ -715,23 +772,21 @@ function renderSuggestedWork() {
         return;
       }
 
-      const display = (value) => (value == null || value === "" ? "—" : value);
       const columns = [
         { key: "domain", label: "Domain", type: "text", defaultDirection: "asc" },
-        { key: "expiry", label: "Expiry", type: "date", defaultDirection: "asc" },
-        { key: "days_left", label: "Days Left", type: "number", defaultDirection: "asc" },
-        { key: "campaign", label: "Campaign", type: "text", defaultDirection: "asc" },
-        { key: "sequence", label: "Sequence", type: "number", defaultDirection: "asc" },
-        { key: "last_contact", label: "Last Contact", type: "date", defaultDirection: "asc" },
-        { key: "days_since_last_contact", label: "Days Since Last Contact", type: "number", defaultDirection: "desc" },
+        { key: "status", label: "Status", type: "text", defaultDirection: "asc", className: "dashboard-status-cell" },
+        { key: "last_contact", label: "LC", sortLabel: "Sort by Last Contact", type: "date", defaultDirection: "asc", className: "dashboard-metric-column" },
+        { key: "expiry", label: "Expiry", type: "date", defaultDirection: "asc", className: "dashboard-metric-column" },
+        { key: "sequence", label: "Seq", type: "number", defaultDirection: "asc", className: "dashboard-metric-column" },
       ];
       container.innerHTML = `
         <div class="table-container">
-          <table data-sort-table="expiring_soon">
+          <table class="dashboard-suggested-table dashboard-expiring-table" data-sort-table="expiring_soon">
             <thead>
               <tr>
-                ${renderDashboardSortHeaders(columns)}
+                ${renderDashboardSortHeaders(columns.slice(0, 2))}
                 <th>Email Used</th>
+                ${renderDashboardSortHeaders(columns.slice(2))}
                 <th>Price Progression</th>
               </tr>
             </thead>
@@ -741,22 +796,20 @@ function renderSuggestedWork() {
                   (domain) => `
                 <tr
                   data-sort-domain="${domain.domain_name || ""}"
-                  data-sort-expiry="${domain.expiry_date || ""}"
                   data-sort-days-left="${domain.days_until_expiry ?? ""}"
                   data-sort-campaign="${domain.campaign_status || ""}"
                   data-sort-sequence="${domain.current_sequence ?? ""}"
                   data-sort-last-contact="${domain.last_contact_date || ""}"
                   data-sort-days-since-last-contact="${domain.days_since_last_contact ?? ""}"
+                  data-sort-expiry="${domain.expiry_date || ""}"
                 >
-                  <td>${display(domain.domain_name)}</td>
-                  <td>${display(domain.expiry_date)}</td>
-                  <td>${display(domain.days_until_expiry)}</td>
-                  <td>${display(domain.campaign_status)}</td>
-                  <td>${renderDashboardSequence(domain.current_sequence)}</td>
-                  <td>${display(domain.last_contact_date)}</td>
-                  <td>${display(domain.days_since_last_contact)}</td>
-                  <td>${renderDashboardEmailSummary(domain.operational_emails)}</td>
-                  <td>${renderDashboardPriceProgression(domain.price_progression)}</td>
+                  <td class="dashboard-domain-cell">${renderDashboardDomain(domain.domain_name)}</td>
+                  <td class="dashboard-status-cell">${renderDashboardStatus(domain.campaign_status)}</td>
+                  <td class="dashboard-email-cell">${renderDashboardEmailSummary(domain.operational_emails)}</td>
+                  <td class="dashboard-metric-column">${renderDashboardLastContact(domain)}</td>
+                  <td class="dashboard-metric-column">${renderDashboardExpiry(domain)}</td>
+                  <td class="dashboard-metric-column">${renderDashboardSequence(domain.current_sequence)}</td>
+                  <td class="dashboard-price-cell">${renderDashboardPriceProgression(domain.price_progression, domain.price_progression_items)}</td>
                 </tr>`,
                 )
                 .join("")}
@@ -796,25 +849,21 @@ function renderSuggestedWork() {
         return;
       }
 
-      const display = (value) => (value == null || value === "" ? "—" : value);
       const columns = [
         { key: "domain", label: "Domain", type: "text", defaultDirection: "asc" },
-        { key: "status", label: "Status", type: "text", defaultDirection: "asc" },
-        { key: "last_contact", label: "Last Contact", type: "date", defaultDirection: "asc" },
-        { key: "days_since", label: "Days Since", type: "number", defaultDirection: "desc" },
-        { key: "sequence", label: "Sequence", type: "number", defaultDirection: "asc" },
-        { key: "expiry", label: "Expiry", type: "date", defaultDirection: "asc" },
-        { key: "days_left", label: "Days Left", type: "number", defaultDirection: "asc" },
+        { key: "status", label: "Status", type: "text", defaultDirection: "asc", className: "dashboard-status-cell" },
+        { key: "last_contact", label: "LC", sortLabel: "Sort by Last Contact", type: "date", defaultDirection: "asc", className: "dashboard-metric-column" },
+        { key: "expiry", label: "Expiry", type: "date", defaultDirection: "asc", className: "dashboard-metric-column" },
+        { key: "sequence", label: "Seq", type: "number", defaultDirection: "asc", className: "dashboard-metric-column" },
       ];
       container.innerHTML = `
         <div class="table-container">
-          <table data-sort-table="ready_for_campaign">
+          <table class="dashboard-suggested-table dashboard-ready-table" data-sort-table="ready_for_campaign">
             <thead>
               <tr>
                 ${renderDashboardSortHeaders(columns.slice(0, 2))}
-                <th>Reason</th>
-                ${renderDashboardSortHeaders(columns.slice(2))}
                 <th>Email Used</th>
+                ${renderDashboardSortHeaders(columns.slice(2))}
                 <th>Price Progression</th>
               </tr>
             </thead>
@@ -831,16 +880,13 @@ function renderSuggestedWork() {
                   data-sort-expiry="${domain.expiry_date || ""}"
                   data-sort-days-left="${domain.days_until_expiry ?? ""}"
                 >
-                  <td>${display(domain.domain_name)}</td>
-                  <td>${display(domain.campaign_status)}</td>
-                  <td>${display(domain.ready_reason)}</td>
-                  <td>${display(domain.last_contact_date)}</td>
-                  <td>${display(domain.days_since_last_contact)}</td>
-                  <td>${renderDashboardSequence(domain.current_sequence)}</td>
-                  <td>${display(domain.expiry_date)}</td>
-                  <td>${display(domain.days_until_expiry)}</td>
-                  <td>${renderDashboardEmailSummary(domain.operational_emails)}</td>
-                  <td>${renderDashboardPriceProgression(domain.price_progression)}</td>
+                  <td class="dashboard-domain-cell">${renderDashboardDomain(domain.domain_name)}</td>
+                  <td class="dashboard-status-cell">${renderDashboardStatus(domain.campaign_status)}</td>
+                  <td class="dashboard-email-cell">${renderDashboardEmailSummary(domain.operational_emails)}</td>
+                  <td class="dashboard-metric-column">${renderDashboardLastContact(domain)}</td>
+                  <td class="dashboard-metric-column">${renderDashboardExpiry(domain)}</td>
+                  <td class="dashboard-metric-column">${renderDashboardSequence(domain.current_sequence)}</td>
+                  <td class="dashboard-price-cell">${renderDashboardPriceProgression(domain.price_progression, domain.price_progression_items)}</td>
                 </tr>`,
                 )
                 .join("")}

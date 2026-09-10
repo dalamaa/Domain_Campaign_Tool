@@ -2,24 +2,34 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Domain Campaign Planner</title>
     <link
       rel="stylesheet"
-      href="{{ url_for('static', filename='css/style.css') }}"
+      href="{{ url_for('static', filename='css/base.css') }}"
     />
   </head>
   <body>
-    <h1>Dashboard Prototype</h1>
-    <nav>
-      <a href="{{ url_for('dashboard.index') }}">Dashboard</a>
-      <a href="{{ url_for('dashboard.domains') }}">Domains</a>
-      <a href="{{ url_for('dashboard.email_accounts') }}">Email Accounts</a>
-      <a href="{{ url_for('dashboard.settings') }}">Settings</a>
-      <form method="post" action="{{ url_for('auth.logout') }}" style="display: inline">
-        <button type="submit">Logout</button>
-      </form>
-    </nav>
-    <hr />
-    <div id="content">{% block content %}{% endblock %}</div>
+    <div class="app-shell">
+      {% set dashboard_active = request.path == url_for('dashboard.index') %}
+      {% set domains_active = request.path == url_for('dashboard.domains') %}
+      {% set email_accounts_active = request.path == url_for('dashboard.email_accounts') %}
+      {% set settings_active = request.path == url_for('dashboard.settings') %}
+      <aside class="app-sidebar">
+        <a class="app-brand" href="{{ url_for('dashboard.index') }}">Domain Campaign Planner</a>
+        <nav class="app-sidebar-nav" aria-label="Primary navigation">
+          <a class="{% if dashboard_active %}active{% endif %}" href="{{ url_for('dashboard.index') }}"{% if dashboard_active %} aria-current="page"{% endif %}>Dashboard</a>
+          <a class="{% if domains_active %}active{% endif %}" href="{{ url_for('dashboard.domains') }}"{% if domains_active %} aria-current="page"{% endif %}>Domains</a>
+          <a class="{% if email_accounts_active %}active{% endif %}" href="{{ url_for('dashboard.email_accounts') }}"{% if email_accounts_active %} aria-current="page"{% endif %}>Email Accounts</a>
+          <a class="{% if settings_active %}active{% endif %}" href="{{ url_for('dashboard.settings') }}"{% if settings_active %} aria-current="page"{% endif %}>Settings</a>
+        </nav>
+        <form class="logout-form" method="post" action="{{ url_for('auth.logout') }}">
+          <button class="btn btn-subtle btn-compact" type="submit">Logout</button>
+        </form>
+      </aside>
+      <main id="content" class="app-main">
+        <div class="app-content">{% block content %}{% endblock %}</div>
+      </main>
+    </div>
   </body>
 </html>
