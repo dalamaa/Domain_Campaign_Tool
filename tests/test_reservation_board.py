@@ -44,10 +44,22 @@ def test_reservation_board_api(client, setup_board):
     
     # Check states
     assert next(a for a in data if a['code'] == 'M01')['state'] == 'AVAILABLE'
-    assert next(a for a in data if a['code'] == 'M02')['state'] == 'RESERVED'
-    assert next(a for a in data if a['code'] == 'M02')['reserved_domain'] == 'reserved.com'
-    assert next(a for a in data if a['code'] == 'M03')['state'] == 'COMPLETED_TODAY'
-    assert next(a for a in data if a['code'] == 'M04')['state'] == 'DISABLED'
+    m01 = next(a for a in data if a['code'] == 'M01')
+    m02 = next(a for a in data if a['code'] == 'M02')
+    m03 = next(a for a in data if a['code'] == 'M03')
+    m04 = next(a for a in data if a['code'] == 'M04')
+    assert m01['state'] == 'AVAILABLE'
+    assert m01['count'] == 0
+    assert m02['state'] == 'RESERVED'
+    assert m02['count'] == 1
+    assert m02['reserved_domain'] == 'reserved.com'
+    assert m03['state'] == 'COMPLETED_TODAY'
+    assert m03['count'] == 0
+    assert m04['state'] == 'DISABLED'
+    assert m04['count'] == 0
+    assert {account['state'] for account in data} <= {
+        'AVAILABLE', 'RESERVED', 'COMPLETED_TODAY', 'DISABLED'
+    }
     
     # Check order
     assert data[0]['code'] == 'M01'

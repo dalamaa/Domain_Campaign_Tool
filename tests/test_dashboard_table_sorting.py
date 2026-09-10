@@ -67,6 +67,35 @@ if (!(compare("alpha.example", "Beta.example", "text", 1) < 0)) process.exit(5);
     assert result.returncode == 0, result.stderr
 
 
+def test_campaign_context_renderers_are_compact_and_null_safe():
+    node_script = r'''
+const fs = require("fs");
+const vm = require("vm");
+const context = {
+  document: { querySelectorAll: () => [], querySelector: () => null, addEventListener: () => {} },
+  fetch: async () => ({ok: true, json: async () => ({})}),
+  window: {}, alert: () => {},
+};
+vm.createContext(context);
+vm.runInContext(fs.readFileSync("app/static/js/pages/dashboard.js", "utf8"), context);
+const emails = context.renderDashboardEmailSummary(["T01", "T02", "T03", "T04"]);
+if (!emails.includes("T01, T02, T03 +1") || !emails.includes('title="T01, T02, T03, T04"')) process.exit(1);
+if (!context.renderDashboardEmailSummary([]).includes("—")) process.exit(2);
+if (!context.renderDashboardSequence(4).includes("S4")) process.exit(3);
+if (!context.renderDashboardExpiry({days_until_expiry: 5, expiry_date: "2026-09-14", expiry_severity: "danger"}).includes("expiry-danger")) process.exit(4);
+if (!context.renderDashboardLastContact({days_since_last_contact: null}).includes("—")) process.exit(5);
+if (!context.renderDashboardPriceProgression("").includes("—")) process.exit(6);
+'''
+    result = subprocess.run(
+        ["node", "-e", node_script],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_drag_cursor_is_limited_to_explicit_handles_or_draggable_rows():
     styles = STYLES.read_text()
 

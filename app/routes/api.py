@@ -539,6 +539,7 @@ def get_expiring_soon():
         select_latest_campaign,
     )
     from app.services.time_service import get_business_today
+    from app.services.dashboard_campaign_context_service import build_campaign_context
 
     today = get_business_today()
     threshold_days = get_expiring_soon_days()
@@ -552,6 +553,7 @@ def get_expiring_soon():
     results = []
     for domain in domains:
         campaign = select_latest_campaign(domain.campaigns)
+        context = build_campaign_context(campaign, business_today=today) if campaign else None
         days_since_last_contact = None
         if campaign and campaign.last_contact_date is not None:
             days_since_last_contact = (today - campaign.last_contact_date).days
@@ -572,6 +574,13 @@ def get_expiring_soon():
             ),
             'days_since_last_contact': days_since_last_contact,
             'handled_by': campaign.handled_by if campaign else None,
+            'operational_emails': (
+                context['operational_emails'] if context else []
+            ),
+            'price_progression': (
+                context['price_progression'] if context else ''
+            ),
+            'expiry_severity': context['expiry_severity'] if context else 'neutral',
         })
 
     return jsonify({
@@ -592,6 +601,7 @@ def get_ready_for_campaign():
         get_ready_for_campaign_days,
     )
     from app.services.time_service import get_business_today
+    from app.services.dashboard_campaign_context_service import build_campaign_context
 
     today = get_business_today()
     threshold_days = get_ready_for_campaign_days()
@@ -623,6 +633,8 @@ def get_ready_for_campaign():
         else:
             ready_reason = f'Last contacted {days_since} days ago; campaign is currently RESTING.'
 
+        context = build_campaign_context(campaign, business_today=today)
+
         results.append({
             'domain_id': domain.id,
             'domain_name': domain.domain_name,
@@ -642,6 +654,9 @@ def get_ready_for_campaign():
             'campaign_start_date': campaign.start_date.isoformat() if campaign.start_date else None,
             'ready_reason_code': eligibility['reason_code'],
             'ready_reason': ready_reason,
+            'operational_emails': context['operational_emails'],
+            'price_progression': context['price_progression'],
+            'expiry_severity': context['expiry_severity'],
         })
 
     def sort_key(item):
@@ -669,6 +684,7 @@ def get_resting_suggestions():
     from app.services.resting_eligibility_service import evaluate_resting_eligibility
     from app.services.settings_service import get_resting_eligibility_config
     from app.services.time_service import get_business_today
+    from app.services.dashboard_campaign_context_service import build_campaign_context
 
     trigger_labels = {
         'sequence': 'Sequence',
@@ -724,6 +740,7 @@ def get_resting_suggestions():
                 (campaign.domain.expiry_date - today).days
                 if campaign.domain.expiry_date else None
             )
+            context = build_campaign_context(campaign, business_today=today)
             suggestions.append({
                 'campaign_id': campaign.id,
                 'domain': campaign.domain.domain_name,
@@ -741,6 +758,10 @@ def get_resting_suggestions():
                     for trigger in eligibility['triggered_by']
                 },
                 'trigger_reasons': trigger_reasons,
+                'operational_emails': context['operational_emails'],
+                'price_progression': context['price_progression'],
+                'price_progression_items': context['price_progression_items'],
+                'expiry_severity': context['expiry_severity'],
             })
 
     return jsonify({
@@ -887,8 +908,6 @@ def get_reservation_board():
             state = "DISABLED"
         elif completed:
             state = "COMPLETED_TODAY"
-        elif count > 0:
-            state = "USED"
 
         results.append({
             'code': acc.code,
@@ -1417,6 +1436,26 @@ def get_campaign_action_emails(campaign_id, sequence):
         return jsonify({'error': 'Not found'}), 404
     return jsonify([h.email_code for h in hist.history_email_used])
 
+
+@bp.route('/campaigns/<int:campaign_id>/operational-emails', methods=['GET'])
+def get_operational_campaign_emails(campaign_id):
+    """Return the accounts suitable for a new operational action.
+
+    Exact usage for the latest action is preferred.  Imported campaigns that
+    have no per-action usage use their campaign-level email associations.
+    """
+    from app.models.models import Campaign, CampaignHistory
+    from app.services.campaign_email_service import resolve_operational_email_codes
+
+    campaign = db.session.get(Campaign, campaign_id)
+    if campaign is None:
+        return jsonify({'error': 'Campaign not found'}), 404
+    latest = CampaignHistory.query.filter_by(campaign_id=campaign.id).order_by(
+        CampaignHistory.sequence.desc(), CampaignHistory.id.desc()
+    ).first()
+    resolution = resolve_operational_email_codes(campaign, latest)
+    return jsonify(resolution)
+
 @bp.route('/campaigns/<int:campaign_id>/actions/<int:sequence>', methods=['PUT'])
 def edit_campaign_action(campaign_id, sequence):
     from app.services.campaign_service import update_existing_action
@@ -1457,7 +1496,7 @@ def edit_campaign_action(campaign_id, sequence):
 @bp.route('/dashboard/first-follow-ups', methods=['GET'])
 def get_first_follow_ups():
     from app.models.models import Campaign, CampaignStatus, CampaignHistory, ActionType, Reservation, ReservationStatus
-    from app.services.campaign_email_service import get_campaign_email_codes
+    from app.services.dashboard_campaign_context_service import build_campaign_context
     from app.services.resting_eligibility_service import evaluate_resting_eligibility
     from app.services.settings_service import get_resting_eligibility_config
     from app.services.time_service import get_business_today
@@ -1491,7 +1530,10 @@ def get_first_follow_ups():
         if days_since < min_days:
             continue
 
-        emails_used = get_campaign_email_codes(camp, fallback_history=latest)
+        context = build_campaign_context(
+            camp, business_today=today, latest_history=latest
+        )
+        emails_used = context['operational_emails']
         res = Reservation.query.filter_by(
             campaign_id=camp.id, date=today, status=ReservationStatus.RESERVED
             ).first()
@@ -1512,6 +1554,16 @@ def get_first_follow_ups():
                 resting_config,
                 business_today=today,
             )['eligible'],
+            'operational_emails': context['operational_emails'],
+            'current_sequence': context['current_sequence'],
+            'current_price': context['current_price'],
+            'last_contact_date': context['last_contact_date'],
+            'days_since_last_contact': context['days_since_last_contact'],
+            'expiry_date': context['expiry_date'],
+            'days_until_expiry': context['days_until_expiry'],
+            'expiry_severity': context['expiry_severity'],
+            'price_progression': context['price_progression'],
+            'price_progression_items': context['price_progression_items'],
         }
 
         if days_since <= max_days:
@@ -1524,7 +1576,7 @@ def get_first_follow_ups():
 @bp.route('/dashboard/normal-follow-ups', methods=['GET'])
 def get_normal_follow_ups():
     from app.models.models import Campaign, CampaignStatus, CampaignHistory, Reservation, ReservationStatus
-    from app.services.campaign_email_service import get_campaign_email_codes
+    from app.services.dashboard_campaign_context_service import build_campaign_context
     from app.services.resting_eligibility_service import evaluate_resting_eligibility
     from app.services.settings_service import get_resting_eligibility_config
     from app.services.time_service import get_business_today
@@ -1557,7 +1609,10 @@ def get_normal_follow_ups():
         if days_since < min_days:
             continue
 
-        emails_used = get_campaign_email_codes(camp, fallback_history=latest)
+        context = build_campaign_context(
+            camp, business_today=today, latest_history=latest
+        )
+        emails_used = context['operational_emails']
         res = Reservation.query.filter_by(
             campaign_id=camp.id, date=today, status=ReservationStatus.RESERVED
         ).first()
@@ -1578,6 +1633,16 @@ def get_normal_follow_ups():
                 resting_config,
                 business_today=today,
             )['eligible'],
+            'operational_emails': context['operational_emails'],
+            'current_sequence': context['current_sequence'],
+            'current_price': context['current_price'],
+            'last_contact_date': context['last_contact_date'],
+            'days_since_last_contact': context['days_since_last_contact'],
+            'expiry_date': context['expiry_date'],
+            'days_until_expiry': context['days_until_expiry'],
+            'expiry_severity': context['expiry_severity'],
+            'price_progression': context['price_progression'],
+            'price_progression_items': context['price_progression_items'],
         }
 
         if days_since <= max_days:
@@ -1589,18 +1654,27 @@ def get_normal_follow_ups():
 
 @bp.route('/campaigns/<int:campaign_id>/reservation', methods=['POST'])
 def reserve_campaign(campaign_id):
-    from app.models.models import Campaign, Reservation, ReservationEmailLink, ReservationStatus
+    from app.models.models import (
+        ActionType,
+        Campaign,
+        CampaignHistory,
+        EmailAccount,
+        Reservation,
+        ReservationEmailLink,
+        ReservationStatus,
+    )
+    from app.services.campaign_email_service import resolve_operational_email_codes
     from app.services.settings_service import get_setting
     from app.services.time_service import get_business_today
     from sqlalchemy import and_
+    from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
     limit = int(get_setting('EMAIL_ACCOUNT_DAILY_USE_LIMIT', '1'))
     today = get_business_today()
     camp = Campaign.query.get_or_404(campaign_id)
 
-    # Get required emails from campaign's latest action (First Outreach for first-followups)
-    # Using the same logic as in get_first_follow_ups
-    from app.models.models import CampaignHistory, ActionType
+    # Get required emails from the first outreach.  Exact per-action usage is
+    # preferred; imported campaigns use their campaign-level associations.
     first_outreach = CampaignHistory.query.filter_by(
         campaign_id=camp.id,
         action_type=ActionType.FIRST_OUTREACH
@@ -1609,7 +1683,27 @@ def reserve_campaign(campaign_id):
     if not first_outreach:
         return jsonify({'error': 'No outreach found'}), 400
 
-    emails_required = [e.email_code for e in first_outreach.history_email_used]
+    existing = Reservation.query.filter_by(
+        campaign_id=camp.id, date=today
+    ).first()
+    if existing:
+        return jsonify({'error': 'This campaign is already reserved for today.'}), 409
+
+    resolution = resolve_operational_email_codes(camp, first_outreach)
+    emails_required = resolution['codes']
+    if not emails_required:
+        return jsonify({
+            'error': 'No email accounts are associated with this campaign outreach.'
+        }), 400
+
+    missing_codes = [
+        code for code in emails_required
+        if db.session.get(EmailAccount, code) is None
+    ]
+    if missing_codes:
+        return jsonify({
+            'error': 'Email account(s) no longer exist: ' + ', '.join(missing_codes)
+        }), 400
 
     # Check conflicts
     conflicts = {}
@@ -1643,14 +1737,34 @@ def reserve_campaign(campaign_id):
     if conflicts:
         return jsonify({'error': 'Conflict', 'details': list(conflicts.values())}), 409
 
-    # Create reservation
-    new_res = Reservation(campaign_id=camp.id, date=today, status=ReservationStatus.RESERVED)
-    db.session.add(new_res)
-    db.session.flush()
-    for email in emails_required:
-        db.session.add(ReservationEmailLink(reservation_id=new_res.id, email_code=email))
-
-    db.session.commit()
+    # Create reservation and links as one unit.  A concurrent request may still
+    # win the unique campaign/date constraint, so turn that race into a clear
+    # client error rather than an IntegrityError response.
+    try:
+        new_res = Reservation(
+            campaign_id=camp.id,
+            date=today,
+            status=ReservationStatus.RESERVED,
+        )
+        db.session.add(new_res)
+        db.session.flush()
+        for email in emails_required:
+            db.session.add(
+                ReservationEmailLink(reservation_id=new_res.id, email_code=email)
+            )
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        if Reservation.query.filter_by(campaign_id=camp.id, date=today).first():
+            return jsonify({'error': 'This campaign is already reserved for today.'}), 409
+        return jsonify({
+            'error': 'Unable to reserve campaign. No changes were saved.'
+        }), 500
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({
+            'error': 'Unable to reserve campaign. No changes were saved.'
+        }), 500
     return jsonify({'success': True})
 
 @bp.route('/campaigns/<int:campaign_id>/reservation', methods=['DELETE'])

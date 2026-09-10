@@ -43,3 +43,38 @@ setTimeout(() => process.stdout.write(JSON.stringify(context.rendered)), 25);
     assert 'class="acc-item used"' in rendered
     assert 'class="acc-item completed-today"' in rendered
     assert 'class="acc-item disabled"' in rendered
+
+
+def test_reserve_button_has_pending_feedback_and_handles_non_json_errors():
+    source_path = Path(__file__).parents[1] / "app/static/js/pages/dashboard.js"
+    node_script = f"""
+const fs = require("fs");
+const vm = require("vm");
+const button = {{ disabled: false, textContent: "Reserve" }};
+let resolveFetch;
+const context = {{
+  console,
+  alert: (message) => context.alertMessage = message,
+  document: {{ addEventListener: () => {{}}, querySelectorAll: () => [] }},
+  fetch: () => new Promise((resolve) => {{ resolveFetch = resolve; }}),
+}};
+vm.createContext(context);
+vm.runInContext(fs.readFileSync({json.dumps(str(source_path))}, "utf8"), context);
+context.refreshDashboard = async () => {{ context.refreshed = true; }};
+const pending = context.reserveFromDashboardButton(button, "42");
+if (!button.disabled || button.textContent !== "Reserving...") process.exit(1);
+resolveFetch({{ ok: false, status: 502, json: async () => {{ throw new Error("not JSON"); }} }});
+pending.then(() => {{
+  if (button.disabled || button.textContent !== "Reserve") process.exit(2);
+  if (!context.alertMessage.includes("502")) process.exit(3);
+  process.stdout.write("ok");
+}});
+"""
+    result = subprocess.run(
+        ["node", "-e", node_script],
+        cwd=source_path.parents[2],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert result.stdout == "ok"

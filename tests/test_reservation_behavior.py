@@ -1,5 +1,5 @@
 import pytest
-from app.models.models import db, Reservation, ReservationEmailLink, ReservationStatus, Campaign, Domain, CampaignStatus, CampaignHistory, ActionType, HistoryEmailUsed
+from app.models.models import db, Reservation, ReservationEmailLink, ReservationStatus, Campaign, Domain, CampaignStatus, CampaignHistory, ActionType, HistoryEmailUsed, EmailAccount
 from app.services.settings_service import update_daily_use_limit
 from datetime import datetime
 
@@ -32,6 +32,8 @@ def campaign(app):
         db.session.commit()
         
         # Add email
+        db.session.add(EmailAccount(code="M01", group="M", profile_order=1, enabled=True))
+        db.session.commit()
         email = HistoryEmailUsed(history_id=hist.id, email_code="M01")
         db.session.add(email)
         db.session.commit()
@@ -84,4 +86,3 @@ def test_daily_use_limit_blocks_second(client, campaign, app):
         
     res = client.post(f'/api/campaigns/{camp2_id}/reservation')
     assert res.status_code == 409
-

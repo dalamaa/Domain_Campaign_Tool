@@ -394,6 +394,75 @@ async function updateReservationBoard() {
     .join("");
 }
 
+async function reserveFromDashboardButton(button, campaignId) {
+  const originalText = button.textContent;
+  const originalDisabled = button.disabled;
+  button.disabled = true;
+  button.textContent = "Reserving...";
+
+  try {
+    const response = await fetch(`/api/campaigns/${campaignId}/reservation`, {
+      method: "POST",
+    });
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch (_error) {
+      // Keep the user-facing error useful when the server returned HTML/text.
+    }
+    if (!response.ok) {
+      const details = Array.isArray(payload.details)
+        ? payload.details.join("\n")
+        : payload.error;
+      throw new Error(details || `Unable to reserve campaign (${response.status}).`);
+    }
+
+    // The refreshed server response is authoritative for the new button state.
+    await refreshDashboard();
+  } catch (error) {
+    button.disabled = originalDisabled;
+    button.textContent = originalText;
+    alert(error && error.message ? error.message : "Unable to reserve campaign.");
+  }
+}
+
+function renderDashboardEmailSummary(codes) {
+  const values = Array.isArray(codes) ? codes.filter(Boolean) : [];
+  if (values.length === 0) return '<span class="compact-email-list">—</span>';
+  const visible = values.slice(0, 3).join(", ");
+  const suffix = values.length > 3 ? ` +${values.length - 3}` : "";
+  const full = values.join(", ");
+  return `<span class="compact-email-list" title="${full}">${visible}${suffix}</span>`;
+}
+
+function renderDashboardLastContact(campaign) {
+  const days = campaign.days_since_last_contact;
+  const date = campaign.last_contact_date;
+  if (days == null) return '<span class="dashboard-muted">—</span>';
+  const title = date ? ` title="${date}"` : "";
+  return `<span class="last-contact"${title}>${days}d ago</span>`;
+}
+
+function renderDashboardExpiry(campaign) {
+  const days = campaign.days_until_expiry;
+  const expiry = campaign.expiry_date;
+  const severity = campaign.expiry_severity || "neutral";
+  if (days == null) return '<span class="expiry-neutral">—</span>';
+  const title = expiry ? ` title="${expiry}"` : "";
+  return `<span class="expiry-${severity}"${title}>${days}d</span>`;
+}
+
+function renderDashboardSequence(sequence) {
+  if (sequence == null) return '<span class="dashboard-muted">—</span>';
+  return `<span class="sequence-badge">S${sequence}</span>`;
+}
+
+function renderDashboardPriceProgression(progression) {
+  const value = progression || "";
+  if (!value) return '<span class="compact-price-progression">—</span>';
+  return `<span class="compact-price-progression" title="${value}">${value}</span>`;
+}
+
 function renderSuggestedWork() {
   const categories = [
     { id: "first-followup", action: "First Follow-up" },
@@ -419,28 +488,21 @@ function renderSuggestedWork() {
     setupDashboardSortableTable(
       container.querySelector('table[data-sort-table="first_followup_due"]'),
       "first_followup_due",
-      followupSortColumns(false),
+      followupSortColumns(),
     );
     setupDashboardSortableTable(
       container.querySelector('table[data-sort-table="first_followup_past_due"]'),
       "first_followup_past_due",
-      followupSortColumns(false),
+      followupSortColumns(),
     );
 
     // Attach event delegation for Reserve/Unreserve
     container.querySelectorAll("button[data-action]").forEach((btn) => {
       btn.onclick = async (e) => {
-        const action = e.target.dataset.action;
-        const campId = e.target.dataset.campaignId;
+        const action = e.currentTarget.dataset.action;
+        const campId = e.currentTarget.dataset.campaignId;
         if (action === "reserve") {
-          const resp = await fetch(`/api/campaigns/${campId}/reservation`, {
-            method: "POST",
-          });
-          if (resp.ok) refreshDashboard();
-          else {
-            const err = await resp.json();
-            alert(err.details ? err.details.join("\n") : err.error);
-          }
+          await reserveFromDashboardButton(e.currentTarget, campId);
         } else if (action === "unreserve") {
           await fetch(`/api/campaigns/${campId}/reservation`, {
             method: "DELETE",
@@ -469,29 +531,37 @@ function renderSuggestedWork() {
     return buttons;
   };
 
-  const followupSortColumns = (isNormal) => [
+  const followupSortColumns = () => [
     { key: "domain", label: "Domain", type: "text", defaultDirection: "asc" },
-    {
-      key: "days",
-      label: `Days Since ${isNormal ? "Contact" : "Outreach"}`,
-      type: "number",
-      defaultDirection: "desc",
-    },
+    { key: "last_contact", label: "Last Contact", type: "date", defaultDirection: "desc" },
+    { key: "expiry", label: "Expiring", type: "number", defaultDirection: "asc" },
+    { key: "sequence", label: "Sequence", type: "number", defaultDirection: "asc" },
   ];
 
   const renderTable = (list, isNormal = false, tableId = "followup") => `
     <table data-sort-table="${tableId}">
       <thead>
-        <tr>${renderDashboardSortHeaders(followupSortColumns(isNormal))}<th>Emails Used</th><th>Reservation</th><th>Rest</th></tr>
+        <tr>
+          ${renderDashboardSortHeaders([followupSortColumns()[0]])}
+          <th>Email Used</th>
+          ${renderDashboardSortHeaders([followupSortColumns()[1], followupSortColumns()[2], followupSortColumns()[3]])}
+          <th>Price Progression</th><th>Reserve</th><th>Rest</th>
+        </tr>
       </thead>
       <tbody>
         ${list
           .map(
             (c) => `
-        <tr data-sort-domain="${c.domain}" data-sort-days="${isNormal ? c.days_since_contact ?? "" : c.days_since_outreach ?? ""}">
+        <tr data-sort-domain="${c.domain}" data-sort-days="${isNormal ? c.days_since_contact ?? "" : c.days_since_outreach ?? ""}"
+          data-sort-last-contact="${c.last_contact_date || ""}"
+          data-sort-expiry="${c.days_until_expiry ?? ""}"
+          data-sort-sequence="${c.current_sequence ?? ""}">
           <td>${c.domain}</td>
-          <td>${isNormal ? c.days_since_contact ?? "N/A" : c.days_since_outreach ?? "N/A"}</td>
-          <td>${c.emails_used.length > 0 ? c.emails_used.join(", ") : "—"}</td>
+          <td>${renderDashboardEmailSummary(c.operational_emails || c.emails_used)}</td>
+          <td>${renderDashboardLastContact(c)}</td>
+          <td>${renderDashboardExpiry(c)}</td>
+          <td>${renderDashboardSequence(c.current_sequence)}</td>
+          <td>${renderDashboardPriceProgression(c.price_progression)}</td>
           <td>${getResButtons(c)}</td>
           <td>${c.resting_suggested ? '<span class="rest-suggested" title="Rest suggested">🪙 Rest</span>' : ""}</td>
         </tr>`,
@@ -538,6 +608,8 @@ function renderSuggestedWork() {
             <thead>
               <tr>
                 ${renderDashboardSortHeaders(columns)}
+                <th>Email Used</th>
+                <th>Price Progression</th>
                 <th>Reasons</th>
                 <th>Action</th>
               </tr>
@@ -555,17 +627,15 @@ function renderSuggestedWork() {
                   data-sort-expiry="${campaign.expiry_date || ""}"
                 >
                   <td>${campaign.domain}</td>
-                  <td>${campaign.eligibility_metrics.current_sequence ?? "—"}</td>
+                  <td>${renderDashboardSequence(campaign.current_sequence)}</td>
                   <td>${campaign.last_contact_date || "—"}<br />
                     <small>${formatDays(campaign.eligibility_metrics.days_since_last_contact)}</small>
                   </td>
                   <td>${formatDays(campaign.eligibility_metrics.campaign_age_days)}</td>
                   <td>${formatDays(campaign.eligibility_metrics.known_activity_age_days)}</td>
-                  <td>${
-                    campaign.expiry_date
-                      ? `${campaign.expiry_date} (${campaign.days_until_expiry} days)`
-                      : "—"
-                  }</td>
+                  <td>${renderDashboardExpiry(campaign)}</td>
+                  <td>${renderDashboardEmailSummary(campaign.operational_emails)}</td>
+                  <td>${renderDashboardPriceProgression(campaign.price_progression)}</td>
                   <td><ul>${(campaign.trigger_reasons || [])
                     .map((reason) => `<li>${reason.text}</li>`)
                     .join("")}</ul></td>
@@ -646,8 +716,6 @@ function renderSuggestedWork() {
       }
 
       const display = (value) => (value == null || value === "" ? "—" : value);
-      const sequenceDisplay = (value) =>
-        value == null ? "—" : value === 0 ? "Not started" : value;
       const columns = [
         { key: "domain", label: "Domain", type: "text", defaultDirection: "asc" },
         { key: "expiry", label: "Expiry", type: "date", defaultDirection: "asc" },
@@ -663,6 +731,8 @@ function renderSuggestedWork() {
             <thead>
               <tr>
                 ${renderDashboardSortHeaders(columns)}
+                <th>Email Used</th>
+                <th>Price Progression</th>
               </tr>
             </thead>
             <tbody>
@@ -682,9 +752,11 @@ function renderSuggestedWork() {
                   <td>${display(domain.expiry_date)}</td>
                   <td>${display(domain.days_until_expiry)}</td>
                   <td>${display(domain.campaign_status)}</td>
-                  <td>${sequenceDisplay(domain.current_sequence)}</td>
+                  <td>${renderDashboardSequence(domain.current_sequence)}</td>
                   <td>${display(domain.last_contact_date)}</td>
                   <td>${display(domain.days_since_last_contact)}</td>
+                  <td>${renderDashboardEmailSummary(domain.operational_emails)}</td>
+                  <td>${renderDashboardPriceProgression(domain.price_progression)}</td>
                 </tr>`,
                 )
                 .join("")}
@@ -725,8 +797,6 @@ function renderSuggestedWork() {
       }
 
       const display = (value) => (value == null || value === "" ? "—" : value);
-      const sequenceDisplay = (value) =>
-        value == null ? "—" : value === 0 ? "Not started" : value;
       const columns = [
         { key: "domain", label: "Domain", type: "text", defaultDirection: "asc" },
         { key: "status", label: "Status", type: "text", defaultDirection: "asc" },
@@ -744,6 +814,8 @@ function renderSuggestedWork() {
                 ${renderDashboardSortHeaders(columns.slice(0, 2))}
                 <th>Reason</th>
                 ${renderDashboardSortHeaders(columns.slice(2))}
+                <th>Email Used</th>
+                <th>Price Progression</th>
               </tr>
             </thead>
             <tbody>
@@ -764,9 +836,11 @@ function renderSuggestedWork() {
                   <td>${display(domain.ready_reason)}</td>
                   <td>${display(domain.last_contact_date)}</td>
                   <td>${display(domain.days_since_last_contact)}</td>
-                  <td>${sequenceDisplay(domain.current_sequence)}</td>
+                  <td>${renderDashboardSequence(domain.current_sequence)}</td>
                   <td>${display(domain.expiry_date)}</td>
                   <td>${display(domain.days_until_expiry)}</td>
+                  <td>${renderDashboardEmailSummary(domain.operational_emails)}</td>
+                  <td>${renderDashboardPriceProgression(domain.price_progression)}</td>
                 </tr>`,
                 )
                 .join("")}
@@ -805,28 +879,21 @@ function renderSuggestedWork() {
     setupDashboardSortableTable(
       container.querySelector('table[data-sort-table="normal_followup_due"]'),
       "normal_followup_due",
-      followupSortColumns(true),
+      followupSortColumns(),
     );
     setupDashboardSortableTable(
       container.querySelector('table[data-sort-table="normal_followup_past_due"]'),
       "normal_followup_past_due",
-      followupSortColumns(true),
+      followupSortColumns(),
     );
 
     // Attach event delegation for Reserve/Unreserve
     container.querySelectorAll("button[data-action]").forEach((btn) => {
       btn.onclick = async (e) => {
-        const action = e.target.dataset.action;
-        const campId = e.target.dataset.campaignId;
+        const action = e.currentTarget.dataset.action;
+        const campId = e.currentTarget.dataset.campaignId;
         if (action === "reserve") {
-          const resp = await fetch(`/api/campaigns/${campId}/reservation`, {
-            method: "POST",
-          });
-          if (resp.ok) refreshDashboard();
-          else {
-            const err = await resp.json();
-            alert(err.details ? err.details.join("\n") : err.error);
-          }
+          await reserveFromDashboardButton(e.currentTarget, campId);
         } else if (action === "unreserve") {
           await fetch(`/api/campaigns/${campId}/reservation`, {
             method: "DELETE",
