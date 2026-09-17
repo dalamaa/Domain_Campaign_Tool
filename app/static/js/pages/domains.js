@@ -7,6 +7,7 @@ let allEmailAccounts = [];
 let emailWasEdited = false;
 let originalEmailCodes = [];
 let businessToday = null;
+let businessTodayIso = "";
 let bulkImportFiles = {
   campaignHistory: null,
   emailUsage: null,
@@ -19,6 +20,7 @@ const bulkImportState = {
 async function fetchBusinessInfo() {
   const res = await fetch("/api/settings/business-info");
   const data = await res.json();
+  businessTodayIso = data.business_today || "";
   businessToday = new Date(data.business_today);
 }
 
@@ -169,7 +171,7 @@ async function openHistoryModal(id, domainName) {
     .map(
       (h) => `
     <tr>
-      <td>${h.date ? new Date(h.date).toLocaleString() : "Unknown"}</td>
+      <td>${formatActionDateDisplay(h.date)}</td>
       <td>${h.action}</td>
       <td>${h.price_before !== null ? `$${h.price_before} → ` : ""}$${h.price_after}</td>
       <td>${h.notes || ""}</td>
@@ -183,6 +185,25 @@ async function openHistoryModal(id, domainName) {
 
 function closeHistoryModal() {
   document.getElementById("history-modal").style.display = "none";
+}
+
+function formatDateInputValue(value) {
+  if (!value) return "";
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return "";
+    const pad = (part) => String(part).padStart(2, "0");
+    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+  }
+
+  const match = String(value).match(/^\d{4}-\d{2}-\d{2}/);
+  return match ? match[0] : "";
+}
+
+function formatActionDateDisplay(value) {
+  const dateValue = formatDateInputValue(value);
+  if (!dateValue) return "Unknown";
+  const [year, month, day] = dateValue.split("-");
+  return `${month}/${day}/${year}`;
 }
 
 function toggleDomainSelection(id) {
@@ -1032,10 +1053,15 @@ async function setActionMode(mode) {
     // Determine default emails
     let defaultEmails = "";
     let exactEmails = [];
+    let hasFirstFollowUp = false;
+    const defaultActionDate = businessTodayIso || formatDateInputValue(new Date());
     if (campaign && campaign.hasValues) {
       // Fetch last action's emails
       const res = await fetch(`/api/campaigns/${campaignId}/actions`);
       const history = await res.json();
+      hasFirstFollowUp = Array.isArray(history) && history.some(
+        (h) => h.action_type === "FIRST_FOLLOW_UP",
+      );
       if (history.length > 0) {
         const lastAction = history[history.length - 1];
         const emailRes = await fetch(
@@ -1062,6 +1088,9 @@ async function setActionMode(mode) {
       }
     }
     defaultEmails = exactEmails.join(", ");
+    const firstFollowUpOption = hasFirstFollowUp
+      ? ""
+      : '<option value="FIRST_FOLLOW_UP">First Follow-up</option>';
 
     container.innerHTML = `
     <div id="email-edit-container">
@@ -1079,7 +1108,7 @@ async function setActionMode(mode) {
               campaign && campaign.hasValues
                 ? `
             <option value="">-- Select Action --</option>
-            <option value="FIRST_FOLLOW_UP">First Follow-up</option>
+            ${firstFollowUpOption}
             <option value="FOLLOW_UP">Follow-up</option>
             <option value="PRICE_REDUCTION">Price Reduction</option>
             `
@@ -1098,7 +1127,7 @@ async function setActionMode(mode) {
       </label>
     </div>
     <div class="form-group">
-        <label>Date: <input type="datetime-local" id="action-date"></label>
+        <label>Date: <input type="date" id="action-date" value="${defaultActionDate}"></label>
     </div>
     <div class="form-group">
         <label>Price: <input type="number" id="action-price"></label>
@@ -1106,7 +1135,7 @@ async function setActionMode(mode) {
     <div class="form-group">
         <label>Notes: <textarea id="action-notes"></textarea></label>
       </div>
-      <button onclick="saveNewAction(${campaignId})">Save Action</button>
+      <button id="save-new-action-btn" type="button" onclick="saveNewAction(${campaignId})">Save Action</button>
     `;
   } else {
     // Edit Mode
@@ -1172,7 +1201,7 @@ async function loadActionForEdit(campaignId) {
       </label>
     </div>
     <div class="form-group">
-      <label>Date: <input type="datetime-local" id="edit-date" value="${data.action_date ? data.action_date.slice(0, 16) : ""}"></label>
+      <label>Date: <input type="date" id="edit-date" value="${formatDateInputValue(data.action_date)}"></label>
     </div>
     <div class="form-group">
       <label>Price: <input type="number" id="edit-price" value="${data.price_after}"></label>
@@ -1188,7 +1217,7 @@ async function loadActionForEdit(campaignId) {
     <div class="form-group">
       <label>Notes: <textarea id="edit-notes">${data.notes || ""}</textarea></label>
     </div>
-    <button onclick="saveEditAction(${campaignId}, ${seq})">Save Changes</button>
+    <button id="save-edit-action-btn" type="button" onclick="saveEditAction(${campaignId}, ${seq})">Save Changes</button>
   `;
 }
 
@@ -1245,6 +1274,9 @@ function cancelEmailEdit(originalVal) {
 }
 
 async function saveNewAction(campaignId) {
+  const saveButton = document.getElementById("save-new-action-btn");
+  if (saveButton && saveButton.disabled) return;
+
   const emailCodes = document
     .getElementById("email-display-text")
     .textContent.split(/[,\s]+/)
@@ -1256,32 +1288,56 @@ async function saveNewAction(campaignId) {
     );
     return;
   }
+
+  if (saveButton) {
+    saveButton.disabled = true;
+    saveButton.textContent = "Saving…";
+  }
+
   const payload = {
     action_type: document.getElementById("action-type").value,
-    action_date: document.getElementById("action-date").value,
+    action_date: formatDateInputValue(document.getElementById("action-date").value),
     price_after: document.getElementById("action-price").value,
     notes: document.getElementById("action-notes").value,
     campaign_status: document.getElementById("action-status").value,
     email_codes: emailCodes,
   };
 
-  const res = await fetch(`/api/campaigns/${campaignId}/actions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  try {
+    const res = await fetch(`/api/campaigns/${campaignId}/actions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
-  const result = await res.json().catch(() => ({}));
-  if (res.ok) {
-    alert("Action saved!");
-    closeActionModal();
-    renderDomainTable();
-  } else {
-    alert(result.error || "Failed to save action");
+    const result = await res.json().catch(() => ({}));
+    if (res.ok) {
+      alert("Action saved!");
+      closeActionModal();
+      try {
+        await renderDomainTable();
+      } catch (_error) {
+        // The action response was already confirmed; leave the saved state intact.
+      }
+    } else {
+      alert(result.error || "Unable to save action. Please review the form and try again.");
+    }
+  } catch (_error) {
+    alert(
+      "Could not confirm whether the action was saved. Refresh the campaign before trying again.",
+    );
+  } finally {
+    if (saveButton) {
+      saveButton.disabled = false;
+      saveButton.textContent = "Save Action";
+    }
   }
 }
 
 async function saveEditAction(campaignId, seq) {
+  const saveButton = document.getElementById("save-edit-action-btn");
+  if (saveButton && saveButton.disabled) return;
+
   const emailCodes = document
     .getElementById("email-display-text")
     .textContent.split(/[,\s]+/)
@@ -1294,29 +1350,49 @@ async function saveEditAction(campaignId, seq) {
     return;
   }
 
+  if (saveButton) {
+    saveButton.disabled = true;
+    saveButton.textContent = "Saving…";
+  }
+
   const payload = {
     action_type: document.getElementById("edit-type").value,
-    action_date: document.getElementById("edit-date").value,
+    action_date: formatDateInputValue(document.getElementById("edit-date").value),
     price_after: document.getElementById("edit-price").value,
     notes: document.getElementById("edit-notes").value,
     campaign_status: document.getElementById("edit-status").value,
     email_codes: emailCodes,
   };
 
-  const res = await fetch(`/api/campaigns/${campaignId}/actions/${seq}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  try {
+    const res = await fetch(`/api/campaigns/${campaignId}/actions/${seq}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
-  const result = await res.json().catch(() => ({}));
-  if (res.ok) {
-    alert("Changes saved!");
-    closeActionModal();
-    // Re-fetch domain table to update status, cache-bust
-    await renderDomainTable();
-  } else {
-    alert(result.error || "Failed to save changes");
+    const result = await res.json().catch(() => ({}));
+    if (res.ok) {
+      alert("Changes saved!");
+      closeActionModal();
+      // Re-fetch domain table to update status, cache-bust
+      try {
+        await renderDomainTable();
+      } catch (_error) {
+        // The action response was already confirmed; leave the saved state intact.
+      }
+    } else {
+      alert(result.error || "Unable to save action changes. Please review the form and try again.");
+    }
+  } catch (_error) {
+    alert(
+      "Could not confirm whether the action was saved. Refresh the campaign before trying again.",
+    );
+  } finally {
+    if (saveButton) {
+      saveButton.disabled = false;
+      saveButton.textContent = "Save Changes";
+    }
   }
 }
 

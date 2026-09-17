@@ -4,7 +4,7 @@ from sqlalchemy import asc
 import csv
 import json
 from sqlalchemy import desc
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from app.services.email_account_service import (
     BulkEmailAccountValidationError,
@@ -18,6 +18,14 @@ from app.services.email_account_service import (
 )
 
 bp = Blueprint('api', __name__, url_prefix='/api')
+
+
+def _parse_campaign_action_date(value):
+    """Parse action dates without applying timezone conversion to date-only input."""
+    raw_value = str(value).strip()
+    if len(raw_value) == 10:
+        return datetime.combine(date.fromisoformat(raw_value), datetime.min.time())
+    return datetime.fromisoformat(raw_value.replace('Z', ''))
 
 
 @bp.route('/backup/export.xlsx', methods=['GET'])
@@ -1367,7 +1375,11 @@ def bulk_edit_domains():
 
 @bp.route('/campaigns/<int:campaign_id>/actions', methods=['POST'])
 def add_campaign_action(campaign_id):
-    from app.services.campaign_service import create_new_action, sync_campaign_state
+    from app.services.campaign_service import (
+        FirstFollowUpAlreadyExistsError,
+        create_new_action,
+        sync_campaign_state,
+    )
     from app.models.models import ActionType, Campaign, CampaignStatus
     from datetime import datetime
     data = request.get_json(silent=True) or {}
@@ -1380,22 +1392,27 @@ def add_campaign_action(campaign_id):
             data.get('email_codes', []),
             require_nonempty=action_type == ActionType.FIRST_OUTREACH,
         )
-        action_date = datetime.fromisoformat(data['action_date'].replace('Z', ''))
+        action_date = _parse_campaign_action_date(data['action_date'])
         price = int(data['price_after'])
         notes = data.get('notes', '')
-        new_hist = create_new_action(campaign_id, action_type, action_date, price, notes, email_codes)
-        # Synchronize campaign state
-        sync_campaign_state(campaign_id)
-        # Update campaign status
-        camp = Campaign.query.get(campaign_id)
-        if camp and 'campaign_status' in data:
-            camp.status = CampaignStatus(data['campaign_status'])
 
-            db.session.commit()
+        campaign_status = None
+        if 'campaign_status' in data:
+            campaign_status = CampaignStatus(data['campaign_status'])
+
+        new_hist = create_new_action(campaign_id, action_type, action_date, price, notes, email_codes)
+        sync_campaign_state(campaign_id, commit=False)
+        camp = Campaign.query.get(campaign_id)
+        if camp and campaign_status is not None:
+            camp.status = campaign_status
+        db.session.commit()
         return jsonify({'success': True, 'sequence': new_hist.sequence}), 201
     except EmailCodeValidationError as exc:
         db.session.rollback()
         return _email_code_validation_response(exc)
+    except FirstFollowUpAlreadyExistsError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 400
     except Exception:
         db.session.rollback()
         return jsonify({'error': 'Unable to save campaign action.'}), 400
@@ -1458,7 +1475,10 @@ def get_operational_campaign_emails(campaign_id):
 
 @bp.route('/campaigns/<int:campaign_id>/actions/<int:sequence>', methods=['PUT'])
 def edit_campaign_action(campaign_id, sequence):
-    from app.services.campaign_service import update_existing_action
+    from app.services.campaign_service import (
+        FirstFollowUpAlreadyExistsError,
+        update_existing_action,
+    )
     from app.models.models import ActionType, Campaign, CampaignStatus
     from datetime import datetime
     data = request.get_json(silent=True) or {}
@@ -1470,17 +1490,30 @@ def edit_campaign_action(campaign_id, sequence):
         email_codes = validate_email_codes(
             data.get('email_codes', []), require_nonempty=True
         )
-        action_date = datetime.fromisoformat(data['action_date'].replace('Z', ''))
+        action_date = _parse_campaign_action_date(data['action_date'])
         price = int(data['price_after'])
         notes = data.get('notes', '')
-        hist = update_existing_action(campaign_id, sequence, action_type, action_date, price, notes, email_codes)
+
+        campaign_status = None
+        if 'campaign_status' in data:
+            campaign_status = CampaignStatus(data['campaign_status'])
+
+        hist = update_existing_action(
+            campaign_id,
+            sequence,
+            action_type,
+            action_date,
+            price,
+            notes,
+            email_codes,
+            commit=False,
+        )
         if not hist:
             return jsonify({'error': 'Not found'}), 404
             
-        # Update campaign status
         camp = Campaign.query.get(campaign_id)
-        if camp and 'campaign_status' in data:
-            camp.status = CampaignStatus(data['campaign_status'])
+        if camp and campaign_status is not None:
+            camp.status = campaign_status
         db.session.commit()
         return jsonify({'success': True, 'action': {
             'sequence': hist.sequence,
@@ -1489,6 +1522,9 @@ def edit_campaign_action(campaign_id, sequence):
     except EmailCodeValidationError as exc:
         db.session.rollback()
         return _email_code_validation_response(exc)
+    except FirstFollowUpAlreadyExistsError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 400
     except Exception:
         db.session.rollback()
         return jsonify({'error': 'Unable to save campaign action changes.'}), 400

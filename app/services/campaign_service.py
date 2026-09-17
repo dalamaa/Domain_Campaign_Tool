@@ -2,7 +2,34 @@ from app.models.models import db, Campaign, CampaignHistory, Setting, CampaignEm
 from app.services.email_account_service import validate_email_codes
 from datetime import datetime, timedelta
 
-def sync_campaign_state(campaign_id):
+
+class FirstFollowUpAlreadyExistsError(ValueError):
+    """Raised when a campaign already has its one allowed first follow-up."""
+
+    def __init__(self):
+        super().__init__("This campaign already has a First Follow-up action.")
+
+
+def _is_first_follow_up(action_type):
+    return action_type in (ActionType.FIRST_FOLLOW_UP, ActionType.FIRST_FOLLOW_UP.value)
+
+
+def _action_type_value(action_type):
+    return action_type.value if isinstance(action_type, ActionType) else action_type
+
+
+def _ensure_first_follow_up_available(campaign_id, excluding_history_id=None):
+    query = CampaignHistory.query.filter_by(
+        campaign_id=campaign_id,
+        action_type=ActionType.FIRST_FOLLOW_UP,
+    )
+    if excluding_history_id is not None:
+        query = query.filter(CampaignHistory.id != excluding_history_id)
+    if query.first() is not None:
+        raise FirstFollowUpAlreadyExistsError()
+
+
+def sync_campaign_state(campaign_id, commit=True):
     """Synchronize Campaign current-state fields from the latest CampaignHistory record."""
     latest_history = CampaignHistory.query.filter_by(campaign_id=campaign_id).order_by(CampaignHistory.sequence.desc()).first()
     campaign = Campaign.query.get(campaign_id)
@@ -15,7 +42,7 @@ def sync_campaign_state(campaign_id):
         # Assuming action_date is the contact date
         campaign.last_contact_date = latest_history.action_date.date() if latest_history.action_date else None
         campaign.current_sequence = latest_history.sequence
-        campaign.last_action = latest_history.action_type.value
+        campaign.last_action = _action_type_value(latest_history.action_type)
     else:
         # Default state if no history exists (e.g. DORMANT campaign)
         campaign.current_price = 0
@@ -23,10 +50,14 @@ def sync_campaign_state(campaign_id):
         campaign.last_contact_date = None
         campaign.last_action = None
         
-    db.session.commit()
+    if commit:
+        db.session.commit()
 
 def create_new_action(campaign_id, action_type, action_date, price, notes, email_codes=None):
     """Create a new CampaignHistory record and associate used email accounts."""
+    if _is_first_follow_up(action_type):
+        _ensure_first_follow_up_available(campaign_id)
+
     if email_codes is not None:
         email_codes = validate_email_codes(email_codes)
     prev_max = CampaignHistory.query.filter_by(campaign_id=campaign_id).order_by(CampaignHistory.sequence.desc()).first()
@@ -61,17 +92,20 @@ def create_new_action(campaign_id, action_type, action_date, price, notes, email
 
     return new_hist
 
-def update_existing_action(campaign_id, sequence, action_type, action_date, price, notes, email_codes=None):
+def update_existing_action(campaign_id, sequence, action_type, action_date, price, notes, email_codes=None, commit=True):
     """Update fields of an existing CampaignHistory record."""
     hist = CampaignHistory.query.filter_by(campaign_id=campaign_id, sequence=sequence).first()
     if not hist:
         return None
 
+    if _is_first_follow_up(action_type) and hist.action_type != ActionType.FIRST_FOLLOW_UP:
+        _ensure_first_follow_up_available(campaign_id, excluding_history_id=hist.id)
+
     # Before modifying, perform validation if email_codes provided
     if email_codes is not None:
         email_codes = validate_email_codes(email_codes)
 
-    hist.action_type = action_type
+    hist.action_type = ActionType(action_type) if isinstance(action_type, str) else action_type
     hist.action_date = action_date
     hist.price_after = price
     hist.notes = notes
@@ -83,8 +117,9 @@ def update_existing_action(campaign_id, sequence, action_type, action_date, pric
         for code in email_codes:
             db.session.add(HistoryEmailUsed(history_id=hist.id, email_code=code))
 
-    db.session.commit()
-    sync_campaign_state(campaign_id)
+    sync_campaign_state(campaign_id, commit=False)
+    if commit:
+        db.session.commit()
     return hist
 
 def get_next_sequence(campaign_id):
