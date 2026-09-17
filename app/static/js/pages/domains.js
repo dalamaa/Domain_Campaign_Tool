@@ -8,6 +8,7 @@ let emailWasEdited = false;
 let originalEmailCodes = [];
 let businessToday = null;
 let businessTodayIso = "";
+let domainTableRenderRequestId = 0;
 let bulkImportFiles = {
   campaignHistory: null,
   emailUsage: null,
@@ -20,8 +21,7 @@ const bulkImportState = {
 async function fetchBusinessInfo() {
   const res = await fetch("/api/settings/business-info");
   const data = await res.json();
-  businessTodayIso = data.business_today || "";
-  businessToday = new Date(data.business_today);
+  return data;
 }
 
 async function fetchDomains() {
@@ -94,12 +94,20 @@ function applyCurrentSort() {
 // 2. Fix sorting and table persistence in domains.js
 // 2. Fix the renderDomainTable in domains.js
 async function renderDomainTable() {
-  // 1. Fetch
-  await fetchBusinessInfo();
-  domains = await fetchDomains();
+  const requestId = ++domainTableRenderRequestId;
+  const businessInfo = await fetchBusinessInfo();
+  const fetchedDomains = await fetchDomains();
   // Fetch email accounts for validation
   const accRes = await fetch("/api/email-accounts");
-  allEmailAccounts = await accRes.json();
+  const fetchedEmailAccounts = await accRes.json();
+  if (requestId !== domainTableRenderRequestId) return;
+
+  businessTodayIso = businessInfo.business_today || "";
+  businessToday = new Date(businessInfo.business_today);
+  domains = fetchedDomains;
+  allEmailAccounts = fetchedEmailAccounts;
+  reconcileSelectedDomains(domains);
+
   // Apply current sort
   if (currentSort.key) {
     applyCurrentSort();
@@ -116,17 +124,8 @@ async function renderDomainTable() {
   if (countEl)
     countEl.textContent = `${filtered.length} of ${domains.length} domains`;
 
-  // Update Select All checkbox state based on filtered results
-  const selectAll = document.getElementById("select-all-checkbox");
-  if (selectAll) {
-    const selectedCount = filtered.filter((c) =>
-      selectedDomains.has(c.id),
-    ).length;
-    selectAll.checked =
-      filtered.length > 0 && selectedCount === filtered.length;
-    selectAll.indeterminate =
-      selectedCount > 0 && selectedCount < filtered.length;
-  }
+  updateSelectAllState(filtered);
+  updateDomainActionBar();
 
   body.innerHTML = filtered
     .map((c) => {
@@ -141,7 +140,7 @@ async function renderDomainTable() {
         : "N/A";
       // Ensure we use the property 'latestEmails' returned by the API
       return `
-        <tr class="${selectedDomains.has(c.id) ? "selected" : ""}">
+        <tr data-domain-id="${c.id}" class="${selectedDomains.has(c.id) ? "selected" : ""}">
             <td><input type="checkbox" ${selectedDomains.has(c.id) ? "checked" : ""} onchange="toggleDomainSelection(${c.id})"></td>
             <td onclick="openHistoryModal(${c.id}, '${c.domain}')" style="cursor:pointer; text-decoration: underline;">${c.domain}</td>
             <td>${c.createdAt ? c.createdAt.slice(0, 10) : "N/A"}</td>
@@ -213,6 +212,46 @@ function toggleDomainSelection(id) {
   renderDomainTable();
 }
 
+function reconcileSelectedDomains(authoritativeDomains) {
+  const validIds = new Set(authoritativeDomains.map((domain) => String(domain.id)));
+  for (const selectedId of selectedDomains) {
+    if (!validIds.has(String(selectedId))) selectedDomains.delete(selectedId);
+  }
+}
+
+function clearAllDomainSelections(masterCheckbox, updateActionBar = true) {
+  selectedDomains.clear();
+  if (masterCheckbox) {
+    masterCheckbox.checked = false;
+    masterCheckbox.indeterminate = false;
+  }
+  if (updateActionBar) updateDomainActionBar();
+}
+
+function updateSelectAllState(filtered) {
+  const selectAll = document.getElementById("select-all-checkbox");
+  if (!selectAll) return;
+
+  const selectedCount = filtered.filter((c) => selectedDomains.has(c.id)).length;
+  selectAll.checked = filtered.length > 0 && selectedCount === filtered.length;
+  selectAll.indeterminate = selectedCount > 0 && selectedCount < filtered.length;
+}
+
+function updateRenderedSelectionState(filtered) {
+  const body = document.getElementById("domain-table-body");
+  if (body && body.querySelectorAll) {
+    const selectedIds = new Set(Array.from(selectedDomains, (id) => String(id)));
+    body.querySelectorAll("tr[data-domain-id]").forEach((row) => {
+      const selected = selectedIds.has(row.dataset.domainId);
+      row.classList.toggle("selected", selected);
+      const checkbox = row.querySelector('input[type="checkbox"]');
+      if (checkbox) checkbox.checked = selected;
+    });
+  }
+  updateSelectAllState(filtered);
+  updateDomainActionBar();
+}
+
 function toggleSelectAll(masterCheckbox) {
   const filtered = domains.filter(
     (c) => c.domain && c.domain.toLowerCase().includes(searchTerm),
@@ -221,10 +260,9 @@ function toggleSelectAll(masterCheckbox) {
   if (masterCheckbox.checked) {
     filtered.forEach((c) => selectedDomains.add(c.id));
   } else {
-    filtered.forEach((c) => selectedDomains.delete(c.id));
+    clearAllDomainSelections(masterCheckbox, false);
   }
-  updateDomainActionBar();
-  renderDomainTable();
+  updateRenderedSelectionState(filtered);
 }
 
 // 1. Update updateDomainActionBar in domains.js
@@ -416,8 +454,7 @@ async function bulkDeleteDomains() {
       );
     }
   }
-  selectedDomains.clear();
-  updateDomainActionBar();
+  clearAllDomainSelections();
   renderDomainTable();
 }
 
