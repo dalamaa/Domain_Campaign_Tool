@@ -27,6 +27,16 @@ def _login_redirect():
     return redirect(url_for('auth.login', next=next_path))
 
 
+def _is_backup_export_cli_command():
+    if os.environ.get('FLASK_RUN_FROM_CLI') != 'true':
+        return False
+    arguments = sys.argv[1:]
+    return any(
+        arguments[index:index + 2] == ['backup', 'export']
+        for index in range(len(arguments) - 1)
+    )
+
+
 def _require_authentication(app):
     if app.testing or request.endpoint in {'auth.login', 'static'}:
         return None
@@ -54,6 +64,8 @@ def create_app(config_class=Config):
 
     db.init_app(app)
     migrate.init_app(app, db)
+    from app.cli import register_cli
+    register_cli(app)
 
     # Migrations must be able to load the app without starting the scheduler.
     with app.app_context():
@@ -67,6 +79,7 @@ def create_app(config_class=Config):
                 app.config.get('SCHEDULER_ENABLED', False)
                 and not app.config.get('TESTING')
                 and not is_migration_command
+                and not _is_backup_export_cli_command()
             ):
                 from app.scheduler import init_scheduler
                 init_scheduler(app)
