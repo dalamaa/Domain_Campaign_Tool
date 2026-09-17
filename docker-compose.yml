@@ -8,6 +8,9 @@ services:
     env_file:
       - .env
 
+    volumes:
+      - /home/ubuntu/backups/domain-campaign:/backups
+
     ports:
       - "127.0.0.1:8001:8000"
 
