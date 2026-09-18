@@ -464,6 +464,99 @@ table {
   overflow-wrap: break-word;
 }
 
+.email-account-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(3.75rem, 1fr));
+  gap: var(--space-1);
+  max-height: 12rem;
+  margin-top: var(--space-2);
+  padding: var(--space-2);
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-subtle);
+}
+
+.email-picker-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.email-picker-label {
+  font-weight: 600;
+}
+
+.email-picker-controls {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.email-picker-cell {
+  display: inline-flex;
+  min-height: 2rem;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.82rem;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+button.email-picker-cell {
+  cursor: pointer;
+}
+
+button.email-picker-cell:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: var(--color-surface-muted);
+}
+
+.email-picker-cell-selected {
+  border-color: var(--color-success);
+  background: var(--color-success);
+  color: #fff;
+}
+
+.email-picker-cell-disabled {
+  cursor: not-allowed;
+  border-color: var(--color-border);
+  background: var(--color-surface-muted);
+  color: var(--color-muted-text);
+  opacity: 0.75;
+}
+
+.email-picker-cell-disabled.email-picker-cell-selected {
+  border-color: var(--color-success);
+  background: var(--color-surface-muted);
+  color: var(--color-success);
+}
+
+.email-picker-remove {
+  width: 1.1rem;
+  min-width: 1.1rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.email-picker-summary {
+  min-height: 1.25rem;
+  margin-top: var(--space-1);
+  color: var(--color-muted-text);
+  font-size: 0.82rem;
+}
+
 .dashboard-domain-cell {
   min-width: 0;
   overflow: hidden;

@@ -17,6 +17,9 @@ def test_action_modal_has_single_first_follow_up_option_and_date_only_controls()
     assert 'businessTodayIso || formatDateInputValue(new Date())' in source
     assert 'formatDateInputValue(data.action_date)' in source
     assert 'formatDateTimeLocalMinute' not in source
+    assert 'renderEmailAccountPicker("new-action-email-picker"' in source
+    assert 'renderEmailAccountPicker(' in source and '"edit-action-email-picker"' in source
+    assert 'toggleEmailEditMode' not in source
 
 
 def test_action_modal_hides_used_first_follow_up_and_save_is_pending_and_network_safe():
@@ -31,7 +34,6 @@ const tabEdit = { style: {} };
 const actionModal = { style: {} };
 const editActionFields = { innerHTML: "" };
 const actionElements = {
-  "email-display-text": { textContent: "M01" },
   "action-type": { value: "FOLLOW_UP" },
   "action-date": { value: "2026-09-17" },
   "action-price": { value: "200" },
@@ -57,6 +59,7 @@ const context = {
   console,
   window: {},
   alert: (message) => alerts.push(message),
+  confirm: () => true,
   document: {
     addEventListener: () => {},
     querySelector: (selector) => selector === "#action-modal h3" ? header : null,
@@ -70,8 +73,13 @@ const context = {
   fetch: async (url, options) => {
   fetchCalls += 1;
     if (options && options.body) lastPayload = JSON.parse(options.body);
-    if (url.includes("/emails")) return { ok: true, json: async () => [] };
-    if (url.includes("/actions/2")) return { ok: true, json: async () => ({ action_type: "FOLLOW_UP", action_date: "2026-09-16T23:00:37.123456", price_after: 200, notes: "" }) };
+    if (url.includes("/emails")) return { ok: true, json: async () => ["M01"] };
+    if (url.endsWith("/email-accounts")) return { ok: true, json: async () => [
+      { code: "M01", order: 1, enabled: true },
+      { code: "M02", order: 2, enabled: true },
+      { code: "M03", order: 3, enabled: false },
+    ] };
+    if (url.includes("/actions/2")) return { ok: true, json: async () => ({ action_type: "FOLLOW_UP", action_date: "2026-09-16T23:00:37.123456", price_after: 200, notes: "", email_codes: ["M01"], email_source: "history" }) };
     if (url.endsWith("/actions")) return { ok: true, json: async () => actionHistory };
     if (url.includes("/operational-emails")) return { ok: true, json: async () => ({ codes: ["M01"] }) };
     return { ok: true, json: async () => ({}) };
@@ -84,15 +92,26 @@ context.selectedDomainRecord = () => record;
 (async () => {
   await context.setActionMode("new");
   if (container.innerHTML.includes('value="FIRST_FOLLOW_UP"')) process.exit(1);
+  if (JSON.stringify(context.getEmailPickerSelectedCodes("new-action-email-picker")) !== JSON.stringify(["M01"])) process.exit(16);
   const newDate = container.innerHTML.match(/id="action-date"[^>]*value="([^"]*)"/);
   if (!newDate || !/^\d{4}-\d{2}-\d{2}$/.test(newDate[1])) process.exit(2);
 
   actionHistory = [{ sequence: 1, action_type: "FOLLOW_UP" }];
   await context.setActionMode("new");
   if (!container.innerHTML.includes('value="FIRST_FOLLOW_UP"')) process.exit(3);
+  const emailFetchCallsBeforeEdit = fetchCalls;
+  context.startEmailPickerEdit("new-action-email-picker");
+  context.toggleEmailPickerCode("new-action-email-picker", "M02");
+  context.toggleEmailPickerCode("new-action-email-picker", "M03");
+  if (fetchCalls !== emailFetchCallsBeforeEdit) process.exit(18);
+  if (JSON.stringify(context.getEmailPickerSelectedCodes("new-action-email-picker")) !== JSON.stringify(["M01"])) process.exit(19);
+  if (JSON.stringify(context.getEmailPickerEditingCodes("new-action-email-picker")) !== JSON.stringify(["M01", "M02"])) process.exit(20);
+  context.saveEmailPickerEdit("new-action-email-picker");
+  if (JSON.stringify(context.getEmailPickerSelectedCodes("new-action-email-picker")) !== JSON.stringify(["M01", "M02"])) process.exit(21);
 
   await context.setActionMode("edit");
   await context.loadActionForEdit(42);
+  if (JSON.stringify(context.getEmailPickerSelectedCodes("edit-action-email-picker")) !== JSON.stringify(["M01"])) process.exit(17);
   const editDate = editActionFields.innerHTML.match(/id="edit-date"[^>]*value="([^"]*)"/);
   if (!editDate || editDate[1] !== "2026-09-16") process.exit(4);
 
@@ -105,7 +124,11 @@ context.selectedDomainRecord = () => record;
   if (fetchCalls !== 1) process.exit(6);
   if (actionElements["save-new-action-btn"].disabled || actionElements["save-new-action-btn"].textContent !== "Save Action") process.exit(7);
   if (!lastPayload || lastPayload.action_date !== "2026-09-17") process.exit(8);
+  if (JSON.stringify(lastPayload.email_codes) !== JSON.stringify(["M01", "M02"])) process.exit(19);
 
+  context.renderEmailAccountPicker("edit-action-email-picker", [
+    { code: "M01", order: 1, enabled: true },
+  ], ["M01"]);
   context.fetch = async (url, options) => {
     fetchCalls += 1;
     if (options && options.body) lastPayload = JSON.parse(options.body);
@@ -120,6 +143,9 @@ context.selectedDomainRecord = () => record;
   if (actionElements["save-edit-action-btn"].disabled || actionElements["save-edit-action-btn"].textContent !== "Save Changes") process.exit(11);
   if (!lastPayload || lastPayload.action_date !== "2026-09-17") process.exit(12);
 
+  context.renderEmailAccountPicker("new-action-email-picker", [
+    { code: "M01", order: 1, enabled: true },
+  ], ["M01"]);
   context.fetch = async () => { throw new Error("offline"); };
   await context.saveNewAction(42);
   const lastAlert = alerts[alerts.length - 1];

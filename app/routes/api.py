@@ -967,15 +967,12 @@ def get_todays_campaigns():
 
 @bp.route('/domains', methods=['GET'])
 def get_domains():
-    from math import inf
     from sqlalchemy.orm import selectinload
     from app.models.models import (
         Domain,
         CampaignHistory,
-        CampaignEmailBlock,
-        EmailAccount,
-        HistoryEmailUsed,
     )
+    from app.services.campaign_email_service import resolve_operational_email_codes
     from app.services.expiry_service import select_latest_campaign
 
     domains = Domain.query.options(selectinload(Domain.campaigns)).all()
@@ -997,35 +994,9 @@ def get_domains():
         has_history = latest is not None
         has_values = has_history
 
-        # CampaignEmailBlock is the campaign-level association used by
-        # imports. Preserve HistoryEmailUsed as a fallback for older,
-        # normally-created campaigns that have no campaign block yet.
         latest_emails = []
         if c:
-            blocks = CampaignEmailBlock.query.filter_by(campaign_id=c.id).order_by(
-                CampaignEmailBlock.id.asc()
-            ).all()
-            associated_codes = list(dict.fromkeys(block.email_code for block in blocks))
-            source_codes = associated_codes
-            if not source_codes and latest:
-                source_codes = list(dict.fromkeys(
-                    email_used.email_code
-                    for email_used in HistoryEmailUsed.query.filter_by(history_id=latest.id).order_by(
-                        HistoryEmailUsed.id.asc()
-                    ).all()
-                ))
-
-            if source_codes:
-                account_orders = {
-                    account.code: account.profile_order
-                    for account in EmailAccount.query.filter(
-                        EmailAccount.code.in_(source_codes)
-                    ).all()
-                }
-                latest_emails = sorted(
-                    source_codes,
-                    key=lambda code: (account_orders.get(code, inf), code),
-                )
+            latest_emails = resolve_operational_email_codes(c, latest)["codes"]
 
         raw_action = c.last_action if c and c.last_action else (
             latest.action_type.value if latest else ''
@@ -1434,15 +1405,19 @@ def get_campaign_actions(campaign_id):
 @bp.route('/campaigns/<int:campaign_id>/actions/<int:sequence>', methods=['GET'])
 def get_campaign_action(campaign_id, sequence):
     from app.services.campaign_service import get_history_by_sequence
+    from app.services.campaign_email_service import resolve_history_email_selection
     hist = get_history_by_sequence(campaign_id, sequence)
     if not hist:
         return jsonify({'error': 'Not found'}), 404
+    email_selection = resolve_history_email_selection(hist)
     return jsonify({
         'sequence': hist.sequence,
         'action_type': hist.action_type.value,
         'action_date': hist.action_date.isoformat() if hist.action_date else None,
         'price_after': hist.price_after,
-        'notes': hist.notes
+        'notes': hist.notes,
+        'email_codes': email_selection['codes'],
+        'email_source': email_selection['source'],
     })
 
 @bp.route('/campaigns/<int:campaign_id>/actions/<int:sequence>/emails', methods=['GET'])
@@ -1487,9 +1462,11 @@ def edit_campaign_action(campaign_id, sequence):
         if db.session.get(Campaign, campaign_id) is None:
             return jsonify({'success': False, 'error': 'Campaign not found.'}), 404
         action_type = ActionType(data['action_type'])
-        email_codes = validate_email_codes(
-            data.get('email_codes', []), require_nonempty=True
-        )
+        email_codes = None
+        if 'email_codes' in data:
+            email_codes = validate_email_codes(
+                data.get('email_codes', []), require_nonempty=True
+            )
         action_date = _parse_campaign_action_date(data['action_date'])
         price = int(data['price_after'])
         notes = data.get('notes', '')
