@@ -2,9 +2,11 @@ from flask import Blueprint, jsonify, request, send_file
 from app.models.models import db, EmailAccount
 from sqlalchemy import asc
 import csv
+import io
 import json
 from sqlalchemy import desc
 from datetime import date, datetime, timedelta
+from app.services.time_service import get_business_today
 
 from app.services.email_account_service import (
     BulkEmailAccountValidationError,
@@ -968,57 +970,68 @@ def get_todays_campaigns():
 @bp.route('/domains', methods=['GET'])
 def get_domains():
     from sqlalchemy.orm import selectinload
-    from app.models.models import (
-        Domain,
-        CampaignHistory,
+    from app.models.models import Domain
+    from app.services.domain_campaign_read_service import (
+        build_domain_campaign_table_rows,
+        serialize_domain_campaign_api_row,
     )
-    from app.services.campaign_email_service import resolve_operational_email_codes
-    from app.services.expiry_service import select_latest_campaign
 
     domains = Domain.query.options(selectinload(Domain.campaigns)).all()
-    results = []
-    action_mapping = {
-        'FIRST_OUTREACH': 'First Outreach',
-        'FIRST_FOLLOW_UP': 'First Follow-up',
-        'FOLLOW_UP': 'Follow-up',
-        'PRICE_REDUCTION': 'Price Reduction'
-    }
-    for d in domains:
-        c = select_latest_campaign(d.campaigns)
-        latest = None
-        if c:
-            latest = CampaignHistory.query.filter_by(campaign_id=c.id).order_by(
-                CampaignHistory.sequence.desc(),
-                CampaignHistory.id.desc(),
-            ).first()
-        has_history = latest is not None
-        has_values = has_history
+    rows = build_domain_campaign_table_rows(
+        domains,
+        business_today=get_business_today(),
+    )
+    return jsonify([serialize_domain_campaign_api_row(row) for row in rows])
 
-        latest_emails = []
-        if c:
-            latest_emails = resolve_operational_email_codes(c, latest)["codes"]
 
-        raw_action = c.last_action if c and c.last_action else (
-            latest.action_type.value if latest else ''
-        )
-        if hasattr(raw_action, 'value'):
-            raw_action = raw_action.value
-        friendly_action = action_mapping.get(str(raw_action), raw_action)
-        results.append({
-            'id': d.id,
-            'campaign_id': c.id if c else None,
-            'domain': d.domain_name,
-            'expiry': d.expiry_date.isoformat() if d.expiry_date else '',
-            'status': c.status.value if c else '',
-            'price': c.current_price if c else '',
-            'seq': c.current_sequence if has_history else '',
-            'lastContact': c.last_contact_date.isoformat() if c and c.last_contact_date else '',
-            'createdAt': c.created_at.isoformat() if c and c.created_at else '',
-            'lastAction': friendly_action if has_history else '',
-            'latestEmails': ", ".join(latest_emails),
-            'hasValues': has_values
-        })
-    return jsonify(results)
+@bp.route('/domains/export-selected', methods=['POST'])
+def export_selected_domains():
+    from sqlalchemy.orm import selectinload
+    from app.models.models import Domain
+    from app.services.domain_campaign_read_service import (
+        DOMAIN_CAMPAIGN_EXPORT_COLUMNS,
+        build_domain_campaign_export_rows,
+    )
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or "domain_ids" not in payload:
+        return jsonify({"error": "domain_ids must be provided as a non-empty list."}), 400
+
+    domain_ids = payload["domain_ids"]
+    if not isinstance(domain_ids, list) or not domain_ids:
+        return jsonify({"error": "domain_ids must be provided as a non-empty list."}), 400
+    if any(type(domain_id) is not int or domain_id <= 0 for domain_id in domain_ids):
+        return jsonify({"error": "domain_ids must contain positive integer IDs."}), 400
+
+    # Preserve the browser's Set insertion order while removing duplicates.
+    ordered_ids = list(dict.fromkeys(domain_ids))
+    domains = Domain.query.options(selectinload(Domain.campaigns)).filter(
+        Domain.id.in_(ordered_ids)
+    ).all()
+    domains_by_id = {domain.id: domain for domain in domains}
+    missing_ids = [domain_id for domain_id in ordered_ids if domain_id not in domains_by_id]
+    if missing_ids:
+        return jsonify({
+            "error": "One or more selected domains no longer exist.",
+            "stale_domain_ids": missing_ids,
+        }), 409
+
+    business_today = get_business_today()
+    csv_buffer = io.StringIO(newline="")
+    writer = csv.writer(csv_buffer)
+    writer.writerow(DOMAIN_CAMPAIGN_EXPORT_COLUMNS)
+    writer.writerows(build_domain_campaign_export_rows(
+        [domains_by_id[domain_id] for domain_id in ordered_ids],
+        business_today=business_today,
+    ))
+
+    filename = f"domain-campaign-selected-{business_today.isoformat()}.csv"
+    return send_file(
+        io.BytesIO(csv_buffer.getvalue().encode("utf-8")),
+        as_attachment=True,
+        download_name=filename,
+        mimetype="text/csv",
+    )
 
 @bp.route('/domains', methods=['POST'])
 def add_domain():

@@ -9,6 +9,7 @@ let editActionLoadRequestId = 0;
 let businessToday = null;
 let businessTodayIso = "";
 let domainTableRenderRequestId = 0;
+let selectedExportInProgress = false;
 let bulkImportFiles = {
   campaignHistory: null,
   emailUsage: null,
@@ -272,6 +273,7 @@ function updateDomainActionBar() {
   const delBtn = document.getElementById("delete-btn");
   const bulkEditBtn = document.getElementById("bulk-edit-btn");
   const actionBtn = document.getElementById("action-btn");
+  const exportSelectedBtn = document.getElementById("export-selected-btn");
   const resetBtn = document.getElementById("reset-campaign-btn");
 
   // Edit button: enabled exactly 1 record selected
@@ -282,10 +284,61 @@ function updateDomainActionBar() {
 
   // Action button: enabled exactly 1 record selected
   if (actionBtn) actionBtn.disabled = count !== 1;
+  if (exportSelectedBtn && !selectedExportInProgress) {
+    exportSelectedBtn.disabled = count === 0;
+  }
   if (resetBtn) resetBtn.disabled = count !== 1;
 
   // Delete button: enabled if anything is selected
   if (delBtn) delBtn.disabled = count === 0;
+}
+
+function selectedExportFilename(response) {
+  const contentDisposition = response.headers?.get?.("Content-Disposition") || "";
+  const match = contentDisposition.match(/filename="?([^";]+)"?/i);
+  return match
+    ? match[1]
+    : `domain-campaign-selected-${businessTodayIso || formatDateInputValue(new Date())}.csv`;
+}
+
+async function exportSelectedDomains() {
+  if (selectedExportInProgress || selectedDomains.size === 0) return;
+
+  const exportButton = document.getElementById("export-selected-btn");
+  selectedExportInProgress = true;
+  if (exportButton) {
+    exportButton.disabled = true;
+    exportButton.textContent = "Exporting…";
+  }
+
+  try {
+    const response = await fetch("/api/domains/export-selected", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // Set iteration preserves selection order, including hidden selections.
+      body: JSON.stringify({ domain_ids: Array.from(selectedDomains) }),
+    });
+    if (!response.ok) {
+      const result = await response.json().catch(() => ({}));
+      throw new Error(result.error || "Unable to export selected domains.");
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = selectedExportFilename(response);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  } catch (error) {
+    alert(error.message || "Unable to export selected domains.");
+  } finally {
+    selectedExportInProgress = false;
+    if (exportButton) exportButton.textContent = "Export Selected";
+    updateDomainActionBar();
+  }
 }
 
 function selectedDomainRecord() {
