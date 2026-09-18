@@ -70,3 +70,18 @@ def resolve_operational_email_codes(campaign, history=None):
     if block_codes:
         return {"codes": block_codes, "source": "campaign_block"}
     return {"codes": [], "source": "none"}
+
+
+def resolve_history_email_selection(history):
+    """Resolve the Edit History picker values without mutating persistence.
+
+    Explicit per-history usage remains authoritative.  Campaign-level email
+    blocks are only a compatibility default for histories without usage rows.
+    """
+    resolution = resolve_operational_email_codes(history.campaign, history)
+    source = {
+        "history": "history",
+        "campaign_block": "campaign_fallback",
+        "none": "none",
+    }[resolution["source"]]
+    return {"codes": resolution["codes"], "source": source}

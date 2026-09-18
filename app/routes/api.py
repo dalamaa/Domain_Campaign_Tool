@@ -2,9 +2,11 @@ from flask import Blueprint, jsonify, request, send_file
 from app.models.models import db, EmailAccount
 from sqlalchemy import asc
 import csv
+import io
 import json
 from sqlalchemy import desc
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from app.services.time_service import get_business_today
 
 from app.services.email_account_service import (
     BulkEmailAccountValidationError,
@@ -18,6 +20,14 @@ from app.services.email_account_service import (
 )
 
 bp = Blueprint('api', __name__, url_prefix='/api')
+
+
+def _parse_campaign_action_date(value):
+    """Parse action dates without applying timezone conversion to date-only input."""
+    raw_value = str(value).strip()
+    if len(raw_value) == 10:
+        return datetime.combine(date.fromisoformat(raw_value), datetime.min.time())
+    return datetime.fromisoformat(raw_value.replace('Z', ''))
 
 
 @bp.route('/backup/export.xlsx', methods=['GET'])
@@ -959,87 +969,69 @@ def get_todays_campaigns():
 
 @bp.route('/domains', methods=['GET'])
 def get_domains():
-    from math import inf
     from sqlalchemy.orm import selectinload
-    from app.models.models import (
-        Domain,
-        CampaignHistory,
-        CampaignEmailBlock,
-        EmailAccount,
-        HistoryEmailUsed,
+    from app.models.models import Domain
+    from app.services.domain_campaign_read_service import (
+        build_domain_campaign_table_rows,
+        serialize_domain_campaign_api_row,
     )
-    from app.services.expiry_service import select_latest_campaign
 
     domains = Domain.query.options(selectinload(Domain.campaigns)).all()
-    results = []
-    action_mapping = {
-        'FIRST_OUTREACH': 'First Outreach',
-        'FIRST_FOLLOW_UP': 'First Follow-up',
-        'FOLLOW_UP': 'Follow-up',
-        'PRICE_REDUCTION': 'Price Reduction'
-    }
-    for d in domains:
-        c = select_latest_campaign(d.campaigns)
-        latest = None
-        if c:
-            latest = CampaignHistory.query.filter_by(campaign_id=c.id).order_by(
-                CampaignHistory.sequence.desc(),
-                CampaignHistory.id.desc(),
-            ).first()
-        has_history = latest is not None
-        has_values = has_history
+    rows = build_domain_campaign_table_rows(
+        domains,
+        business_today=get_business_today(),
+    )
+    return jsonify([serialize_domain_campaign_api_row(row) for row in rows])
 
-        # CampaignEmailBlock is the campaign-level association used by
-        # imports. Preserve HistoryEmailUsed as a fallback for older,
-        # normally-created campaigns that have no campaign block yet.
-        latest_emails = []
-        if c:
-            blocks = CampaignEmailBlock.query.filter_by(campaign_id=c.id).order_by(
-                CampaignEmailBlock.id.asc()
-            ).all()
-            associated_codes = list(dict.fromkeys(block.email_code for block in blocks))
-            source_codes = associated_codes
-            if not source_codes and latest:
-                source_codes = list(dict.fromkeys(
-                    email_used.email_code
-                    for email_used in HistoryEmailUsed.query.filter_by(history_id=latest.id).order_by(
-                        HistoryEmailUsed.id.asc()
-                    ).all()
-                ))
 
-            if source_codes:
-                account_orders = {
-                    account.code: account.profile_order
-                    for account in EmailAccount.query.filter(
-                        EmailAccount.code.in_(source_codes)
-                    ).all()
-                }
-                latest_emails = sorted(
-                    source_codes,
-                    key=lambda code: (account_orders.get(code, inf), code),
-                )
+@bp.route('/domains/export-selected', methods=['POST'])
+def export_selected_domains():
+    from sqlalchemy.orm import selectinload
+    from app.models.models import Domain
+    from app.services.domain_campaign_read_service import (
+        DOMAIN_CAMPAIGN_EXPORT_COLUMNS,
+        build_domain_campaign_export_rows,
+    )
 
-        raw_action = c.last_action if c and c.last_action else (
-            latest.action_type.value if latest else ''
-        )
-        if hasattr(raw_action, 'value'):
-            raw_action = raw_action.value
-        friendly_action = action_mapping.get(str(raw_action), raw_action)
-        results.append({
-            'id': d.id,
-            'campaign_id': c.id if c else None,
-            'domain': d.domain_name,
-            'expiry': d.expiry_date.isoformat() if d.expiry_date else '',
-            'status': c.status.value if c else '',
-            'price': c.current_price if c else '',
-            'seq': c.current_sequence if has_history else '',
-            'lastContact': c.last_contact_date.isoformat() if c and c.last_contact_date else '',
-            'createdAt': c.created_at.isoformat() if c and c.created_at else '',
-            'lastAction': friendly_action if has_history else '',
-            'latestEmails': ", ".join(latest_emails),
-            'hasValues': has_values
-        })
-    return jsonify(results)
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or "domain_ids" not in payload:
+        return jsonify({"error": "domain_ids must be provided as a non-empty list."}), 400
+
+    domain_ids = payload["domain_ids"]
+    if not isinstance(domain_ids, list) or not domain_ids:
+        return jsonify({"error": "domain_ids must be provided as a non-empty list."}), 400
+    if any(type(domain_id) is not int or domain_id <= 0 for domain_id in domain_ids):
+        return jsonify({"error": "domain_ids must contain positive integer IDs."}), 400
+
+    # Preserve the browser's Set insertion order while removing duplicates.
+    ordered_ids = list(dict.fromkeys(domain_ids))
+    domains = Domain.query.options(selectinload(Domain.campaigns)).filter(
+        Domain.id.in_(ordered_ids)
+    ).all()
+    domains_by_id = {domain.id: domain for domain in domains}
+    missing_ids = [domain_id for domain_id in ordered_ids if domain_id not in domains_by_id]
+    if missing_ids:
+        return jsonify({
+            "error": "One or more selected domains no longer exist.",
+            "stale_domain_ids": missing_ids,
+        }), 409
+
+    business_today = get_business_today()
+    csv_buffer = io.StringIO(newline="")
+    writer = csv.writer(csv_buffer)
+    writer.writerow(DOMAIN_CAMPAIGN_EXPORT_COLUMNS)
+    writer.writerows(build_domain_campaign_export_rows(
+        [domains_by_id[domain_id] for domain_id in ordered_ids],
+        business_today=business_today,
+    ))
+
+    filename = f"domain-campaign-selected-{business_today.isoformat()}.csv"
+    return send_file(
+        io.BytesIO(csv_buffer.getvalue().encode("utf-8")),
+        as_attachment=True,
+        download_name=filename,
+        mimetype="text/csv",
+    )
 
 @bp.route('/domains', methods=['POST'])
 def add_domain():
@@ -1367,7 +1359,11 @@ def bulk_edit_domains():
 
 @bp.route('/campaigns/<int:campaign_id>/actions', methods=['POST'])
 def add_campaign_action(campaign_id):
-    from app.services.campaign_service import create_new_action, sync_campaign_state
+    from app.services.campaign_service import (
+        FirstFollowUpAlreadyExistsError,
+        create_new_action,
+        sync_campaign_state,
+    )
     from app.models.models import ActionType, Campaign, CampaignStatus
     from datetime import datetime
     data = request.get_json(silent=True) or {}
@@ -1380,22 +1376,27 @@ def add_campaign_action(campaign_id):
             data.get('email_codes', []),
             require_nonempty=action_type == ActionType.FIRST_OUTREACH,
         )
-        action_date = datetime.fromisoformat(data['action_date'].replace('Z', ''))
+        action_date = _parse_campaign_action_date(data['action_date'])
         price = int(data['price_after'])
         notes = data.get('notes', '')
-        new_hist = create_new_action(campaign_id, action_type, action_date, price, notes, email_codes)
-        # Synchronize campaign state
-        sync_campaign_state(campaign_id)
-        # Update campaign status
-        camp = Campaign.query.get(campaign_id)
-        if camp and 'campaign_status' in data:
-            camp.status = CampaignStatus(data['campaign_status'])
 
-            db.session.commit()
+        campaign_status = None
+        if 'campaign_status' in data:
+            campaign_status = CampaignStatus(data['campaign_status'])
+
+        new_hist = create_new_action(campaign_id, action_type, action_date, price, notes, email_codes)
+        sync_campaign_state(campaign_id, commit=False)
+        camp = Campaign.query.get(campaign_id)
+        if camp and campaign_status is not None:
+            camp.status = campaign_status
+        db.session.commit()
         return jsonify({'success': True, 'sequence': new_hist.sequence}), 201
     except EmailCodeValidationError as exc:
         db.session.rollback()
         return _email_code_validation_response(exc)
+    except FirstFollowUpAlreadyExistsError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 400
     except Exception:
         db.session.rollback()
         return jsonify({'error': 'Unable to save campaign action.'}), 400
@@ -1417,15 +1418,19 @@ def get_campaign_actions(campaign_id):
 @bp.route('/campaigns/<int:campaign_id>/actions/<int:sequence>', methods=['GET'])
 def get_campaign_action(campaign_id, sequence):
     from app.services.campaign_service import get_history_by_sequence
+    from app.services.campaign_email_service import resolve_history_email_selection
     hist = get_history_by_sequence(campaign_id, sequence)
     if not hist:
         return jsonify({'error': 'Not found'}), 404
+    email_selection = resolve_history_email_selection(hist)
     return jsonify({
         'sequence': hist.sequence,
         'action_type': hist.action_type.value,
         'action_date': hist.action_date.isoformat() if hist.action_date else None,
         'price_after': hist.price_after,
-        'notes': hist.notes
+        'notes': hist.notes,
+        'email_codes': email_selection['codes'],
+        'email_source': email_selection['source'],
     })
 
 @bp.route('/campaigns/<int:campaign_id>/actions/<int:sequence>/emails', methods=['GET'])
@@ -1458,7 +1463,10 @@ def get_operational_campaign_emails(campaign_id):
 
 @bp.route('/campaigns/<int:campaign_id>/actions/<int:sequence>', methods=['PUT'])
 def edit_campaign_action(campaign_id, sequence):
-    from app.services.campaign_service import update_existing_action
+    from app.services.campaign_service import (
+        FirstFollowUpAlreadyExistsError,
+        update_existing_action,
+    )
     from app.models.models import ActionType, Campaign, CampaignStatus
     from datetime import datetime
     data = request.get_json(silent=True) or {}
@@ -1467,20 +1475,35 @@ def edit_campaign_action(campaign_id, sequence):
         if db.session.get(Campaign, campaign_id) is None:
             return jsonify({'success': False, 'error': 'Campaign not found.'}), 404
         action_type = ActionType(data['action_type'])
-        email_codes = validate_email_codes(
-            data.get('email_codes', []), require_nonempty=True
-        )
-        action_date = datetime.fromisoformat(data['action_date'].replace('Z', ''))
+        email_codes = None
+        if 'email_codes' in data:
+            email_codes = validate_email_codes(
+                data.get('email_codes', []), require_nonempty=True
+            )
+        action_date = _parse_campaign_action_date(data['action_date'])
         price = int(data['price_after'])
         notes = data.get('notes', '')
-        hist = update_existing_action(campaign_id, sequence, action_type, action_date, price, notes, email_codes)
+
+        campaign_status = None
+        if 'campaign_status' in data:
+            campaign_status = CampaignStatus(data['campaign_status'])
+
+        hist = update_existing_action(
+            campaign_id,
+            sequence,
+            action_type,
+            action_date,
+            price,
+            notes,
+            email_codes,
+            commit=False,
+        )
         if not hist:
             return jsonify({'error': 'Not found'}), 404
             
-        # Update campaign status
         camp = Campaign.query.get(campaign_id)
-        if camp and 'campaign_status' in data:
-            camp.status = CampaignStatus(data['campaign_status'])
+        if camp and campaign_status is not None:
+            camp.status = campaign_status
         db.session.commit()
         return jsonify({'success': True, 'action': {
             'sequence': hist.sequence,
@@ -1489,6 +1512,9 @@ def edit_campaign_action(campaign_id, sequence):
     except EmailCodeValidationError as exc:
         db.session.rollback()
         return _email_code_validation_response(exc)
+    except FirstFollowUpAlreadyExistsError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 400
     except Exception:
         db.session.rollback()
         return jsonify({'error': 'Unable to save campaign action changes.'}), 400

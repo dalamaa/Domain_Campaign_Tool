@@ -4,9 +4,12 @@ let searchTerm = "";
 let currentSort = { key: "daysSince", direction: "asc" };
 let domains = [];
 let allEmailAccounts = [];
-let emailWasEdited = false;
-let originalEmailCodes = [];
+const emailPickerStates = new Map();
+let editActionLoadRequestId = 0;
 let businessToday = null;
+let businessTodayIso = "";
+let domainTableRenderRequestId = 0;
+let selectedExportInProgress = false;
 let bulkImportFiles = {
   campaignHistory: null,
   emailUsage: null,
@@ -19,7 +22,7 @@ const bulkImportState = {
 async function fetchBusinessInfo() {
   const res = await fetch("/api/settings/business-info");
   const data = await res.json();
-  businessToday = new Date(data.business_today);
+  return data;
 }
 
 async function fetchDomains() {
@@ -92,12 +95,20 @@ function applyCurrentSort() {
 // 2. Fix sorting and table persistence in domains.js
 // 2. Fix the renderDomainTable in domains.js
 async function renderDomainTable() {
-  // 1. Fetch
-  await fetchBusinessInfo();
-  domains = await fetchDomains();
+  const requestId = ++domainTableRenderRequestId;
+  const businessInfo = await fetchBusinessInfo();
+  const fetchedDomains = await fetchDomains();
   // Fetch email accounts for validation
   const accRes = await fetch("/api/email-accounts");
-  allEmailAccounts = await accRes.json();
+  const fetchedEmailAccounts = await accRes.json();
+  if (requestId !== domainTableRenderRequestId) return;
+
+  businessTodayIso = businessInfo.business_today || "";
+  businessToday = new Date(businessInfo.business_today);
+  domains = fetchedDomains;
+  allEmailAccounts = fetchedEmailAccounts;
+  reconcileSelectedDomains(domains);
+
   // Apply current sort
   if (currentSort.key) {
     applyCurrentSort();
@@ -114,17 +125,8 @@ async function renderDomainTable() {
   if (countEl)
     countEl.textContent = `${filtered.length} of ${domains.length} domains`;
 
-  // Update Select All checkbox state based on filtered results
-  const selectAll = document.getElementById("select-all-checkbox");
-  if (selectAll) {
-    const selectedCount = filtered.filter((c) =>
-      selectedDomains.has(c.id),
-    ).length;
-    selectAll.checked =
-      filtered.length > 0 && selectedCount === filtered.length;
-    selectAll.indeterminate =
-      selectedCount > 0 && selectedCount < filtered.length;
-  }
+  updateSelectAllState(filtered);
+  updateDomainActionBar();
 
   body.innerHTML = filtered
     .map((c) => {
@@ -139,7 +141,7 @@ async function renderDomainTable() {
         : "N/A";
       // Ensure we use the property 'latestEmails' returned by the API
       return `
-        <tr class="${selectedDomains.has(c.id) ? "selected" : ""}">
+        <tr data-domain-id="${c.id}" class="${selectedDomains.has(c.id) ? "selected" : ""}">
             <td><input type="checkbox" ${selectedDomains.has(c.id) ? "checked" : ""} onchange="toggleDomainSelection(${c.id})"></td>
             <td onclick="openHistoryModal(${c.id}, '${c.domain}')" style="cursor:pointer; text-decoration: underline;">${c.domain}</td>
             <td>${c.createdAt ? c.createdAt.slice(0, 10) : "N/A"}</td>
@@ -169,7 +171,7 @@ async function openHistoryModal(id, domainName) {
     .map(
       (h) => `
     <tr>
-      <td>${h.date ? new Date(h.date).toLocaleString() : "Unknown"}</td>
+      <td>${formatActionDateDisplay(h.date)}</td>
       <td>${h.action}</td>
       <td>${h.price_before !== null ? `$${h.price_before} → ` : ""}$${h.price_after}</td>
       <td>${h.notes || ""}</td>
@@ -185,11 +187,70 @@ function closeHistoryModal() {
   document.getElementById("history-modal").style.display = "none";
 }
 
+function formatDateInputValue(value) {
+  if (!value) return "";
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return "";
+    const pad = (part) => String(part).padStart(2, "0");
+    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+  }
+
+  const match = String(value).match(/^\d{4}-\d{2}-\d{2}/);
+  return match ? match[0] : "";
+}
+
+function formatActionDateDisplay(value) {
+  const dateValue = formatDateInputValue(value);
+  if (!dateValue) return "Unknown";
+  const [year, month, day] = dateValue.split("-");
+  return `${month}/${day}/${year}`;
+}
+
 function toggleDomainSelection(id) {
   if (selectedDomains.has(id)) selectedDomains.delete(id);
   else selectedDomains.add(id);
   updateDomainActionBar();
   renderDomainTable();
+}
+
+function reconcileSelectedDomains(authoritativeDomains) {
+  const validIds = new Set(authoritativeDomains.map((domain) => String(domain.id)));
+  for (const selectedId of selectedDomains) {
+    if (!validIds.has(String(selectedId))) selectedDomains.delete(selectedId);
+  }
+}
+
+function clearAllDomainSelections(masterCheckbox, updateActionBar = true) {
+  selectedDomains.clear();
+  if (masterCheckbox) {
+    masterCheckbox.checked = false;
+    masterCheckbox.indeterminate = false;
+  }
+  if (updateActionBar) updateDomainActionBar();
+}
+
+function updateSelectAllState(filtered) {
+  const selectAll = document.getElementById("select-all-checkbox");
+  if (!selectAll) return;
+
+  const selectedCount = filtered.filter((c) => selectedDomains.has(c.id)).length;
+  selectAll.checked = filtered.length > 0 && selectedCount === filtered.length;
+  selectAll.indeterminate = selectedCount > 0 && selectedCount < filtered.length;
+}
+
+function updateRenderedSelectionState(filtered) {
+  const body = document.getElementById("domain-table-body");
+  if (body && body.querySelectorAll) {
+    const selectedIds = new Set(Array.from(selectedDomains, (id) => String(id)));
+    body.querySelectorAll("tr[data-domain-id]").forEach((row) => {
+      const selected = selectedIds.has(row.dataset.domainId);
+      row.classList.toggle("selected", selected);
+      const checkbox = row.querySelector('input[type="checkbox"]');
+      if (checkbox) checkbox.checked = selected;
+    });
+  }
+  updateSelectAllState(filtered);
+  updateDomainActionBar();
 }
 
 function toggleSelectAll(masterCheckbox) {
@@ -200,10 +261,9 @@ function toggleSelectAll(masterCheckbox) {
   if (masterCheckbox.checked) {
     filtered.forEach((c) => selectedDomains.add(c.id));
   } else {
-    filtered.forEach((c) => selectedDomains.delete(c.id));
+    clearAllDomainSelections(masterCheckbox, false);
   }
-  updateDomainActionBar();
-  renderDomainTable();
+  updateRenderedSelectionState(filtered);
 }
 
 // 1. Update updateDomainActionBar in domains.js
@@ -213,6 +273,7 @@ function updateDomainActionBar() {
   const delBtn = document.getElementById("delete-btn");
   const bulkEditBtn = document.getElementById("bulk-edit-btn");
   const actionBtn = document.getElementById("action-btn");
+  const exportSelectedBtn = document.getElementById("export-selected-btn");
   const resetBtn = document.getElementById("reset-campaign-btn");
 
   // Edit button: enabled exactly 1 record selected
@@ -223,10 +284,61 @@ function updateDomainActionBar() {
 
   // Action button: enabled exactly 1 record selected
   if (actionBtn) actionBtn.disabled = count !== 1;
+  if (exportSelectedBtn && !selectedExportInProgress) {
+    exportSelectedBtn.disabled = count === 0;
+  }
   if (resetBtn) resetBtn.disabled = count !== 1;
 
   // Delete button: enabled if anything is selected
   if (delBtn) delBtn.disabled = count === 0;
+}
+
+function selectedExportFilename(response) {
+  const contentDisposition = response.headers?.get?.("Content-Disposition") || "";
+  const match = contentDisposition.match(/filename="?([^";]+)"?/i);
+  return match
+    ? match[1]
+    : `domain-campaign-selected-${businessTodayIso || formatDateInputValue(new Date())}.csv`;
+}
+
+async function exportSelectedDomains() {
+  if (selectedExportInProgress || selectedDomains.size === 0) return;
+
+  const exportButton = document.getElementById("export-selected-btn");
+  selectedExportInProgress = true;
+  if (exportButton) {
+    exportButton.disabled = true;
+    exportButton.textContent = "Exporting…";
+  }
+
+  try {
+    const response = await fetch("/api/domains/export-selected", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // Set iteration preserves selection order, including hidden selections.
+      body: JSON.stringify({ domain_ids: Array.from(selectedDomains) }),
+    });
+    if (!response.ok) {
+      const result = await response.json().catch(() => ({}));
+      throw new Error(result.error || "Unable to export selected domains.");
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = selectedExportFilename(response);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  } catch (error) {
+    alert(error.message || "Unable to export selected domains.");
+  } finally {
+    selectedExportInProgress = false;
+    if (exportButton) exportButton.textContent = "Export Selected";
+    updateDomainActionBar();
+  }
 }
 
 function selectedDomainRecord() {
@@ -395,8 +507,7 @@ async function bulkDeleteDomains() {
       );
     }
   }
-  selectedDomains.clear();
-  updateDomainActionBar();
+  clearAllDomainSelections();
   renderDomainTable();
 }
 
@@ -989,9 +1100,250 @@ async function openActionModal() {
 
 function closeActionModal() {
   document.getElementById("action-modal").style.display = "none";
+  emailPickerStates.delete("new-action-email-picker");
+  emailPickerStates.delete("edit-action-email-picker");
+}
+
+function escapeEmailPickerHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function orderEmailPickerAccounts(accounts) {
+  return [...(accounts || [])].sort((left, right) => {
+    const leftOrder = Number(left.order ?? left.profile_order ?? Number.MAX_SAFE_INTEGER);
+    const rightOrder = Number(right.order ?? right.profile_order ?? Number.MAX_SAFE_INTEGER);
+    if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+    return String(left.code).localeCompare(String(right.code));
+  });
+}
+
+async function loadEmailPickerAccounts() {
+  if (allEmailAccounts.length > 0) return allEmailAccounts;
+
+  try {
+    const response = await fetch("/api/email-accounts");
+    const accounts = await response.json();
+    if (Array.isArray(accounts)) allEmailAccounts = accounts;
+  } catch (_error) {
+    // Leave the picker empty if account metadata is temporarily unavailable.
+  }
+  return allEmailAccounts;
+}
+
+function emailPickerSectionMarkup(pickerId) {
+  return `
+    <div class="form-group email-picker-section">
+      <div class="email-picker-label-row">
+        <span class="email-picker-label">Email Used:</span>
+        <span class="email-picker-controls">
+          <button type="button" class="btn btn-subtle btn-compact" id="${pickerId}-edit">Edit</button>
+          <button type="button" class="btn btn-subtle btn-compact" id="${pickerId}-save" hidden>Save</button>
+          <button type="button" class="btn btn-subtle btn-compact" id="${pickerId}-cancel" hidden>Cancel</button>
+        </span>
+      </div>
+      <div id="${pickerId}" class="email-account-picker" role="group" aria-label="Email accounts"></div>
+      <div id="${pickerId}-summary" class="email-picker-summary" aria-live="polite"></div>
+    </div>
+  `;
+}
+
+function emailPickerCodesForState(state, editing = state.editing) {
+  const selectedCodes = editing ? state.editingCodes : state.confirmedCodes;
+  const orderedCodes = state.accounts
+    .filter((account) => selectedCodes.has(String(account.code)))
+    .map((account) => String(account.code));
+  const knownCodes = new Set(orderedCodes);
+  for (const code of selectedCodes) {
+    if (!knownCodes.has(code)) orderedCodes.push(code);
+  }
+  return orderedCodes;
+}
+
+function buildEmailPickerMarkup(accounts, selectedCodes, editing = false) {
+  const selected = new Set(Array.from(selectedCodes || [], (code) => String(code)));
+  return orderEmailPickerAccounts(accounts)
+    .map((account) => {
+      const code = String(account.code);
+      const safeCode = escapeEmailPickerHtml(code);
+      const isSelected = selected.has(code);
+      const isDisabled = account.enabled === false;
+      const classes = [
+        "email-picker-cell",
+        isSelected ? "email-picker-cell-selected" : "",
+        isDisabled ? "email-picker-cell-disabled" : "",
+      ].filter(Boolean).join(" ");
+
+      if (isDisabled) {
+        const removeButton = isSelected && editing
+          ? `<button type="button" class="email-picker-remove" data-remove-email-code="${safeCode}" aria-label="Remove disabled historical account ${safeCode}">&times;</button>`
+          : "";
+        if (!isSelected) {
+          return `<button type="button" class="${classes}" data-email-code="${safeCode}" disabled aria-disabled="true" title="Disabled email account">${safeCode}</button>`;
+        }
+        return `<span class="${classes}" data-email-code="${safeCode}" aria-disabled="true" title="Disabled email account">${safeCode}${removeButton}</span>`;
+      }
+
+      const lockedAttributes = editing ? "" : ' disabled aria-disabled="true"';
+      return `<button type="button" class="${classes}" data-email-code="${safeCode}" aria-pressed="${isSelected}"${lockedAttributes}>${safeCode}</button>`;
+    })
+    .join("");
+}
+
+function updateEmailPickerSummary(pickerId) {
+  const summary = document.getElementById(`${pickerId}-summary`);
+  if (!summary) return;
+  const state = emailPickerStates.get(pickerId);
+  if (!state) return;
+  const codes = emailPickerCodesForState(state);
+  summary.textContent = codes.length ? `Selected: ${codes.join(", ")}` : "No email accounts selected";
+}
+
+function updateEmailPickerControls(pickerId) {
+  const state = emailPickerStates.get(pickerId);
+  if (!state) return;
+
+  const editButton = document.getElementById(`${pickerId}-edit`);
+  const saveButton = document.getElementById(`${pickerId}-save`);
+  const cancelButton = document.getElementById(`${pickerId}-cancel`);
+  if (editButton) editButton.hidden = state.editing;
+  if (saveButton) saveButton.hidden = !state.editing;
+  if (cancelButton) cancelButton.hidden = !state.editing;
+}
+
+function renderEmailPickerView(pickerId) {
+  const state = emailPickerStates.get(pickerId);
+  if (!state) return;
+
+  const picker = document.getElementById(pickerId);
+  if (picker) {
+    picker.innerHTML = buildEmailPickerMarkup(
+      state.accounts,
+      emailPickerCodesForState(state),
+      state.editing,
+    );
+    if (picker.querySelectorAll) {
+      picker.querySelectorAll("button[data-email-code]").forEach((button) => {
+        button.addEventListener("click", () => {
+          toggleEmailPickerCode(pickerId, button.dataset.emailCode);
+        });
+      });
+      picker.querySelectorAll("button[data-remove-email-code]").forEach((button) => {
+        button.addEventListener("click", () => {
+          removeDisabledEmailPickerCode(pickerId, button.dataset.removeEmailCode);
+        });
+      });
+    }
+  }
+
+  updateEmailPickerControls(pickerId);
+  updateEmailPickerSummary(pickerId);
+}
+
+function attachEmailPickerControls(pickerId) {
+  const editButton = document.getElementById(`${pickerId}-edit`);
+  const saveButton = document.getElementById(`${pickerId}-save`);
+  const cancelButton = document.getElementById(`${pickerId}-cancel`);
+  if (editButton) editButton.onclick = () => startEmailPickerEdit(pickerId);
+  if (saveButton) saveButton.onclick = () => saveEmailPickerEdit(pickerId);
+  if (cancelButton) cancelButton.onclick = () => cancelEmailPickerEdit(pickerId);
+}
+
+function updateEmailPickerButtons(pickerId) {
+  renderEmailPickerView(pickerId);
+}
+
+function renderEmailAccountPicker(pickerId, accounts, persistedCodes, selectionSource = "history") {
+  const orderedAccounts = orderEmailPickerAccounts(accounts);
+  const original = new Set(Array.from(persistedCodes || [], (code) => String(code)));
+  emailPickerStates.set(pickerId, {
+    accounts: orderedAccounts,
+    originalCodes: new Set(original),
+    confirmedCodes: new Set(original),
+    editingCodes: new Set(original),
+    selectionSource,
+    emailSelectionExplicitlyEdited: false,
+    editing: false,
+  });
+
+  attachEmailPickerControls(pickerId);
+  renderEmailPickerView(pickerId);
+}
+
+function startEmailPickerEdit(pickerId) {
+  const state = emailPickerStates.get(pickerId);
+  if (!state || state.editing) return;
+
+  state.editingCodes = new Set(state.confirmedCodes);
+  state.editing = true;
+  renderEmailPickerView(pickerId);
+}
+
+function emailPickerConfirmationMessage(fromCodes, toCodes) {
+  const formatCodes = (codes) => codes.length ? codes.join(", ") : "None";
+  return `Change Email Used?\n\nFrom: ${formatCodes(fromCodes)}\nTo: ${formatCodes(toCodes)}\n\nConfirm this local change?`;
+}
+
+function saveEmailPickerEdit(pickerId) {
+  const state = emailPickerStates.get(pickerId);
+  if (!state || !state.editing) return false;
+
+  const fromCodes = emailPickerCodesForState(state, false);
+  const toCodes = emailPickerCodesForState(state, true);
+  if (!confirm(emailPickerConfirmationMessage(fromCodes, toCodes))) return false;
+
+  state.confirmedCodes = new Set(state.editingCodes);
+  state.editingCodes = new Set(state.confirmedCodes);
+  state.emailSelectionExplicitlyEdited = true;
+  state.editing = false;
+  renderEmailPickerView(pickerId);
+  return true;
+}
+
+function cancelEmailPickerEdit(pickerId) {
+  const state = emailPickerStates.get(pickerId);
+  if (!state || !state.editing) return;
+
+  state.editingCodes = new Set(state.confirmedCodes);
+  state.editing = false;
+  renderEmailPickerView(pickerId);
+}
+
+function getEmailPickerEditingCodes(pickerId) {
+  const state = emailPickerStates.get(pickerId);
+  return state ? emailPickerCodesForState(state, true) : [];
+}
+
+function getEmailPickerSelectedCodes(pickerId) {
+  const state = emailPickerStates.get(pickerId);
+  return state ? emailPickerCodesForState(state, false) : [];
+}
+
+function toggleEmailPickerCode(pickerId, code) {
+  const state = emailPickerStates.get(pickerId);
+  const account = state?.accounts.find((item) => item.code === code);
+  if (!state || !state.editing || !account || account.enabled === false) return;
+
+  if (state.editingCodes.has(code)) state.editingCodes.delete(code);
+  else state.editingCodes.add(code);
+  updateEmailPickerButtons(pickerId);
+}
+
+function removeDisabledEmailPickerCode(pickerId, code) {
+  const state = emailPickerStates.get(pickerId);
+  const account = state?.accounts.find((item) => item.code === code);
+  if (!state || !state.editing || !account || account.enabled !== false) return;
+
+  state.editingCodes.delete(code);
+  updateEmailPickerButtons(pickerId);
 }
 
 async function setActionMode(mode) {
+  editActionLoadRequestId += 1;
   const container = document.getElementById("action-mode-content");
   const record = selectedDomainRecord();
   const campaignId = campaignIdForDomainRecord(record);
@@ -1030,12 +1382,16 @@ async function setActionMode(mode) {
 
   if (mode === "new") {
     // Determine default emails
-    let defaultEmails = "";
     let exactEmails = [];
+    let hasFirstFollowUp = false;
+    const defaultActionDate = businessTodayIso || formatDateInputValue(new Date());
     if (campaign && campaign.hasValues) {
       // Fetch last action's emails
       const res = await fetch(`/api/campaigns/${campaignId}/actions`);
       const history = await res.json();
+      hasFirstFollowUp = Array.isArray(history) && history.some(
+        (h) => h.action_type === "FIRST_FOLLOW_UP",
+      );
       if (history.length > 0) {
         const lastAction = history[history.length - 1];
         const emailRes = await fetch(
@@ -1061,17 +1417,13 @@ async function setActionMode(mode) {
         // Leave the display blank if the optional operational lookup fails.
       }
     }
-    defaultEmails = exactEmails.join(", ");
+    const pickerAccounts = await loadEmailPickerAccounts();
+    const firstFollowUpOption = hasFirstFollowUp
+      ? ""
+      : '<option value="FIRST_FOLLOW_UP">First Follow-up</option>';
 
     container.innerHTML = `
-    <div id="email-edit-container">
-    <div class="form-group">
-            <label>Emails Used:<br>
-              <span id="email-display-text" style="font-weight: bold; margin-right: 10px;">${defaultEmails}</span>
-          <button type="button" onclick="toggleEmailEditMode(true)">Edit</button>
-      </label>
-    </div>
-    </div>
+    ${emailPickerSectionMarkup("new-action-email-picker")}
     <div class="form-group">
       <label>Action Type:
           <select id="action-type">
@@ -1079,7 +1431,7 @@ async function setActionMode(mode) {
               campaign && campaign.hasValues
                 ? `
             <option value="">-- Select Action --</option>
-            <option value="FIRST_FOLLOW_UP">First Follow-up</option>
+            ${firstFollowUpOption}
             <option value="FOLLOW_UP">Follow-up</option>
             <option value="PRICE_REDUCTION">Price Reduction</option>
             `
@@ -1098,7 +1450,7 @@ async function setActionMode(mode) {
       </label>
     </div>
     <div class="form-group">
-        <label>Date: <input type="datetime-local" id="action-date"></label>
+        <label>Date: <input type="date" id="action-date" value="${defaultActionDate}"></label>
     </div>
     <div class="form-group">
         <label>Price: <input type="number" id="action-price"></label>
@@ -1106,8 +1458,9 @@ async function setActionMode(mode) {
     <div class="form-group">
         <label>Notes: <textarea id="action-notes"></textarea></label>
       </div>
-      <button onclick="saveNewAction(${campaignId})">Save Action</button>
+      <button id="save-new-action-btn" type="button" onclick="saveNewAction(${campaignId})">Save Action</button>
     `;
+    renderEmailAccountPicker("new-action-email-picker", pickerAccounts, exactEmails);
   } else {
     // Edit Mode
     const res = await fetch(`/api/campaigns/${campaignId}/actions`);
@@ -1135,18 +1488,16 @@ async function setActionMode(mode) {
 }
 
 async function loadActionForEdit(campaignId) {
+  const requestId = ++editActionLoadRequestId;
   const seq = document.getElementById("edit-seq-select").value;
   if (!seq) return;
   const res = await fetch(`/api/campaigns/${campaignId}/actions/${seq}`);
   const data = await res.json();
-
-  // Fetch HistoryEmailUsed for this record
-  const emailRes = await fetch(
-    `/api/campaigns/${campaignId}/actions/${seq}/emails`,
-  );
-  const usedEmails = await emailRes.json();
-  originalEmailCodes = usedEmails; // Store original
-  const emailCodes = usedEmails.join(", ");
+  if (requestId !== editActionLoadRequestId) return;
+  const usedEmails = Array.isArray(data.email_codes) ? data.email_codes : [];
+  const emailSource = data.email_source || "none";
+  const pickerAccounts = await loadEmailPickerAccounts();
+  if (requestId !== editActionLoadRequestId) return;
 
   const campaign = domains.find((d) => d.campaign_id == campaignId);
   const currentStatus = campaign ? campaign.status : "DORMANT";
@@ -1172,83 +1523,30 @@ async function loadActionForEdit(campaignId) {
       </label>
     </div>
     <div class="form-group">
-      <label>Date: <input type="datetime-local" id="edit-date" value="${data.action_date ? data.action_date.slice(0, 16) : ""}"></label>
+      <label>Date: <input type="date" id="edit-date" value="${formatDateInputValue(data.action_date)}"></label>
     </div>
     <div class="form-group">
       <label>Price: <input type="number" id="edit-price" value="${data.price_after}"></label>
     </div>
-    <div id="email-edit-container">
-    <div class="form-group">
-        <label>Email Used:<br>
-          <span id="email-display-text" style="font-weight: bold; margin-right: 10px;">${emailCodes}</span>
-          <button type="button" onclick="toggleEmailEditMode(true)">Edit</button>
-      </label>
-    </div>
-    </div>
+    ${emailPickerSectionMarkup("edit-action-email-picker")}
     <div class="form-group">
       <label>Notes: <textarea id="edit-notes">${data.notes || ""}</textarea></label>
     </div>
-    <button onclick="saveEditAction(${campaignId}, ${seq})">Save Changes</button>
+    <button id="save-edit-action-btn" type="button" onclick="saveEditAction(${campaignId}, ${seq})">Save Changes</button>
   `;
-}
-
-function toggleEmailEditMode(editing) {
-  const container = document.getElementById("email-edit-container");
-  const currentVal = document.getElementById("email-display-text").textContent;
-
-  if (editing) {
-    container.innerHTML = `
-      <div class="form-group">
-        <label>Email Used:<br>
-          <span style="font-weight: bold; margin-right: 10px;">${currentVal}</span>
-          <input type="text" id="edit-email-codes" value="${currentVal}">
-          <button type="button" onclick="saveEmailEdit()">Save</button>
-          <button type="button" onclick="cancelEmailEdit('${currentVal}')">Cancel</button>
-        </label>
-      </div>
-    `;
-  } else {
-    container.innerHTML = `
-      <div class="form-group">
-        <label>Email Used:<br>
-          <span id="email-display-text" style="font-weight: bold; margin-right: 10px;">${currentVal}</span>
-          <button type="button" onclick="toggleEmailEditMode(true)">Edit</button>
-        </label>
-      </div>
-    `;
-  }
-}
-
-function saveEmailEdit() {
-  const newVal = document.getElementById("edit-email-codes").value;
-  const container = document.getElementById("email-edit-container");
-  container.innerHTML = `
-    <div class="form-group">
-      <label>Email Used:<br>
-        <span id="email-display-text" style="font-weight: bold; margin-right: 10px;">${newVal}</span>
-        <button type="button" onclick="toggleEmailEditMode(true)">Edit</button>
-      </label>
-    </div>
-  `;
-}
-
-function cancelEmailEdit(originalVal) {
-  const container = document.getElementById("email-edit-container");
-  container.innerHTML = `
-    <div class="form-group">
-      <label>Email Used:<br>
-        <span id="email-display-text" style="font-weight: bold; margin-right: 10px;">${originalVal}</span>
-        <button type="button" onclick="toggleEmailEditMode(true)">Edit</button>
-      </label>
-    </div>
-  `;
+  renderEmailAccountPicker(
+    "edit-action-email-picker",
+    pickerAccounts,
+    usedEmails,
+    emailSource,
+  );
 }
 
 async function saveNewAction(campaignId) {
-  const emailCodes = document
-    .getElementById("email-display-text")
-    .textContent.split(/[,\s]+/)
-    .filter((c) => c.trim() !== "");
+  const saveButton = document.getElementById("save-new-action-btn");
+  if (saveButton && saveButton.disabled) return;
+
+  const emailCodes = getEmailPickerSelectedCodes("new-action-email-picker");
 
   if (emailCodes.length === 0) {
     alert(
@@ -1256,67 +1554,112 @@ async function saveNewAction(campaignId) {
     );
     return;
   }
+
+  if (saveButton) {
+    saveButton.disabled = true;
+    saveButton.textContent = "Saving…";
+  }
+
   const payload = {
     action_type: document.getElementById("action-type").value,
-    action_date: document.getElementById("action-date").value,
+    action_date: formatDateInputValue(document.getElementById("action-date").value),
     price_after: document.getElementById("action-price").value,
     notes: document.getElementById("action-notes").value,
     campaign_status: document.getElementById("action-status").value,
     email_codes: emailCodes,
   };
 
-  const res = await fetch(`/api/campaigns/${campaignId}/actions`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  try {
+    const res = await fetch(`/api/campaigns/${campaignId}/actions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
-  const result = await res.json().catch(() => ({}));
-  if (res.ok) {
-    alert("Action saved!");
-    closeActionModal();
-    renderDomainTable();
-  } else {
-    alert(result.error || "Failed to save action");
+    const result = await res.json().catch(() => ({}));
+    if (res.ok) {
+      alert("Action saved!");
+      closeActionModal();
+      try {
+        await renderDomainTable();
+      } catch (_error) {
+        // The action response was already confirmed; leave the saved state intact.
+      }
+    } else {
+      alert(result.error || "Unable to save action. Please review the form and try again.");
+    }
+  } catch (_error) {
+    alert(
+      "Could not confirm whether the action was saved. Refresh the campaign before trying again.",
+    );
+  } finally {
+    if (saveButton) {
+      saveButton.disabled = false;
+      saveButton.textContent = "Save Action";
+    }
   }
 }
 
 async function saveEditAction(campaignId, seq) {
-  const emailCodes = document
-    .getElementById("email-display-text")
-    .textContent.split(/[,\s]+/)
-    .filter((c) => c.trim() !== "");
+  const saveButton = document.getElementById("save-edit-action-btn");
+  if (saveButton && saveButton.disabled) return;
 
-  if (emailCodes.length === 0) {
+  const emailCodes = getEmailPickerSelectedCodes("edit-action-email-picker");
+  const emailPickerState = emailPickerStates.get("edit-action-email-picker");
+  const emailSelectionExplicitlyEdited = Boolean(
+    emailPickerState?.emailSelectionExplicitlyEdited,
+  );
+
+  if (emailSelectionExplicitlyEdited && emailCodes.length === 0) {
     alert(
       "No email account was entered. Please select at least one email account before saving.",
     );
     return;
   }
 
+  if (saveButton) {
+    saveButton.disabled = true;
+    saveButton.textContent = "Saving…";
+  }
+
   const payload = {
     action_type: document.getElementById("edit-type").value,
-    action_date: document.getElementById("edit-date").value,
+    action_date: formatDateInputValue(document.getElementById("edit-date").value),
     price_after: document.getElementById("edit-price").value,
     notes: document.getElementById("edit-notes").value,
     campaign_status: document.getElementById("edit-status").value,
-    email_codes: emailCodes,
   };
+  if (emailSelectionExplicitlyEdited) payload.email_codes = emailCodes;
 
-  const res = await fetch(`/api/campaigns/${campaignId}/actions/${seq}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  try {
+    const res = await fetch(`/api/campaigns/${campaignId}/actions/${seq}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
-  const result = await res.json().catch(() => ({}));
-  if (res.ok) {
-    alert("Changes saved!");
-    closeActionModal();
-    // Re-fetch domain table to update status, cache-bust
-    await renderDomainTable();
-  } else {
-    alert(result.error || "Failed to save changes");
+    const result = await res.json().catch(() => ({}));
+    if (res.ok) {
+      alert("Changes saved!");
+      closeActionModal();
+      // Re-fetch domain table to update status, cache-bust
+      try {
+        await renderDomainTable();
+      } catch (_error) {
+        // The action response was already confirmed; leave the saved state intact.
+      }
+    } else {
+      alert(result.error || "Unable to save action changes. Please review the form and try again.");
+    }
+  } catch (_error) {
+    alert(
+      "Could not confirm whether the action was saved. Refresh the campaign before trying again.",
+    );
+  } finally {
+    if (saveButton) {
+      saveButton.disabled = false;
+      saveButton.textContent = "Save Changes";
+    }
   }
 }
 

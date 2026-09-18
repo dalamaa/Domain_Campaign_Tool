@@ -11,6 +11,7 @@ from app.models.models import (
     HistoryEmailUsed,
     db,
 )
+from app.services.dashboard_campaign_context_service import build_campaign_context
 
 
 def add_campaign(domain_name="read-path.example.com", *, last_action=None):
@@ -152,6 +153,142 @@ def test_history_email_used_is_only_a_fallback_when_campaign_block_is_absent(cli
         db.session.add(history)
         db.session.flush()
         db.session.add(HistoryEmailUsed(history_id=history.id, email_code="T01"))
+        db.session.commit()
+
+        response = client.get("/api/domains")
+
+    assert domain_record(response, domain.domain_name)["latestEmails"] == "T01"
+
+
+def test_domain_email_used_tracks_edited_latest_history_without_rewriting_campaign_block(client, app):
+    with app.app_context():
+        domain, campaign = add_campaign("latest-history-edit.example.com")
+        db.session.add_all([
+            EmailAccount(code="M01", group="M", profile_order=1),
+            EmailAccount(code="M07", group="M", profile_order=2),
+            CampaignEmailBlock(campaign_id=campaign.id, email_code="M01"),
+        ])
+        history = CampaignHistory(
+            campaign_id=campaign.id,
+            sequence=1,
+            action_type=ActionType.FIRST_OUTREACH,
+            action_date=datetime.utcnow(),
+            price_after=399,
+        )
+        db.session.add(history)
+        db.session.flush()
+        db.session.add(HistoryEmailUsed(history_id=history.id, email_code="M01"))
+        db.session.commit()
+
+        before = client.get("/api/domains")
+        assert domain_record(before, domain.domain_name)["latestEmails"] == "M01"
+
+        response = client.put(f"/api/campaigns/{campaign.id}/actions/1", json={
+            "action_type": "FIRST_OUTREACH",
+            "action_date": "2026-09-16",
+            "price_after": 399,
+            "campaign_status": "ACTIVE",
+            "email_codes": ["M07"],
+        })
+        assert response.status_code == 200
+
+        after = client.get("/api/domains")
+        assert domain_record(after, domain.domain_name)["latestEmails"] == "M07"
+        assert [block.email_code for block in CampaignEmailBlock.query.filter_by(campaign_id=campaign.id)] == ["M01"]
+        assert build_campaign_context(campaign)["operational_emails"] == ["M07"]
+
+
+def test_editing_older_history_does_not_change_domain_latest_email_and_preserves_order(client, app):
+    with app.app_context():
+        domain, campaign = add_campaign("older-history-edit.example.com")
+        db.session.add_all([
+            EmailAccount(code="M01", group="M", profile_order=1),
+            EmailAccount(code="M05", group="M", profile_order=2),
+            EmailAccount(code="M07", group="M", profile_order=3),
+            EmailAccount(code="M08", group="M", profile_order=4),
+            EmailAccount(code="M09", group="M", profile_order=5),
+            EmailAccount(code="M10", group="M", profile_order=6),
+        ])
+        histories = [
+            CampaignHistory(
+                campaign_id=campaign.id,
+                sequence=1,
+                action_type=ActionType.FIRST_OUTREACH,
+                action_date=datetime.utcnow(),
+                price_after=399,
+            ),
+            CampaignHistory(
+                campaign_id=campaign.id,
+                sequence=2,
+                action_type=ActionType.FOLLOW_UP,
+                action_date=datetime.utcnow(),
+                price_after=399,
+            ),
+            CampaignHistory(
+                campaign_id=campaign.id,
+                sequence=3,
+                action_type=ActionType.FOLLOW_UP,
+                action_date=datetime.utcnow(),
+                price_after=399,
+            ),
+        ]
+        db.session.add_all(histories)
+        db.session.flush()
+        db.session.add_all([
+            HistoryEmailUsed(history_id=histories[0].id, email_code="M01"),
+            HistoryEmailUsed(history_id=histories[1].id, email_code="M05"),
+            HistoryEmailUsed(history_id=histories[2].id, email_code="M10"),
+        ])
+        db.session.commit()
+
+        response = client.put(f"/api/campaigns/{campaign.id}/actions/1", json={
+            "action_type": "FIRST_OUTREACH",
+            "action_date": "2026-09-16",
+            "price_after": 399,
+            "campaign_status": "ACTIVE",
+            "email_codes": ["M07"],
+        })
+        assert response.status_code == 200
+
+        domain_response = client.get("/api/domains")
+        assert domain_record(domain_response, domain.domain_name)["latestEmails"] == "M10"
+        assert [item.email_code for item in histories[0].history_email_used] == ["M07"]
+
+
+def test_domain_email_used_orders_multiple_latest_history_accounts_by_profile_order(client, app):
+    with app.app_context():
+        domain, campaign = add_campaign("multiple-latest-emails.example.com")
+        db.session.add_all([
+            EmailAccount(code="M09", group="M", profile_order=3),
+            EmailAccount(code="M07", group="M", profile_order=1),
+            EmailAccount(code="M08", group="M", profile_order=2),
+        ])
+        history = CampaignHistory(
+            campaign_id=campaign.id,
+            sequence=1,
+            action_type=ActionType.FIRST_OUTREACH,
+            action_date=datetime.utcnow(),
+            price_after=399,
+        )
+        db.session.add(history)
+        db.session.flush()
+        db.session.add_all([
+            HistoryEmailUsed(history_id=history.id, email_code="M09"),
+            HistoryEmailUsed(history_id=history.id, email_code="M07"),
+            HistoryEmailUsed(history_id=history.id, email_code="M08"),
+        ])
+        db.session.commit()
+
+        response = client.get("/api/domains")
+
+    assert domain_record(response, domain.domain_name)["latestEmails"] == "M07, M08, M09"
+
+
+def test_domain_email_used_preserves_campaign_block_fallback_without_history(client, app):
+    with app.app_context():
+        domain, campaign = add_campaign("no-history-block-fallback.example.com")
+        db.session.add(EmailAccount(code="T01", group="T", profile_order=1))
+        db.session.add(CampaignEmailBlock(campaign_id=campaign.id, email_code="T01"))
         db.session.commit()
 
         response = client.get("/api/domains")
