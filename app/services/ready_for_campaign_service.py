@@ -36,6 +36,11 @@ def get_ready_for_campaign_days():
 def update_ready_for_campaign_days(value):
     """Validate and persist the cooldown threshold."""
     value = _validate_ready_days(value)
+    from app.services.campaign_temperature_service import (
+        validate_ready_threshold_against_stored,
+    )
+
+    value = validate_ready_threshold_against_stored(value)
     set_setting(READY_FOR_CAMPAIGN_SETTING, str(value))
     return value
 

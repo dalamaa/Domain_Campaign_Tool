@@ -19,7 +19,11 @@
   </section>
   <!-- Suggested Work -->
   <section class="suggested-work">
-    <h2>Suggested Work <span id="dashboard-section-order-status" role="status" aria-live="polite"></span></h2>
+    <h2>
+      Suggested Work
+      <button class="btn btn-secondary dashboard-refresh-button" id="dashboard-refresh-button" type="button" onclick="refreshDashboard()">Refresh</button>
+      <span id="dashboard-section-order-status" role="status" aria-live="polite"></span>
+    </h2>
     <div class="accordion dashboard-section" data-dashboard-section="first_followups">
       <button class="accordion-toggle" type="button" onclick="toggleAccordion('first-followup')">
         <span class="dashboard-section-drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag First Follow-ups">⋮⋮</span>
@@ -33,6 +37,13 @@
         Normal Follow-ups (<span id="normal-followup-count">0</span>)
       </button>
       <div id="normal-followup" class="content"></div>
+    </div>
+    <div class="accordion dashboard-section" data-dashboard-section="cooling">
+      <button class="accordion-toggle" type="button" onclick="toggleAccordion('cooling')">
+        <span class="dashboard-section-drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag Cooling">⋮⋮</span>
+        Cooling (<span id="cooling-count">0</span>)
+      </button>
+      <div id="cooling" class="content"></div>
     </div>
     <div class="accordion dashboard-section" data-dashboard-section="resting_suggestions">
       <button class="accordion-toggle" type="button" onclick="toggleAccordion('resting-suggestions')">

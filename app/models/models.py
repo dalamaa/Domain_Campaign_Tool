@@ -29,6 +29,11 @@ class ReservationStatus(enum.Enum):
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
 
+class TeamMemberType(enum.Enum):
+    STAFF = "STAFF"
+    WORKER = "WORKER"
+    COLLEAGUE = "COLLEAGUE"
+
 class Domain(db.Model):
     __tablename__ = 'domains'
     id = db.Column(Integer, primary_key=True)
@@ -161,3 +166,33 @@ class Setting(db.Model):
     __tablename__ = 'settings'
     key = db.Column(String, primary_key=True)
     value = db.Column(String)
+
+class TeamMember(db.Model):
+    __tablename__ = 'team_members'
+    id = db.Column(Integer, primary_key=True)
+    name = db.Column(String, nullable=False, index=True)
+    member_type = db.Column(
+        Enum(TeamMemberType, name='teammembertype'),
+        nullable=False,
+        index=True,
+    )
+    created_at = db.Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    assignments = relationship('TeamDomainAssignment', back_populates='team_member')
+
+class TeamDomainAssignment(db.Model):
+    __tablename__ = 'team_domain_assignments'
+    id = db.Column(Integer, primary_key=True)
+    team_member_id = db.Column(Integer, ForeignKey('team_members.id'), nullable=False, index=True)
+    domain_name = db.Column(String, nullable=False, index=True)
+    assigned_date = db.Column(Date, nullable=True, index=True)
+    expiry_date = db.Column(Date, nullable=True, index=True)
+    created_at = db.Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    team_member = relationship('TeamMember', back_populates='assignments')

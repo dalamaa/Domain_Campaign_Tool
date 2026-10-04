@@ -29,7 +29,12 @@ def test_resting_suggestions_returns_only_active_eligible_campaigns(client, app,
     today = date(2026, 9, 5)
     monkeypatch.setattr("app.services.time_service.get_business_today", lambda: today)
     with app.app_context():
-        eligible = add_campaign("eligible.example.com", CampaignStatus.ACTIVE, sequence=6)
+        eligible = add_campaign(
+            "eligible.example.com",
+            CampaignStatus.ACTIVE,
+            sequence=6,
+            last_contact_date=today - timedelta(days=10),
+        )
         add_campaign("below-threshold.example.com", CampaignStatus.ACTIVE, sequence=5)
         add_campaign("resting.example.com", CampaignStatus.RESTING, sequence=9)
         add_campaign("dormant.example.com", CampaignStatus.DORMANT, sequence=9)
@@ -51,16 +56,16 @@ def test_resting_suggestions_uses_persisted_settings_and_or_semantics(client, ap
     with app.app_context():
         update_resting_eligibility_config({
             "sequence": {"enabled": False, "threshold": 99},
-            "days_since_last_contact": {"enabled": True, "threshold": 50},
-            "campaign_age": {"enabled": True, "threshold": 50},
+            "days_since_last_contact": {"enabled": True, "threshold": 20},
+            "campaign_age": {"enabled": True, "threshold": 20},
             "known_activity_age": {"enabled": False, "threshold": 50},
         })
         campaign = add_campaign(
             "multi-trigger.example.com",
             CampaignStatus.ACTIVE,
             sequence=2,
-            start_date=today - timedelta(days=50),
-            last_contact_date=today - timedelta(days=50),
+            start_date=today - timedelta(days=20),
+            last_contact_date=today - timedelta(days=20),
         )
         add_campaign("ineligible.example.com", CampaignStatus.ACTIVE, sequence=99)
         db.session.commit()
@@ -71,13 +76,13 @@ def test_resting_suggestions_uses_persisted_settings_and_or_semantics(client, ap
     assert suggestion["triggered_by"] == ["days_since_last_contact", "campaign_age"]
     assert suggestion["eligibility_metrics"] == {
         "current_sequence": 2,
-        "days_since_last_contact": 50,
-        "campaign_age_days": 50,
+        "days_since_last_contact": 20,
+        "campaign_age_days": 20,
         "known_activity_age_days": None,
     }
     assert suggestion["trigger_thresholds"] == {
-        "days_since_last_contact": 50,
-        "campaign_age": 50,
+        "days_since_last_contact": 20,
+        "campaign_age": 20,
     }
     assert all(reason["text"] for reason in suggestion["trigger_reasons"])
 
@@ -91,7 +96,7 @@ def test_resting_suggestions_returns_null_metrics_and_expiry_context(client, app
             CampaignStatus.ACTIVE,
             sequence=1,
             start_date=None,
-            last_contact_date=None,
+            last_contact_date=today - timedelta(days=10),
             expiry_date=today + timedelta(days=12),
         )
         db.session.add(CampaignHistory(
@@ -112,7 +117,7 @@ def test_resting_suggestions_returns_null_metrics_and_expiry_context(client, app
 
     suggestion = response.get_json()["suggestions"][0]
     assert suggestion["eligibility_metrics"]["campaign_age_days"] is None
-    assert suggestion["eligibility_metrics"]["days_since_last_contact"] is None
+    assert suggestion["eligibility_metrics"]["days_since_last_contact"] == 10
     assert suggestion["eligibility_metrics"]["known_activity_age_days"] == 57
     assert suggestion["expiry_date"] == (today + timedelta(days=12)).isoformat()
     assert suggestion["days_until_expiry"] == 12

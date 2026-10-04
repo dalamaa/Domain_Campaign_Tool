@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="team-domains-page">
+  <div class="team-domains-header">
+    <div>
+      <h2>Team Domains</h2>
+      <p class="muted">A lightweight oversight register for domains assigned to people outside the main campaign table.</p>
+    </div>
+    <div class="team-domains-actions">
+      <button class="btn btn-secondary" type="button" id="add-team-member-button">Add Member</button>
+      <button class="btn btn-primary" type="button" id="add-team-assignment-button">Add Assignment</button>
+    </div>
+  </div>
+
+  <section class="team-domain-panel" aria-labelledby="team-domain-assignment-heading">
+    <div class="team-domain-panel-header">
+      <div>
+        <h3 id="team-domain-assignment-heading">Assignments</h3>
+        <p class="muted">Campaign age is calculated from the assigned date using the business date.</p>
+      </div>
+      <span id="team-domain-count" class="muted" aria-live="polite"></span>
+    </div>
+    <div class="team-domain-filters">
+      <label>
+        Search domain
+        <input id="team-domain-search" type="search" placeholder="Search domain name" autocomplete="off" />
+      </label>
+      <label>
+        Team member
+        <select id="team-member-filter">
+          <option value="">All team members</option>
+        </select>
+      </label>
+      <button class="btn btn-secondary" type="button" id="refresh-team-domains-button">Refresh</button>
+    </div>
+    <div class="table-scroll">
+      <table class="team-domain-table" id="team-domain-table">
+        <thead>
+          <tr>
+            <th><button class="team-domain-sort" type="button" data-sort-key="team_member_name">Person</button></th>
+            <th><button class="team-domain-sort" type="button" data-sort-key="domain_name">Domain</button></th>
+            <th><button class="team-domain-sort" type="button" data-sort-key="assigned_date">Assigned</button></th>
+            <th><button class="team-domain-sort" type="button" data-sort-key="expiry_date">Expiry</button></th>
+            <th><button class="team-domain-sort" type="button" data-sort-key="campaign_age_days">Campaign Age</button></th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="team-domain-table-body"></tbody>
+      </table>
+    </div>
+    <p id="team-domain-empty" class="muted" hidden>No team domain assignments match the current filters.</p>
+  </section>
+
+  <section class="team-domain-panel team-member-management" aria-labelledby="team-member-heading">
+    <div class="team-domain-panel-header">
+      <div>
+        <h3 id="team-member-heading">Team Members</h3>
+        <p class="muted">Members with assignments must be cleared or reassigned before removal.</p>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table class="team-domain-table" id="team-member-table">
+        <thead>
+          <tr><th>Name</th><th>Type</th><th>Assignments</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="team-member-table-body"></tbody>
+      </table>
+    </div>
+    <p id="team-member-empty" class="muted" hidden>No team members have been added.</p>
+  </section>
+</div>
+
+<div class="team-domain-dialog" id="team-member-dialog" hidden>
+  <div class="team-domain-dialog-card" role="dialog" aria-modal="true" aria-labelledby="team-member-dialog-title">
+    <div class="team-domain-panel-header">
+      <h3 id="team-member-dialog-title">Add Team Member</h3>
+      <button class="btn btn-subtle" type="button" data-close-dialog="team-member-dialog">Close</button>
+    </div>
+    <form id="team-member-form" class="team-domain-form">
+      <input id="team-member-id" type="hidden" />
+      <label>Name <input id="team-member-name" type="text" required maxlength="255" /></label>
+      <label>Type
+        <select id="team-member-type" required>
+          <option value="STAFF">Staff</option>
+          <option value="WORKER">Worker</option>
+          <option value="COLLEAGUE">Colleague</option>
+        </select>
+      </label>
+      <p id="team-member-form-error" class="form-error" role="alert"></p>
+      <div class="team-domain-form-actions">
+        <button class="btn btn-primary" type="submit">Save Member</button>
+        <button class="btn btn-secondary" type="button" data-close-dialog="team-member-dialog">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="team-domain-dialog" id="team-assignment-dialog" hidden>
+  <div class="team-domain-dialog-card" role="dialog" aria-modal="true" aria-labelledby="team-assignment-dialog-title">
+    <div class="team-domain-panel-header">
+      <h3 id="team-assignment-dialog-title">Add Assignment</h3>
+      <button class="btn btn-subtle" type="button" data-close-dialog="team-assignment-dialog">Close</button>
+    </div>
+    <div class="team-domain-mode-tabs" id="team-assignment-mode-tabs" role="tablist" aria-label="Assignment mode">
+      <button class="btn btn-secondary team-domain-mode-tab" id="team-assignment-mode-single" type="button" role="tab" aria-selected="true" aria-controls="team-assignment-form" data-assignment-mode="single">Single</button>
+      <button class="btn btn-secondary team-domain-mode-tab" id="team-assignment-mode-bulk" type="button" role="tab" aria-selected="false" aria-controls="bulk-team-assignment-form" data-assignment-mode="bulk">Bulk</button>
+    </div>
+    <form id="team-assignment-form" class="team-domain-form">
+      <input id="team-assignment-id" type="hidden" />
+      <label>Team member
+        <select id="team-assignment-member" required></select>
+      </label>
+      <label>Domain name <input id="team-assignment-domain" type="text" required maxlength="255" /></label>
+      <label>Assigned date (optional) <input id="team-assignment-assigned-date" type="date" /></label>
+      <label>Expiry date (optional) <input id="team-assignment-expiry-date" type="date" /></label>
+      <p id="team-assignment-form-error" class="form-error" role="alert"></p>
+      <div class="team-domain-form-actions">
+        <button class="btn btn-primary" type="submit">Save Assignment</button>
+        <button class="btn btn-secondary" type="button" data-close-dialog="team-assignment-dialog">Cancel</button>
+      </div>
+    </form>
+    <form id="bulk-team-assignment-form" class="team-domain-form" hidden>
+      <label>Team member
+        <select id="bulk-team-assignment-member" required></select>
+      </label>
+      <label>Domains
+        <textarea id="bulk-team-assignment-domains" rows="8" required placeholder="example.com\nexample.net"></textarea>
+        <span id="bulk-team-assignment-helper" class="team-domain-field-help">One domain per line</span>
+      </label>
+      <label>Assigned date (optional) <input id="bulk-team-assignment-assigned-date" type="date" /></label>
+      <label>Expiry date (optional) <input id="bulk-team-assignment-expiry-date" type="date" /></label>
+      <p id="bulk-team-assignment-form-error" class="form-error" role="alert"></p>
+      <div class="team-domain-form-actions">
+        <button class="btn btn-primary" type="submit">Add Assignments</button>
+        <button class="btn btn-secondary" type="button" data-close-dialog="team-assignment-dialog">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/shared.js') }}"></script>
+<script src="{{ url_for('static', filename='js/pages/team_domains.js') }}"></script>
+{% endblock %}

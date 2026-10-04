@@ -14,7 +14,10 @@ def email_accounts():
 def domains():
     return render_template('domains.html')
 
+@bp.route('/team-domains')
+def team_domains():
+    return render_template('team_domains.html')
+
 @bp.route('/settings')
 def settings():
     return render_template('settings.html')
-

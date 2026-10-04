@@ -274,6 +274,7 @@ function updateDomainActionBar() {
   const bulkEditBtn = document.getElementById("bulk-edit-btn");
   const actionBtn = document.getElementById("action-btn");
   const exportSelectedBtn = document.getElementById("export-selected-btn");
+  const restSelectedBtn = document.getElementById("rest-selected-btn");
   const resetBtn = document.getElementById("reset-campaign-btn");
 
   // Edit button: enabled exactly 1 record selected
@@ -287,7 +288,14 @@ function updateDomainActionBar() {
   if (exportSelectedBtn && !selectedExportInProgress) {
     exportSelectedBtn.disabled = count === 0;
   }
-  if (resetBtn) resetBtn.disabled = count !== 1;
+  if (resetBtn) {
+    resetBtn.disabled = count === 0;
+    resetBtn.textContent = count === 0 ? "Reset Campaign" : `Reset Campaign (${count})`;
+  }
+  if (restSelectedBtn) {
+    restSelectedBtn.disabled = count === 0;
+    restSelectedBtn.textContent = count === 0 ? "Rest Campaign" : `Rest Campaign (${count})`;
+  }
 
   // Delete button: enabled if anything is selected
   if (delBtn) delBtn.disabled = count === 0;
@@ -341,6 +349,47 @@ async function exportSelectedDomains() {
   }
 }
 
+async function restSelectedCampaigns() {
+  const selected = Array.from(selectedDomains);
+  if (selected.length === 0) return;
+
+  const names = domains
+    .filter((domain) => selectedDomains.has(domain.id))
+    .map((domain) => domain.domain);
+  const namePreview = names.slice(0, 5).join(", ");
+  const suffix = names.length > 5 ? ", …" : "";
+  const message = selected.length === 1
+    ? `Move ${namePreview || "this campaign"} to Resting?`
+    : `Move ${selected.length} selected campaigns to Resting?\n\n${namePreview}${suffix}`;
+  if (!confirm(message)) return;
+
+  const button = document.getElementById("rest-selected-btn");
+  if (button) button.disabled = true;
+  try {
+    const response = await fetch("/api/campaigns/bulk-rest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ domain_ids: selected }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(result.error || "Unable to move the selected campaigns to Resting.");
+    }
+
+    selected.forEach((id) => selectedDomains.delete(id));
+    await renderDomainTable();
+    showToast(
+      result.count === 1
+        ? `${result.domain_names?.[0] || namePreview} moved to Resting.`
+        : `${result.count} campaigns moved to Resting.`,
+    );
+  } catch (error) {
+    showToast(error.message || "Unable to move the selected campaigns to Resting.", "error");
+  } finally {
+    updateDomainActionBar();
+  }
+}
+
 function selectedDomainRecord() {
   const id = Array.from(selectedDomains)[0];
   return domains.find((domain) => domain.id == id) || null;
@@ -351,39 +400,56 @@ function campaignIdForDomainRecord(record) {
 }
 
 async function resetSelectedCampaign() {
-  if (selectedDomains.size !== 1) return;
-  const record = selectedDomainRecord();
-  const campaignId = campaignIdForDomainRecord(record);
-  if (!record || campaignId == null) {
-    alert("This domain has no campaign to reset.");
-    return;
+  const selected = Array.from(selectedDomains);
+  if (selected.length === 0) return;
+
+  const records = domains.filter((domain) => selectedDomains.has(domain.id));
+  const names = records.map((domain) => domain.domain).filter(Boolean);
+  const preview = names.slice(0, 5).join("\n");
+  const suffix = names.length > 5 ? "\n…" : "";
+  const lifecycleExplanation =
+    "The current campaign lifecycle will be replaced with a clean DORMANT lifecycle. " +
+    "Its history, associated email accounts, and reservations will be removed. " +
+    "Older lifecycles and domain data will remain.";
+  const confirmation = selected.length === 1
+    ? `Reset Campaign?\n\n${names[0] || "This campaign"}\n\n${lifecycleExplanation}`
+    : `Reset ${selected.length} Campaigns?\n\n${preview || `${selected.length} selected campaigns`}${suffix}\n\n${lifecycleExplanation}`;
+  if (!confirm(confirmation)) return;
+
+  // Preserve the existing single-campaign confirmation safeguard.
+  if (selected.length === 1 && names[0]) {
+    const typed = prompt(`Type ${names[0]} to confirm the campaign reset:`);
+    if (typed === null || typed.trim().toLowerCase() !== names[0].trim().toLowerCase()) {
+      showToast("Campaign reset cancelled. The domain name did not match.", "error");
+      return;
+    }
   }
 
-  const confirmed = confirm(
-    `Reset campaign for ${record.domain}?\n\n` +
-      "This permanently removes the current campaign's:\n" +
-      "- history\n- associated email accounts\n" +
-      "- sequence/price/contact state\n- reservations\n\n" +
-      "The Domain itself, expiry date, and domain-level data will remain.",
-  );
-  if (!confirmed) return;
+  const button = document.getElementById("reset-campaign-btn");
+  if (button) button.disabled = true;
+  try {
+    const response = await fetch("/api/campaigns/bulk-reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ domain_ids: selected }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(result.error || "Unable to reset campaigns.");
+    }
 
-  const typed = prompt(`Type ${record.domain} to confirm the campaign reset:`);
-  if (typed === null || typed.trim().toLowerCase() !== record.domain.trim().toLowerCase()) {
-    alert("Campaign reset cancelled. The domain name did not match.");
-    return;
+    selected.forEach((id) => selectedDomains.delete(id));
+    await renderDomainTable();
+    showToast(
+      result.count === 1
+        ? `${result.domain_names?.[0] || names[0] || "Campaign"} campaign reset.`
+        : `${result.count} campaigns reset.`,
+    );
+  } catch (error) {
+    showToast(error.message || "Unable to reset campaigns.", "error");
+  } finally {
+    updateDomainActionBar();
   }
-
-  const response = await fetch(`/api/campaigns/${campaignId}/reset`, { method: "POST" });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    alert(result.error || "Unable to reset campaign.");
-    return;
-  }
-  selectedDomains.delete(record.id);
-  updateDomainActionBar();
-  alert(`Campaign for ${record.domain} was reset.`);
-  await renderDomainTable();
 }
 
 // 2. Add bulkEditSelected function

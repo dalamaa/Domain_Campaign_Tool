@@ -10,6 +10,7 @@ from app.services.ready_for_campaign_service import (
     update_ready_for_campaign_days,
 )
 from app.services.settings_service import update_resting_eligibility_config
+from app.services.campaign_temperature_service import update_campaign_temperature_config
 
 
 TODAY = date(2026, 9, 5)
@@ -58,14 +59,14 @@ def test_ready_setting_defaults_persists_and_loads(client, app):
 @pytest.mark.parametrize("value", [None, "", "60", -1, True, 3651, 1.5])
 def test_ready_setting_rejects_invalid_values(client, app, value):
     with app.app_context():
-        update_ready_for_campaign_days(30)
+        update_ready_for_campaign_days(60)
         response = client.post(
             "/api/settings/ready-for-campaign-days",
             json={"ready_for_campaign_days": value},
         )
         assert response.status_code == 400
         assert client.get("/api/settings/ready-for-campaign-days").get_json() == {
-            "ready_for_campaign_days": 30
+            "ready_for_campaign_days": 60
         }
 
 
@@ -172,6 +173,7 @@ def test_ready_endpoint_applies_dormant_and_resting_rules(client, app, monkeypat
 def test_ready_contact_threshold_applies_to_active_and_resting_without_resetting_at_rest(client, app, monkeypatch):
     monkeypatch.setattr("app.services.time_service.get_business_today", lambda: TODAY)
     with app.app_context():
+        update_campaign_temperature_config(10, 20, 30)
         update_ready_for_campaign_days(30)
         active_domain = add_domain("active-threshold.example.com", TODAY + timedelta(days=20))
         active = add_campaign(
@@ -239,7 +241,7 @@ def test_stale_active_can_overlap_resting_suggestions(client, app, monkeypatch):
         resting = client.get("/api/dashboard/resting-suggestions").get_json()
 
     assert campaign.id in {item["campaign_id"] for item in ready["domains"]}
-    assert campaign.id in {item["campaign_id"] for item in resting["suggestions"]}
+    assert campaign.id not in {item["campaign_id"] for item in resting["suggestions"]}
 
 
 def test_ready_endpoint_excludes_unavailable_domains_and_is_read_only(client, app, monkeypatch):

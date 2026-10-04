@@ -9,6 +9,7 @@ DASHBOARD_SECTION_ORDER_SETTING = "DASHBOARD_SECTION_ORDER"
 DEFAULT_DASHBOARD_SECTION_ORDER = (
     "first_followups",
     "normal_followups",
+    "cooling",
     "resting_suggestions",
     "expiring_soon",
     "ready_for_campaign",

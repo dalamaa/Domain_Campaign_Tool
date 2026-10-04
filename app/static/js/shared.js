@@ -11,6 +11,22 @@ if (typeof window !== "undefined" && typeof window.fetch === "function") {
   };
 }
 
+function showToast(message, kind = "success") {
+  if (typeof document === "undefined") return;
+  let container = document.getElementById("app-toast-container");
+  if (!container) {
+    container = document.createElement("div");
+    container.id = "app-toast-container";
+    container.setAttribute("aria-live", "polite");
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement("div");
+  toast.className = `app-toast app-toast-${kind}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+  window.setTimeout(() => toast.remove(), 3500);
+}
+
 const allEmailCodes = [
   "D03",
   "D04",

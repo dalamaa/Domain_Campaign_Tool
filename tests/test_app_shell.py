@@ -8,6 +8,7 @@ DASHBOARD_JS = Path("app/static/js/pages/dashboard.js")
 PAGE_ROUTES = (
     ("Dashboard", "/"),
     ("Domains", "/domains"),
+    ("Team Domains", "/team-domains"),
     ("Email Accounts", "/email-accounts"),
     ("Settings", "/settings"),
 )

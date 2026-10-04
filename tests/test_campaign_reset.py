@@ -175,3 +175,133 @@ def test_reset_missing_campaign_is_clean_json_error(client):
     assert response.status_code == 404
     assert response.is_json
     assert response.json == {"success": False, "error": "Campaign not found."}
+
+
+def _simple_campaign(domain_name, status=CampaignStatus.ACTIVE):
+    domain = Domain(domain_name=domain_name)
+    db.session.add(domain)
+    db.session.flush()
+    campaign = Campaign(
+        domain_id=domain.id,
+        status=status,
+        start_date=date(2026, 1, 1),
+        last_contact_date=date(2026, 2, 1),
+        current_price=125,
+        current_sequence=3,
+        created_at=datetime(2026, 3, 1),
+    )
+    db.session.add(campaign)
+    db.session.flush()
+    return campaign, domain
+
+
+def test_bulk_reset_replaces_one_or_more_current_campaigns_atomically(client, app):
+    with app.app_context():
+        first_ids = _lifecycle_fixture(app)
+        second, second_domain = _simple_campaign("bulk-reset-second.example")
+        second_id, second_domain_id = second.id, second_domain.id
+        db.session.commit()
+
+    response = client.post(
+        "/api/campaigns/bulk-reset",
+        json={"domain_ids": [first_ids["domain_id"], second_domain_id]},
+    )
+    assert response.status_code == 200
+    result = response.json
+    assert result["count"] == 2
+    assert result["domain_names"] == ["reset.example.com", "bulk-reset-second.example"]
+
+    with app.app_context():
+        first_replacement = db.session.get(Campaign, result["campaign_ids"][0])
+        second_replacement = db.session.get(Campaign, result["campaign_ids"][1])
+        assert first_replacement.status == CampaignStatus.DORMANT
+        assert second_replacement.status == CampaignStatus.DORMANT
+        assert db.session.get(Campaign, first_ids["current_id"]) is None
+        assert db.session.get(Campaign, second_id) is None
+        assert db.session.get(Campaign, first_ids["older_id"]) is not None
+        assert db.session.get(CampaignHistory, first_ids["old_history_id"]) is not None
+
+
+def test_bulk_reset_validates_all_selected_campaigns_before_mutating(client, app):
+    with app.app_context():
+        valid, valid_domain = _simple_campaign("bulk-reset-valid.example")
+        invalid_domain = Domain(domain_name="bulk-reset-invalid.example")
+        db.session.add(invalid_domain)
+        db.session.flush()
+        valid_id, valid_domain_id = valid.id, valid_domain.id
+        invalid_domain_id = invalid_domain.id
+        db.session.commit()
+
+    response = client.post(
+        "/api/campaigns/bulk-reset",
+        json={"domain_ids": [valid_domain_id, invalid_domain_id]},
+    )
+    assert response.status_code == 409
+    assert "bulk-reset-invalid.example" in response.json["error"]
+
+    with app.app_context():
+        assert db.session.get(Campaign, valid_id) is not None
+        assert db.session.get(Domain, invalid_domain_id) is not None
+
+
+def test_bulk_reset_rejects_stale_selected_domain_without_changes(client, app):
+    with app.app_context():
+        campaign, domain = _simple_campaign("bulk-reset-stale.example")
+        campaign_id, domain_id = campaign.id, domain.id
+        db.session.commit()
+
+    response = client.post(
+        "/api/campaigns/bulk-reset",
+        json={"domain_ids": [domain_id, 999999]},
+    )
+    assert response.status_code == 409
+    assert "no longer exist" in response.json["error"]
+    with app.app_context():
+        assert db.session.get(Campaign, campaign_id) is not None
+
+
+def test_bulk_reset_commits_once(client, app, monkeypatch):
+    with app.app_context():
+        first, first_domain = _simple_campaign("bulk-reset-commit-a.example")
+        second, second_domain = _simple_campaign("bulk-reset-commit-b.example")
+        first_domain_id, second_domain_id = first_domain.id, second_domain.id
+        db.session.commit()
+
+        original_commit = db.session.commit
+        commit_calls = []
+
+        def counting_commit():
+            commit_calls.append(True)
+            return original_commit()
+
+        monkeypatch.setattr(db.session, "commit", counting_commit)
+        response = client.post(
+            "/api/campaigns/bulk-reset",
+            json={"domain_ids": [first_domain_id, second_domain_id]},
+        )
+
+    assert response.status_code == 200
+    assert len(commit_calls) == 1
+
+
+def test_bulk_reset_rolls_back_when_commit_fails(client, app, monkeypatch):
+    with app.app_context():
+        campaign, domain = _simple_campaign("bulk-reset-rollback.example")
+        campaign_id, domain_id = campaign.id, domain.id
+        db.session.commit()
+
+        def fail_commit():
+            raise SQLAlchemyError("simulated reset failure")
+
+        monkeypatch.setattr(db.session, "commit", fail_commit)
+        response = client.post(
+            "/api/campaigns/bulk-reset",
+            json={"domain_ids": [domain_id]},
+        )
+
+        assert response.status_code == 500
+        assert response.json == {
+            "success": False,
+            "error": "Unable to reset campaigns. No changes were saved.",
+        }
+        assert db.session.get(Campaign, campaign_id) is not None
