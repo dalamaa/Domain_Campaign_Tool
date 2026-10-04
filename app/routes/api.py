@@ -1101,6 +1101,35 @@ def reset_campaign(campaign_id):
             'error': 'Unable to reset campaign. No changes were saved.',
         }), 500
 
+
+@bp.route('/campaigns/bulk-reset', methods=['POST'])
+def bulk_reset_campaigns_route():
+    from sqlalchemy.exc import SQLAlchemyError
+    from app.services.campaign_reset_service import (
+        CampaignResetError,
+        bulk_reset_campaigns,
+    )
+
+    data = request.get_json(silent=True) or {}
+    try:
+        result = bulk_reset_campaigns(data.get('domain_ids'))
+        return jsonify({'success': True, **result})
+    except CampaignResetError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), exc.status_code
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': 'Unable to reset campaigns. No changes were saved.',
+        }), 500
+    except Exception:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': 'Unable to reset campaigns. No changes were saved.',
+        }), 500
+
 @bp.route('/settings/reset-config', methods=['GET'])
 def get_reset_config():
     from app.services.settings_service import get_setting
