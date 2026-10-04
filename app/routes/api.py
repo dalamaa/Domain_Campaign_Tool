@@ -30,6 +30,21 @@ def _parse_campaign_action_date(value):
     return datetime.fromisoformat(raw_value.replace('Z', ''))
 
 
+def _parse_team_domain_date(value, field_name):
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field_name} is required.")
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError as exc:
+        raise ValueError(f"{field_name} must be an ISO date (YYYY-MM-DD).") from exc
+
+
+def _parse_positive_id(value, field_name):
+    if type(value) is not int or value <= 0:
+        raise ValueError(f"{field_name} must be a positive integer.")
+    return value
+
+
 @bp.route('/backup/export.xlsx', methods=['GET'])
 def export_backup_xlsx():
     from app.services.backup_export_service import build_xlsx_export, export_filename
@@ -524,6 +539,179 @@ def save_campaign_temperature_settings():
         return jsonify({'success': True, **config})
     except (TypeError, ValueError) as exc:
         return jsonify({'error': str(exc)}), 400
+
+
+@bp.route('/settings/team-domains', methods=['GET'])
+def get_team_domain_settings():
+    from app.services.team_domains_service import get_team_domain_config
+
+    try:
+        return jsonify(get_team_domain_config())
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@bp.route('/settings/team-domains', methods=['POST'])
+def save_team_domain_settings():
+    from app.services.team_domains_service import update_team_domain_config
+
+    data = request.get_json(silent=True)
+    try:
+        if not isinstance(data, dict) or set(data) != {'warning_days', 'rest_days'}:
+            raise ValueError(
+                'Team Domains settings must contain warning_days and rest_days.'
+            )
+        config = update_team_domain_config(data['warning_days'], data['rest_days'])
+        return jsonify({'success': True, **config})
+    except (TypeError, ValueError) as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@bp.route('/team-members', methods=['GET'])
+def get_team_members():
+    from app.services.team_domains_service import list_team_members, serialize_team_member
+
+    return jsonify([serialize_team_member(member) for member in list_team_members()])
+
+
+@bp.route('/team-members', methods=['POST'])
+def add_team_member():
+    from app.services.team_domains_service import create_team_member, serialize_team_member
+
+    data = request.get_json(silent=True)
+    try:
+        if not isinstance(data, dict):
+            raise ValueError('Team member data must be an object.')
+        member = create_team_member(data.get('name'), data.get('member_type'))
+        return jsonify({'success': True, 'member': serialize_team_member(member)}), 201
+    except (TypeError, ValueError) as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@bp.route('/team-members/<int:member_id>', methods=['PUT'])
+def edit_team_member(member_id):
+    from app.services.team_domains_service import update_team_member, serialize_team_member
+
+    data = request.get_json(silent=True)
+    try:
+        if not isinstance(data, dict):
+            raise ValueError('Team member data must be an object.')
+        member = update_team_member(
+            member_id,
+            data.get('name'),
+            data.get('member_type'),
+        )
+        return jsonify({'success': True, 'member': serialize_team_member(member)})
+    except Exception as exc:
+        from app.services.team_domains_service import TeamDomainNotFoundError, TeamDomainValidationError
+
+        if isinstance(exc, TeamDomainNotFoundError):
+            return jsonify({'error': str(exc)}), 404
+        if isinstance(exc, TeamDomainValidationError):
+            return jsonify({'error': str(exc)}), 409
+        if isinstance(exc, (TypeError, ValueError)):
+            return jsonify({'error': str(exc)}), 400
+        raise
+
+
+@bp.route('/team-members/<int:member_id>', methods=['DELETE'])
+def remove_team_member(member_id):
+    from app.services.team_domains_service import (
+        TeamDomainNotFoundError,
+        TeamDomainValidationError,
+        delete_team_member,
+    )
+
+    try:
+        delete_team_member(member_id)
+        return jsonify({'success': True})
+    except TeamDomainNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except TeamDomainValidationError as exc:
+        return jsonify({'error': str(exc)}), 409
+
+
+@bp.route('/team-domain-assignments', methods=['GET'])
+@bp.route('/team-domains', methods=['GET'])
+def get_team_domain_assignments():
+    from app.services.team_domains_service import list_assignments
+
+    raw_member_id = request.args.get('team_member_id')
+    try:
+        member_id = None
+        if raw_member_id not in (None, ''):
+            member_id = _parse_positive_id(int(raw_member_id), 'team_member_id')
+        return jsonify(list_assignments(
+            search=request.args.get('search'),
+            team_member_id=member_id,
+        ))
+    except (TypeError, ValueError) as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@bp.route('/team-domain-assignments', methods=['POST'])
+@bp.route('/team-domains', methods=['POST'])
+def add_team_domain_assignment():
+    from app.services.team_domains_service import create_assignment, serialize_assignment
+
+    data = request.get_json(silent=True)
+    try:
+        if not isinstance(data, dict):
+            raise ValueError('Team domain assignment data must be an object.')
+        assignment = create_assignment(
+            _parse_positive_id(data.get('team_member_id'), 'team_member_id'),
+            data.get('domain_name'),
+            _parse_team_domain_date(data.get('assigned_date'), 'Assigned date'),
+            _parse_team_domain_date(data.get('expiry_date'), 'Expiry date'),
+        )
+        return jsonify({'success': True, 'assignment': serialize_assignment(assignment)}), 201
+    except Exception as exc:
+        from app.services.team_domains_service import TeamDomainNotFoundError
+
+        if isinstance(exc, TeamDomainNotFoundError):
+            return jsonify({'error': str(exc)}), 404
+        if isinstance(exc, (TypeError, ValueError)):
+            return jsonify({'error': str(exc)}), 400
+        raise
+
+
+@bp.route('/team-domain-assignments/<int:assignment_id>', methods=['PUT'])
+@bp.route('/team-domains/<int:assignment_id>', methods=['PUT'])
+def edit_team_domain_assignment(assignment_id):
+    from app.services.team_domains_service import update_assignment, serialize_assignment
+
+    data = request.get_json(silent=True)
+    try:
+        if not isinstance(data, dict):
+            raise ValueError('Team domain assignment data must be an object.')
+        assignment = update_assignment(
+            assignment_id,
+            _parse_positive_id(data.get('team_member_id'), 'team_member_id'),
+            data.get('domain_name'),
+            _parse_team_domain_date(data.get('assigned_date'), 'Assigned date'),
+            _parse_team_domain_date(data.get('expiry_date'), 'Expiry date'),
+        )
+        return jsonify({'success': True, 'assignment': serialize_assignment(assignment)})
+    except Exception as exc:
+        from app.services.team_domains_service import TeamDomainNotFoundError
+
+        if isinstance(exc, TeamDomainNotFoundError):
+            return jsonify({'error': str(exc)}), 404
+        if isinstance(exc, (TypeError, ValueError)):
+            return jsonify({'error': str(exc)}), 400
+        raise
+
+
+@bp.route('/team-domain-assignments/<int:assignment_id>', methods=['DELETE'])
+@bp.route('/team-domains/<int:assignment_id>', methods=['DELETE'])
+def remove_team_domain_assignment(assignment_id):
+    from app.services.team_domains_service import TeamDomainNotFoundError, delete_assignment
+
+    try:
+        delete_assignment(assignment_id)
+        return jsonify({'success': True})
+    except TeamDomainNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
 
 @bp.route('/settings/dashboard-section-order', methods=['GET'])
 def get_dashboard_section_order_route():

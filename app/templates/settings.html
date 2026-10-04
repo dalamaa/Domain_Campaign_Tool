@@ -239,6 +239,43 @@
     <p id="ready-for-campaign-status" role="status" aria-live="polite"></p>
   </div>
 
+  <div style="margin-top: 20px" id="team-domain-settings">
+    <h3>Team Domains</h3>
+    <p>
+      Campaign age is calculated from each assignment date. Assignments are Normal
+      before the warning threshold, Approaching Rest at the warning threshold,
+      and Due to Rest at the rest threshold.
+    </p>
+    <label for="team-domain-warning-days">Warning at:</label>
+    <input
+      type="number"
+      id="team-domain-warning-days"
+      min="0"
+      step="1"
+      required
+      style="width: 80px"
+      oninput="updateTeamDomainRanges()"
+    />
+    days
+    <br />
+    <label for="team-domain-rest-days">Due to Rest at:</label>
+    <input
+      type="number"
+      id="team-domain-rest-days"
+      min="0"
+      step="1"
+      required
+      style="width: 80px"
+      oninput="updateTeamDomainRanges()"
+    />
+    days
+    <p id="team-domain-ranges" aria-live="polite"></p>
+    <button class="btn btn-primary" type="button" onclick="saveTeamDomainSettings()">
+      Save Team Domains Settings
+    </button>
+    <p id="team-domain-settings-status" role="status" aria-live="polite"></p>
+  </div>
+
   <div style="margin-top: 20px">
     <h3>Reservation</h3>
     <div id="reservation-view">
@@ -328,6 +365,8 @@
     const readyData = await readyRes.json();
     const temperatureRes = await fetch("/api/settings/campaign-temperature");
     const temperatureData = await temperatureRes.json();
+    const teamDomainsRes = await fetch("/api/settings/team-domains");
+    const teamDomainsData = await teamDomainsRes.json();
 
     originalConfig = {
       config,
@@ -335,6 +374,7 @@
       expiringSoonDays: expiringRes.ok ? expiringData.expiring_soon_days : null,
       readyForCampaignDays: readyRes.ok ? readyData.ready_for_campaign_days : null,
       campaignTemperature: temperatureRes.ok ? temperatureData : null,
+      teamDomains: teamDomainsRes.ok ? teamDomainsData : null,
       restingConfig: null,
     };
     if (expiringRes.ok) {
@@ -361,6 +401,16 @@
     } else {
       setCampaignTemperatureStatus(
         temperatureData.error || readyData.error || "Unable to load Campaign Temperature settings.",
+        true,
+      );
+    }
+    if (teamDomainsRes.ok) {
+      document.getElementById("team-domain-warning-days").value = teamDomainsData.warning_days;
+      document.getElementById("team-domain-rest-days").value = teamDomainsData.rest_days;
+      updateTeamDomainRanges();
+    } else {
+      setTeamDomainSettingsStatus(
+        teamDomainsData.error || "Unable to load Team Domains settings.",
         true,
       );
     }
@@ -424,6 +474,13 @@
 
   function setCampaignTemperatureStatus(message, isError = false) {
     const status = document.getElementById("campaign-temperature-status");
+    if (!status) return;
+    status.textContent = message;
+    status.style.color = isError ? "#b00020" : "#176b2c";
+  }
+
+  function setTeamDomainSettingsStatus(message, isError = false) {
+    const status = document.getElementById("team-domain-settings-status");
     if (!status) return;
     status.textContent = message;
     status.style.color = isError ? "#b00020" : "#176b2c";
@@ -495,6 +552,67 @@
       setCampaignTemperatureStatus("Campaign Temperature settings saved.");
     } catch (error) {
       setCampaignTemperatureStatus(error.message, true);
+    }
+  }
+
+  function readTeamDomainSettings() {
+    const fields = [
+      ["team-domain-warning-days", "Warning days"],
+      ["team-domain-rest-days", "Rest days"],
+    ];
+    const values = fields.map(([id, label]) => {
+      const raw = document.getElementById(id).value.trim();
+      if (!/^\d+$/.test(raw)) {
+        throw new Error(`${label} must be a non-negative integer.`);
+      }
+      const value = Number(raw);
+      if (!Number.isSafeInteger(value)) {
+        throw new Error(`${label} must be a safe integer.`);
+      }
+      return value;
+    });
+    if (values[1] <= values[0]) {
+      throw new Error("Rest days must be greater than warning days.");
+    }
+    return { warning_days: values[0], rest_days: values[1] };
+  }
+
+  function updateTeamDomainRanges() {
+    const display = document.getElementById("team-domain-ranges");
+    if (!display) return;
+    try {
+      const config = readTeamDomainSettings();
+      display.textContent =
+        `Normal: 0–${config.warning_days - 1}; Approaching Rest: ` +
+        `${config.warning_days}–${config.rest_days - 1}; Due to Rest: ${config.rest_days}+ days.`;
+    } catch (_error) {
+      display.textContent = "Enter a warning threshold below the rest threshold.";
+    }
+  }
+
+  async function saveTeamDomainSettings() {
+    let payload;
+    try {
+      payload = readTeamDomainSettings();
+    } catch (error) {
+      setTeamDomainSettingsStatus(error.message, true);
+      return;
+    }
+    try {
+      const response = await fetch("/api/settings/team-domains", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to save Team Domains settings.");
+      originalConfig.teamDomains = data;
+      document.getElementById("team-domain-warning-days").value = data.warning_days;
+      document.getElementById("team-domain-rest-days").value = data.rest_days;
+      updateTeamDomainRanges();
+      setTeamDomainSettingsStatus("Team Domains settings saved.");
+    } catch (error) {
+      setTeamDomainSettingsStatus(error.message, true);
     }
   }
 
