@@ -30,6 +30,53 @@ def test_dashboard_cooling_and_refresh_contract(client):
     assert "dashboardRefreshInProgress" in script
 
 
+def test_cooling_table_uses_symbol_only_temperature_and_scoped_column_layout():
+    script = (ROOT / "app/static/js/pages/dashboard.js").read_text()
+    styles = (ROOT / "app/static/css/base.css").read_text()
+
+    assert "function renderDashboardTemperature(temperature, label, emoji, symbolOnly = false)" in script
+    assert "renderDashboardTemperature(campaign.temperature, campaign.temperature_label, campaign.temperature_emoji, true)" in script
+    assert ".dashboard-cooling-table" in styles
+    assert ".dashboard-cooling-table .dashboard-domain-value" in styles
+    for width in [
+        ".dashboard-cooling-table td:nth-child(1) { width: 30%; }",
+        ".dashboard-cooling-table td:nth-child(4) { width: 18%; }",
+        ".dashboard-cooling-table td:nth-child(8) { width: 18%; }",
+        ".dashboard-cooling-table td:nth-child(2) { width: 5%; }",
+        ".dashboard-cooling-table td:nth-child(7) { width: 5%; }",
+    ]:
+        assert width in styles
+
+
+def test_cooling_temperature_renderer_keeps_accessible_label_but_shows_symbol_only():
+    node_script = r'''
+const fs = require("fs");
+const vm = require("vm");
+const source = fs.readFileSync("app/static/js/pages/dashboard.js", "utf8");
+const context = {
+  console,
+  document: { addEventListener: () => {} },
+};
+vm.createContext(context);
+vm.runInContext(source, context);
+const symbolOnly = context.renderDashboardTemperature("COOLING", "Cooling", "🧊", true);
+const full = context.renderDashboardTemperature("COOLING", "Cooling", "🧊");
+if (!symbolOnly.includes(">🧊</span>")) process.exit(1);
+if (!symbolOnly.includes('aria-label="Cooling"')) process.exit(2);
+if (!full.includes(">🧊 Cooling</span>")) process.exit(3);
+process.stdout.write("ok");
+'''
+    result = subprocess.run(
+        ["node", "-e", node_script],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "ok"
+
+
 def test_bulk_rest_selection_button_and_nonblocking_result_contract(client):
     html = client.get("/domains").get_data(as_text=True)
     script = (ROOT / "app/static/js/pages/domains.js").read_text()

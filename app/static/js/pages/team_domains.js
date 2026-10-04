@@ -4,6 +4,7 @@
   const state = {
     members: [],
     assignments: [],
+    assignmentMode: "single",
     sortKey: "expiry_date",
     sortAscending: true,
   };
@@ -37,6 +38,15 @@
 
   function closeDialog(dialogId) {
     byId(dialogId).hidden = true;
+  }
+
+  function setAssignmentMode(mode) {
+    const isBulk = mode === "bulk";
+    state.assignmentMode = isBulk ? "bulk" : "single";
+    byId("team-assignment-form").hidden = isBulk;
+    byId("bulk-team-assignment-form").hidden = !isBulk;
+    byId("team-assignment-mode-single").setAttribute("aria-selected", String(!isBulk));
+    byId("team-assignment-mode-bulk").setAttribute("aria-selected", String(isBulk));
   }
 
   function renderMemberOptions() {
@@ -157,6 +167,8 @@
     byId("team-assignment-expiry-date").value = assignment?.expiry_date || "";
     byId("team-assignment-dialog-title").textContent = assignment ? "Edit Assignment" : "Add Assignment";
     byId("team-assignment-form-error").textContent = "";
+    byId("team-assignment-mode-tabs").hidden = Boolean(assignment);
+    setAssignmentMode("single");
   }
 
   function resetBulkAssignmentForm() {
@@ -225,7 +237,7 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      closeDialog("bulk-team-assignment-dialog");
+      closeDialog("team-assignment-dialog");
       showToast(`${response.count} assignment${response.count === 1 ? "" : "s"} added.`);
       await loadTeamDomains();
     } catch (error) {
@@ -266,15 +278,11 @@
         return;
       }
       resetAssignmentForm();
+      resetBulkAssignmentForm();
       openDialog("team-assignment-dialog");
     });
-    byId("bulk-add-team-assignment-button").addEventListener("click", () => {
-      if (!state.members.length) {
-        showToast("Add a team member before adding assignments.", "error");
-        return;
-      }
-      resetBulkAssignmentForm();
-      openDialog("bulk-team-assignment-dialog");
+    document.querySelectorAll("[data-assignment-mode]").forEach((button) => {
+      button.addEventListener("click", () => setAssignmentMode(button.dataset.assignmentMode));
     });
     byId("refresh-team-domains-button").addEventListener("click", loadTeamDomains);
     byId("team-domain-search").addEventListener("input", renderAssignments);

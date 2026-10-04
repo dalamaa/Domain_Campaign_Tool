@@ -11,7 +11,10 @@ def test_team_domains_ui_has_required_oversight_fields_and_actions():
     for text in ["data-edit-assignment", "data-delete-assignment", "data-edit-member", "data-delete-member"]:
         assert text in script
     for text in [
-        "bulk-team-assignment-dialog",
+        'id="add-team-assignment-button"',
+        'id="team-assignment-mode-tabs"',
+        'data-assignment-mode="single"',
+        'data-assignment-mode="bulk"',
         "bulk-team-assignment-form",
         "/api/team-domain-assignments/bulk",
         "Missing start date",
@@ -19,6 +22,10 @@ def test_team_domains_ui_has_required_oversight_fields_and_actions():
         "team-domain-incomplete",
     ]:
         assert text in script or text in html
+    assert html.count('id="add-team-assignment-button"') == 1
+    assert 'id="bulk-add-team-assignment-button"' not in html
+    assert 'id="bulk-team-assignment-dialog"' not in html
+    assert "setAssignmentMode" in script
     assert "TEAM_DOMAIN_WARNING_DAYS" not in html
     assert "team-domain-warning-days" in settings
     assert "team-domain-rest-days" in settings

@@ -10,7 +10,6 @@
     <div class="team-domains-actions">
       <button class="btn btn-secondary" type="button" id="add-team-member-button">Add Member</button>
       <button class="btn btn-primary" type="button" id="add-team-assignment-button">Add Assignment</button>
-      <button class="btn btn-primary" type="button" id="bulk-add-team-assignment-button">Bulk Add Assignments</button>
     </div>
   </div>
 
@@ -103,6 +102,10 @@
       <h3 id="team-assignment-dialog-title">Add Assignment</h3>
       <button class="btn btn-subtle" type="button" data-close-dialog="team-assignment-dialog">Close</button>
     </div>
+    <div class="team-domain-mode-tabs" id="team-assignment-mode-tabs" role="tablist" aria-label="Assignment mode">
+      <button class="btn btn-secondary team-domain-mode-tab" id="team-assignment-mode-single" type="button" role="tab" aria-selected="true" aria-controls="team-assignment-form" data-assignment-mode="single">Single</button>
+      <button class="btn btn-secondary team-domain-mode-tab" id="team-assignment-mode-bulk" type="button" role="tab" aria-selected="false" aria-controls="bulk-team-assignment-form" data-assignment-mode="bulk">Bulk</button>
+    </div>
     <form id="team-assignment-form" class="team-domain-form">
       <input id="team-assignment-id" type="hidden" />
       <label>Team member
@@ -117,16 +120,7 @@
         <button class="btn btn-secondary" type="button" data-close-dialog="team-assignment-dialog">Cancel</button>
       </div>
     </form>
-  </div>
-</div>
-
-<div class="team-domain-dialog" id="bulk-team-assignment-dialog" hidden>
-  <div class="team-domain-dialog-card" role="dialog" aria-modal="true" aria-labelledby="bulk-team-assignment-dialog-title">
-    <div class="team-domain-panel-header">
-      <h3 id="bulk-team-assignment-dialog-title">Bulk Add Assignments</h3>
-      <button class="btn btn-subtle" type="button" data-close-dialog="bulk-team-assignment-dialog">Close</button>
-    </div>
-    <form id="bulk-team-assignment-form" class="team-domain-form">
+    <form id="bulk-team-assignment-form" class="team-domain-form" hidden>
       <label>Team member
         <select id="bulk-team-assignment-member" required></select>
       </label>
@@ -138,7 +132,7 @@
       <p id="bulk-team-assignment-form-error" class="form-error" role="alert"></p>
       <div class="team-domain-form-actions">
         <button class="btn btn-primary" type="submit">Add Assignments</button>
-        <button class="btn btn-secondary" type="button" data-close-dialog="bulk-team-assignment-dialog">Cancel</button>
+        <button class="btn btn-secondary" type="button" data-close-dialog="team-assignment-dialog">Cancel</button>
       </div>
     </form>
   </div>

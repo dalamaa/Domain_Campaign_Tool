@@ -506,7 +506,7 @@ function renderDashboardStatus(status) {
   return `<span class="dashboard-status-badge" title="${fullLabel}" aria-label="${fullLabel}">${abbreviation}</span>`;
 }
 
-function renderDashboardTemperature(temperature, label, emoji) {
+function renderDashboardTemperature(temperature, label, emoji, symbolOnly = false) {
   const normalized = String(temperature || "NOT_STARTED").toUpperCase();
   const fallbackLabels = {
     HOT: "Hot",
@@ -517,7 +517,8 @@ function renderDashboardTemperature(temperature, label, emoji) {
   };
   const text = label || fallbackLabels[normalized] || "Not started";
   const icon = emoji || "";
-  return `<span class="dashboard-temperature temperature-${normalized.toLowerCase()}" title="${text}" aria-label="${text}">${icon} ${text}</span>`;
+  const display = symbolOnly ? icon : `${icon} ${text}`;
+  return `<span class="dashboard-temperature temperature-${normalized.toLowerCase()}" title="${text}" aria-label="${text}">${display}</span>`;
 }
 
 function renderDashboardSequence(sequence) {
@@ -834,7 +835,7 @@ function renderSuggestedWork() {
                   data-sort-sequence="${campaign.current_sequence ?? ""}"
                 >
                   <td class="dashboard-domain-cell">${renderDashboardDomain(campaign.domain)}</td>
-          <td>${renderDashboardTemperature(campaign.temperature, campaign.temperature_label, campaign.temperature_emoji)}</td>
+                  <td>${renderDashboardTemperature(campaign.temperature, campaign.temperature_label, campaign.temperature_emoji, true)}</td>
                   <td class="dashboard-status-cell">${renderDashboardStatus(campaign.status)}</td>
                   <td class="dashboard-email-cell">${renderDashboardEmailSummary(campaign.operational_emails)}</td>
                   <td class="dashboard-metric-column">${renderDashboardLastContact(campaign)}</td>
