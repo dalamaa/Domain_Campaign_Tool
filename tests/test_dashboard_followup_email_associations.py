@@ -22,6 +22,7 @@ def add_followup_campaign(domain_name, sequence, history_rows, action_age_days=3
         status=CampaignStatus.ACTIVE,
         current_sequence=sequence,
         start_date=datetime.utcnow().date(),
+        last_contact_date=(datetime.utcnow() - timedelta(days=10)).date(),
         current_price=100,
     )
     db.session.add(campaign)

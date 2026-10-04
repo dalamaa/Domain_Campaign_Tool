@@ -1,12 +1,14 @@
 const DASHBOARD_SECTION_ORDER_DEFAULT = [
   "first_followups",
   "normal_followups",
+  "cooling",
   "resting_suggestions",
   "expiring_soon",
   "ready_for_campaign",
 ];
 let dashboardSectionOrder = null;
 const dashboardTableSortState = {};
+let dashboardRefreshInProgress = false;
 
 function normalizeDashboardSectionOrder(order, availableSectionIds = null) {
   const knownSectionIds = Array.from(
@@ -317,24 +319,40 @@ function getFollowupResultCount(data) {
 }
 
 async function refreshDashboard() {
-  const res = await fetch("/api/dashboard/overview");
-  const data = await res.json();
+  if (dashboardRefreshInProgress) return;
+  dashboardRefreshInProgress = true;
+  const refreshButton = document.getElementById("dashboard-refresh-button");
+  if (refreshButton) {
+    refreshButton.disabled = true;
+    refreshButton.textContent = "Refreshing…";
+  }
 
-  document.getElementById("total-domains").textContent = data.total_domains;
-  document.getElementById("active-campaigns").textContent =
-    data.active_campaigns;
-  document.getElementById("resting-campaigns").textContent =
-    data.resting_campaigns;
-  document.getElementById("dormant-campaigns").textContent =
-    data.dormant_campaigns;
-  document.getElementById("expiring-count").textContent = data.expiring_count;
+  try {
+    const res = await fetch("/api/dashboard/overview");
+    const data = await res.json();
 
-  // Preserve mock logic for the rest of the board
-  syncCampaignStates();
-  updateReservationBoard();
-  await loadDashboardSectionOrder();
-  renderSuggestedWork();
-  renderTodaysCampaigns();
+    document.getElementById("total-domains").textContent = data.total_domains;
+    document.getElementById("active-campaigns").textContent =
+      data.active_campaigns;
+    document.getElementById("resting-campaigns").textContent =
+      data.resting_campaigns;
+    document.getElementById("dormant-campaigns").textContent =
+      data.dormant_campaigns;
+    document.getElementById("expiring-count").textContent = data.expiring_count;
+
+    // Preserve mock logic for the rest of the board
+    syncCampaignStates();
+    await updateReservationBoard();
+    await loadDashboardSectionOrder();
+    await renderSuggestedWork();
+    await renderTodaysCampaigns();
+  } finally {
+    dashboardRefreshInProgress = false;
+    if (refreshButton) {
+      refreshButton.disabled = false;
+      refreshButton.textContent = "Refresh";
+    }
+  }
 }
 
 async function renderTodaysCampaigns() {
@@ -486,6 +504,20 @@ function renderDashboardStatus(status) {
   if (!fullLabel) return '<span class="dashboard-muted">—</span>';
   const abbreviation = normalized.charAt(0);
   return `<span class="dashboard-status-badge" title="${fullLabel}" aria-label="${fullLabel}">${abbreviation}</span>`;
+}
+
+function renderDashboardTemperature(temperature, label, emoji) {
+  const normalized = String(temperature || "NOT_STARTED").toUpperCase();
+  const fallbackLabels = {
+    HOT: "Hot",
+    TEPID: "Tepid",
+    COOLING: "Cooling",
+    READY: "Ready",
+    NOT_STARTED: "Not started",
+  };
+  const text = label || fallbackLabels[normalized] || "Not started";
+  const icon = emoji || "";
+  return `<span class="dashboard-temperature temperature-${normalized.toLowerCase()}" title="${text}" aria-label="${text}">${icon} ${text}</span>`;
 }
 
 function renderDashboardSequence(sequence) {
@@ -734,7 +766,7 @@ function renderSuggestedWork() {
               throw new Error(result.error || "Unable to move campaign to Resting.");
             }
             await refreshDashboard();
-            alert(`${domain} moved to Resting.`);
+            showToast(`${domain} moved to Resting.`);
           } catch (error) {
             alert(error.message);
             try {
@@ -742,6 +774,97 @@ function renderSuggestedWork() {
             } catch (refreshError) {
               // Keep the dashboard usable even if a refresh also fails.
             }
+          }
+        };
+      });
+    } catch (error) {
+      if (count) count.textContent = "—";
+      container.innerHTML = `<p class="dashboard-error">${error.message}</p>`;
+    }
+  };
+
+  const renderCooling = async () => {
+    const container = document.getElementById("cooling");
+    const count = document.getElementById("cooling-count");
+    if (!container) return;
+
+    container.innerHTML = "<p>Loading Cooling...</p>";
+    try {
+      const response = await fetch("/api/dashboard/cooling");
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to load Cooling.");
+      }
+
+      const domains = data.domains || [];
+      if (count) count.textContent = data.count ?? domains.length;
+      if (domains.length === 0) {
+        container.innerHTML = "<p>No campaigns are currently Cooling.</p>";
+        return;
+      }
+
+      const columns = [
+        { key: "domain", label: "Domain", type: "text", defaultDirection: "asc" },
+        { key: "temperature", label: "Temperature", type: "text", defaultDirection: "asc" },
+        { key: "status", label: "Status", type: "text", defaultDirection: "asc", className: "dashboard-status-cell" },
+        { key: "last_contact", label: "LC", sortLabel: "Sort by Last Contact", type: "date", defaultDirection: "asc", className: "dashboard-metric-column" },
+        { key: "expiry", label: "Expiry", type: "number", defaultDirection: "asc", className: "dashboard-metric-column" },
+        { key: "sequence", label: "Seq", type: "number", defaultDirection: "asc", className: "dashboard-metric-column" },
+      ];
+
+      container.innerHTML = `
+        <div class="table-container">
+          <table class="dashboard-suggested-table dashboard-cooling-table" data-sort-table="cooling">
+            <thead>
+              <tr>
+                ${renderDashboardSortHeaders(columns.slice(0, 3))}
+                <th>Email Used</th>
+                ${renderDashboardSortHeaders(columns.slice(3))}
+                <th>Price Progression</th><th>Rest</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${domains.map((campaign) => `
+                <tr
+                  data-sort-domain="${campaign.domain || ""}"
+                  data-sort-temperature="${campaign.temperature || ""}"
+                  data-sort-status="${campaign.status || ""}"
+                  data-sort-last-contact="${campaign.last_contact_date || ""}"
+                  data-sort-expiry="${campaign.days_until_expiry ?? ""}"
+                  data-sort-sequence="${campaign.current_sequence ?? ""}"
+                >
+                  <td class="dashboard-domain-cell">${renderDashboardDomain(campaign.domain)}</td>
+          <td>${renderDashboardTemperature(campaign.temperature, campaign.temperature_label, campaign.temperature_emoji)}</td>
+                  <td class="dashboard-status-cell">${renderDashboardStatus(campaign.status)}</td>
+                  <td class="dashboard-email-cell">${renderDashboardEmailSummary(campaign.operational_emails)}</td>
+                  <td class="dashboard-metric-column">${renderDashboardLastContact(campaign)}</td>
+                  <td class="dashboard-metric-column">${renderDashboardExpiry(campaign)}</td>
+                  <td class="dashboard-metric-column">${renderDashboardSequence(campaign.current_sequence)}</td>
+                  <td class="dashboard-price-cell">${renderDashboardPriceProgression(campaign.price_progression, campaign.price_progression_items)}</td>
+                  <td class="dashboard-rest-cell">${campaign.can_rest ? `<button type="button" class="dashboard-rest-action" data-action="rest" data-campaign-id="${campaign.campaign_id}" data-domain="${campaign.domain}" title="Move to Resting" aria-label="Move to Resting">R</button>` : ""}</td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      const table = container.querySelector('table[data-sort-table="cooling"]');
+      setupDashboardSortableTable(table, "cooling", columns);
+      container.querySelectorAll("button[data-action='rest']").forEach((button) => {
+        button.onclick = async () => {
+          const domain = button.dataset.domain;
+          const campaignId = button.dataset.campaignId;
+          if (!window.confirm(`Move ${domain} to Resting?`)) return;
+          button.disabled = true;
+          try {
+            const response = await fetch(`/api/campaigns/${campaignId}/rest`, { method: "POST" });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || "Unable to move campaign to Resting.");
+            await refreshDashboard();
+            showToast(`${domain} moved to Resting.`);
+          } catch (error) {
+            showToast(error.message || "Unable to move campaign to Resting.", "error");
+            button.disabled = false;
           }
         };
       });
@@ -905,8 +1028,6 @@ function renderSuggestedWork() {
     }
   };
 
-  renderFirstFollowups();
-
   // Render Normal Follow-ups
   const renderNormalFollowups = async () => {
     const container = document.getElementById("normal-followup");
@@ -950,10 +1071,14 @@ function renderSuggestedWork() {
     });
   };
 
-  renderNormalFollowups();
-  renderRestingSuggestions();
-  renderExpiringSoon();
-  renderReadyForCampaign();
+  return Promise.all([
+    renderFirstFollowups(),
+    renderNormalFollowups(),
+    renderCooling(),
+    renderRestingSuggestions(),
+    renderExpiringSoon(),
+    renderReadyForCampaign(),
+  ]);
 }
 
 function reserveBlock(domain) {

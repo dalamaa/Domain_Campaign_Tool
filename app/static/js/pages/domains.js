@@ -274,6 +274,7 @@ function updateDomainActionBar() {
   const bulkEditBtn = document.getElementById("bulk-edit-btn");
   const actionBtn = document.getElementById("action-btn");
   const exportSelectedBtn = document.getElementById("export-selected-btn");
+  const restSelectedBtn = document.getElementById("rest-selected-btn");
   const resetBtn = document.getElementById("reset-campaign-btn");
 
   // Edit button: enabled exactly 1 record selected
@@ -288,6 +289,10 @@ function updateDomainActionBar() {
     exportSelectedBtn.disabled = count === 0;
   }
   if (resetBtn) resetBtn.disabled = count !== 1;
+  if (restSelectedBtn) {
+    restSelectedBtn.disabled = count === 0;
+    restSelectedBtn.textContent = `Rest Selected (${count})`;
+  }
 
   // Delete button: enabled if anything is selected
   if (delBtn) delBtn.disabled = count === 0;
@@ -337,6 +342,47 @@ async function exportSelectedDomains() {
   } finally {
     selectedExportInProgress = false;
     if (exportButton) exportButton.textContent = "Export Selected";
+    updateDomainActionBar();
+  }
+}
+
+async function restSelectedCampaigns() {
+  const selected = Array.from(selectedDomains);
+  if (selected.length === 0) return;
+
+  const names = domains
+    .filter((domain) => selectedDomains.has(domain.id))
+    .map((domain) => domain.domain);
+  const namePreview = names.slice(0, 5).join(", ");
+  const suffix = names.length > 5 ? ", …" : "";
+  const message = selected.length === 1
+    ? `Move ${namePreview || "this campaign"} to Resting?`
+    : `Move ${selected.length} selected campaigns to Resting?\n\n${namePreview}${suffix}`;
+  if (!confirm(message)) return;
+
+  const button = document.getElementById("rest-selected-btn");
+  if (button) button.disabled = true;
+  try {
+    const response = await fetch("/api/campaigns/bulk-rest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ domain_ids: selected }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(result.error || "Unable to move the selected campaigns to Resting.");
+    }
+
+    selected.forEach((id) => selectedDomains.delete(id));
+    await renderDomainTable();
+    showToast(
+      result.count === 1
+        ? `${result.domain_names?.[0] || namePreview} moved to Resting.`
+        : `${result.count} campaigns moved to Resting.`,
+    );
+  } catch (error) {
+    showToast(error.message || "Unable to move the selected campaigns to Resting.", "error");
+  } finally {
     updateDomainActionBar();
   }
 }

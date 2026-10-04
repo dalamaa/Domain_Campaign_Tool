@@ -181,9 +181,39 @@
   </div>
 
   <div style="margin-top: 20px" id="ready-for-campaign-settings">
-    <h3>Ready for Campaign</h3>
+    <h3>Campaign Temperature</h3>
+    <label for="campaign-temperature-hot-through">
+      Hot through:
+    </label>
+    <input
+      type="number"
+      id="campaign-temperature-hot-through"
+      min="0"
+      max="3650"
+      step="1"
+      required
+      style="width: 80px"
+      oninput="updateCampaignTemperatureRanges()"
+    />
+    days
+    <br />
+    <label for="campaign-temperature-tepid-through">
+      Tepid through:
+    </label>
+    <input
+      type="number"
+      id="campaign-temperature-tepid-through"
+      min="0"
+      max="3650"
+      step="1"
+      required
+      style="width: 80px"
+      oninput="updateCampaignTemperatureRanges()"
+    />
+    days
+    <br />
     <label for="ready-for-campaign-days">
-      Resting campaigns become ready after:
+      Ready at:
     </label>
     <input
       type="number"
@@ -193,15 +223,19 @@
       step="1"
       required
       style="width: 80px"
+      oninput="updateCampaignTemperatureRanges()"
     />
     days since last contact
+    <p id="campaign-temperature-ranges" aria-live="polite"></p>
     <p>
-      Dormant campaigns are always ready. Resting campaigns appear after this
-      many days have passed since their last contact.
+      Temperature is derived from last contact. Dormant campaigns are always
+      ready for campaign, while Active and Resting campaigns keep the same
+      last-contact clock.
     </p>
-    <button class="btn btn-primary" type="button" onclick="saveReadyForCampaignDays()">
-      Save Ready for Campaign
+    <button class="btn btn-primary" type="button" onclick="saveCampaignTemperature()">
+      Save Campaign Temperature
     </button>
+    <p id="campaign-temperature-status" role="status" aria-live="polite"></p>
     <p id="ready-for-campaign-status" role="status" aria-live="polite"></p>
   </div>
 
@@ -292,12 +326,15 @@
     const expiringData = await expiringRes.json();
     const readyRes = await fetch("/api/settings/ready-for-campaign-days");
     const readyData = await readyRes.json();
+    const temperatureRes = await fetch("/api/settings/campaign-temperature");
+    const temperatureData = await temperatureRes.json();
 
     originalConfig = {
       config,
       limitData,
       expiringSoonDays: expiringRes.ok ? expiringData.expiring_soon_days : null,
       readyForCampaignDays: readyRes.ok ? readyData.ready_for_campaign_days : null,
+      campaignTemperature: temperatureRes.ok ? temperatureData : null,
       restingConfig: null,
     };
     if (expiringRes.ok) {
@@ -309,12 +346,21 @@
         true,
       );
     }
-    if (readyRes.ok) {
+    if (temperatureRes.ok) {
+      document.getElementById("campaign-temperature-hot-through").value =
+        temperatureData.hot_through;
+      document.getElementById("campaign-temperature-tepid-through").value =
+        temperatureData.tepid_through;
+      document.getElementById("ready-for-campaign-days").value =
+        temperatureData.ready_at;
+      updateCampaignTemperatureRanges();
+    } else if (readyRes.ok) {
       document.getElementById("ready-for-campaign-days").value =
         readyData.ready_for_campaign_days;
+      updateCampaignTemperatureRanges();
     } else {
-      setReadyForCampaignStatus(
-        readyData.error || "Unable to load Ready for Campaign settings.",
+      setCampaignTemperatureStatus(
+        temperatureData.error || readyData.error || "Unable to load Campaign Temperature settings.",
         true,
       );
     }
@@ -374,6 +420,82 @@
     if (!status) return;
     status.textContent = message;
     status.style.color = isError ? "#b00020" : "#176b2c";
+  }
+
+  function setCampaignTemperatureStatus(message, isError = false) {
+    const status = document.getElementById("campaign-temperature-status");
+    if (!status) return;
+    status.textContent = message;
+    status.style.color = isError ? "#b00020" : "#176b2c";
+  }
+
+  function readCampaignTemperatureConfig() {
+    const fields = [
+      ["campaign-temperature-hot-through", "Hot threshold"],
+      ["campaign-temperature-tepid-through", "Tepid threshold"],
+      ["ready-for-campaign-days", "Ready threshold"],
+    ];
+    const values = fields.map(([id, label]) => {
+      const raw = document.getElementById(id).value.trim();
+      if (!/^\d+$/.test(raw)) {
+        throw new Error(`${label} must be a non-negative integer.`);
+      }
+      const value = Number(raw);
+      if (!Number.isSafeInteger(value) || value > 3650) {
+        throw new Error(`${label} must be between 0 and 3650 days.`);
+      }
+      return value;
+    });
+    if (values[0] >= values[1]) {
+      throw new Error("Hot threshold must be less than Tepid threshold.");
+    }
+    if (values[1] >= values[2]) {
+      throw new Error("Tepid threshold must be less than Ready threshold.");
+    }
+    return { hot_through: values[0], tepid_through: values[1], ready_at: values[2] };
+  }
+
+  function updateCampaignTemperatureRanges() {
+    const display = document.getElementById("campaign-temperature-ranges");
+    if (!display) return;
+    try {
+      const config = readCampaignTemperatureConfig();
+      display.textContent =
+        `Hot: 0–${config.hot_through}; Tepid: ${config.hot_through + 1}–${config.tepid_through}; ` +
+        `Cooling: ${config.tepid_through + 1}–${config.ready_at - 1}; Ready: ${config.ready_at}+ days.`;
+    } catch (_error) {
+      display.textContent = "Enter ordered thresholds to preview the temperature ranges.";
+    }
+  }
+
+  async function saveCampaignTemperature() {
+    let payload;
+    try {
+      payload = readCampaignTemperatureConfig();
+    } catch (error) {
+      setCampaignTemperatureStatus(error.message, true);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/settings/campaign-temperature", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to save Campaign Temperature settings.");
+      }
+      originalConfig.campaignTemperature = data;
+      document.getElementById("campaign-temperature-hot-through").value = data.hot_through;
+      document.getElementById("campaign-temperature-tepid-through").value = data.tepid_through;
+      document.getElementById("ready-for-campaign-days").value = data.ready_at;
+      updateCampaignTemperatureRanges();
+      setCampaignTemperatureStatus("Campaign Temperature settings saved.");
+    } catch (error) {
+      setCampaignTemperatureStatus(error.message, true);
+    }
   }
 
   function readExpiringSoonDays() {

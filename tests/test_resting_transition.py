@@ -87,20 +87,20 @@ def test_non_active_campaign_is_rejected_without_mutation(client, app, status):
         assert db.session.get(Campaign, campaign_id).status == status
 
 
-def test_ineligible_active_campaign_is_rejected_without_mutation(client, app):
+def test_manual_rest_does_not_require_recommendation_eligibility(client, app):
     with app.app_context():
         campaign_id, _ = make_campaign(sequence=5)
         enable_sequence_only()
 
     response = client.post(f"/api/campaigns/{campaign_id}/rest")
 
-    assert response.status_code == 409
-    assert "no longer meets" in response.get_json()["error"]
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "RESTING"
     with app.app_context():
-        assert db.session.get(Campaign, campaign_id).status == CampaignStatus.ACTIVE
+        assert db.session.get(Campaign, campaign_id).status == CampaignStatus.RESTING
 
 
-def test_latest_persisted_settings_are_rechecked(client, app):
+def test_manual_rest_is_not_gated_by_persisted_recommendation_settings(client, app):
     with app.app_context():
         campaign_id, _ = make_campaign(sequence=6)
         enable_sequence_only()
@@ -110,9 +110,9 @@ def test_latest_persisted_settings_are_rechecked(client, app):
 
     response = client.post(f"/api/campaigns/{campaign_id}/rest")
 
-    assert response.status_code == 409
+    assert response.status_code == 200
     with app.app_context():
-        assert db.session.get(Campaign, campaign_id).status == CampaignStatus.ACTIVE
+        assert db.session.get(Campaign, campaign_id).status == CampaignStatus.RESTING
 
 
 def test_missing_campaign_is_rejected(client):

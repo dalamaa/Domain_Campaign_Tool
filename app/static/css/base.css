@@ -949,6 +949,36 @@ tr[draggable="true"]:active { cursor: grabbing; }
 .expiry-warning { color: #8a5a00; font-weight: 700; }
 .expiry-danger { color: var(--color-danger); font-weight: 700; }
 
+.dashboard-temperature { white-space: nowrap; font-weight: 700; }
+.temperature-hot { color: #b42318; }
+.temperature-tepid { color: #a15c00; }
+.temperature-cooling { color: #176b87; }
+.temperature-ready { color: #28632d; }
+.temperature-not_started { color: var(--color-muted-text); }
+
+#app-toast-container {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: var(--z-modal);
+  display: grid;
+  gap: var(--space-2);
+  max-width: min(420px, calc(100vw - 2rem));
+}
+.app-toast {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid #a8d5b0;
+  border-radius: var(--radius-md);
+  background: #effaf1;
+  color: #1f5728;
+  box-shadow: var(--shadow-md);
+}
+.app-toast-error {
+  border-color: #e0a7a7;
+  background: #fff2f2;
+  color: #8e2020;
+}
+
 /* 13. Responsive rules */
 @media (max-width: 760px) {
   .app-shell { display: block; }

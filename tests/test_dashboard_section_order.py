@@ -26,6 +26,7 @@ def test_dashboard_section_order_can_be_saved_and_loaded(client):
         "ready_for_campaign",
         "first_followups",
         "normal_followups",
+        "cooling",
         "resting_suggestions",
     ]
 
@@ -75,6 +76,7 @@ def test_malformed_or_stale_saved_order_is_safe_to_load(client, app):
             "expiring_soon",
             "first_followups",
             "normal_followups",
+            "cooling",
             "resting_suggestions",
             "ready_for_campaign",
         ]
@@ -88,7 +90,7 @@ def test_dashboard_sections_have_stable_ids_and_native_drag_contract(client):
 
     for section_id in DEFAULT_ORDER:
         assert f'data-dashboard-section="{section_id}"' in html
-    assert html.count('class="dashboard-section-drag-handle"') == 5
+    assert html.count('class="dashboard-section-drag-handle"') == 6
     assert "normalizeDashboardSectionOrder" in script
     assert "loadDashboardSectionOrder" in script
     assert 'fetch("/api/settings/dashboard-section-order"' in script

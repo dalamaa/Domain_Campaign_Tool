@@ -494,6 +494,37 @@ def save_ready_for_campaign_days():
     except (TypeError, ValueError) as exc:
         return jsonify({'error': str(exc)}), 400
 
+@bp.route('/settings/campaign-temperature', methods=['GET'])
+def get_campaign_temperature_settings():
+    from app.services.campaign_temperature_service import get_campaign_temperature_config
+
+    try:
+        return jsonify(get_campaign_temperature_config())
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 500
+
+@bp.route('/settings/campaign-temperature', methods=['POST'])
+def save_campaign_temperature_settings():
+    from app.services.campaign_temperature_service import (
+        update_campaign_temperature_config,
+    )
+
+    data = request.get_json(silent=True)
+    try:
+        if not isinstance(data, dict) or set(data) != {
+            'hot_through', 'tepid_through', 'ready_at'
+        }:
+            raise ValueError(
+                'Campaign Temperature settings must contain hot_through, '
+                'tepid_through, and ready_at.'
+            )
+        config = update_campaign_temperature_config(
+            data['hot_through'], data['tepid_through'], data['ready_at']
+        )
+        return jsonify({'success': True, **config})
+    except (TypeError, ValueError) as exc:
+        return jsonify({'error': str(exc)}), 400
+
 @bp.route('/settings/dashboard-section-order', methods=['GET'])
 def get_dashboard_section_order_route():
     from app.services.dashboard_section_order_service import get_dashboard_section_order
@@ -528,6 +559,7 @@ def get_dashboard_overview():
         Domain.expiry_date.isnot(None),
         Domain.expiry_date <= expiry_end,
         Domain.expiry_date >= expiry_start,
+        Domain.status.notin_(['SOLD', 'EXPIRED']),
     ).count()
     return jsonify({
         'total_domains': total_domains,
@@ -550,6 +582,7 @@ def get_expiring_soon():
     )
     from app.services.time_service import get_business_today
     from app.services.dashboard_campaign_context_service import build_campaign_context
+    from app.services.expiry_service import select_latest_campaign
 
     today = get_business_today()
     threshold_days = get_expiring_soon_days()
@@ -558,6 +591,7 @@ def get_expiring_soon():
         Domain.expiry_date.isnot(None),
         Domain.expiry_date >= expiry_start,
         Domain.expiry_date <= expiry_end,
+        Domain.status.notin_(['SOLD', 'EXPIRED']),
     ).order_by(Domain.expiry_date.asc(), Domain.domain_name.asc(), Domain.id.asc()).all()
 
     results = []
@@ -667,6 +701,9 @@ def get_ready_for_campaign():
             'operational_emails': context['operational_emails'],
             'price_progression': context['price_progression'],
             'expiry_severity': context['expiry_severity'],
+            'temperature': context['temperature'],
+            'temperature_label': context['label'],
+            'temperature_emoji': context['emoji'],
         })
 
     def sort_key(item):
@@ -695,6 +732,13 @@ def get_resting_suggestions():
     from app.services.settings_service import get_resting_eligibility_config
     from app.services.time_service import get_business_today
     from app.services.dashboard_campaign_context_service import build_campaign_context
+    from app.services.expiry_service import select_latest_campaign
+    from app.services.campaign_temperature_service import (
+        TEMPERATURE_TEPID,
+        TEMPERATURE_HOT,
+        calculate_campaign_temperature,
+        get_campaign_temperature_config,
+    )
 
     trigger_labels = {
         'sequence': 'Sequence',
@@ -713,11 +757,23 @@ def get_resting_suggestions():
     with db.session.no_autoflush:
         today = get_business_today()
         trigger_config = get_resting_eligibility_config()
+        temperature_config = get_campaign_temperature_config()
         campaigns = Campaign.query.filter_by(
             status=CampaignStatus.ACTIVE
         ).join(Domain).order_by(Domain.domain_name.asc(), Campaign.id.asc()).all()
 
         for campaign in campaigns:
+            if str(campaign.domain.status).upper() in {'SOLD', 'EXPIRED'}:
+                continue
+            if select_latest_campaign(campaign.domain.campaigns) is not campaign:
+                continue
+            temperature = calculate_campaign_temperature(
+                campaign,
+                business_today=today,
+                temperature_config=temperature_config,
+            )
+            if temperature not in {TEMPERATURE_HOT, TEMPERATURE_TEPID}:
+                continue
             eligibility = evaluate_resting_eligibility(
                 campaign,
                 trigger_config,
@@ -763,6 +819,9 @@ def get_resting_suggestions():
                 'days_until_expiry': days_until_expiry,
                 'triggered_by': eligibility['triggered_by'],
                 'eligibility_metrics': eligibility['metrics'],
+                'temperature': context['temperature'],
+                'temperature_label': context['label'],
+                'temperature_emoji': context['emoji'],
                 'trigger_thresholds': {
                     trigger: trigger_config[trigger]['threshold']
                     for trigger in eligibility['triggered_by']
@@ -801,6 +860,28 @@ def rest_campaign(campaign_id):
         return jsonify({
             'success': False,
             'error': 'Unable to move campaign to Resting.',
+        }), 500
+
+
+@bp.route('/campaigns/bulk-rest', methods=['POST'])
+def bulk_rest_campaigns_route():
+    from app.services.resting_transition_service import (
+        RestingTransitionError,
+        bulk_rest_campaigns,
+    )
+
+    data = request.get_json(silent=True) or {}
+    try:
+        result = bulk_rest_campaigns(data.get('domain_ids'))
+        return jsonify({'success': True, **result})
+    except RestingTransitionError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), exc.status_code
+    except Exception:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': 'Unable to move the selected campaigns to Resting.',
         }), 500
 
 
@@ -1527,15 +1608,24 @@ def get_first_follow_ups():
     from app.services.settings_service import get_resting_eligibility_config
     from app.services.time_service import get_business_today
     from app.services.settings_service import get_setting
+    from app.services.expiry_service import select_latest_campaign
+    from app.services.campaign_temperature_service import (
+        TEMPERATURE_HOT,
+        TEMPERATURE_READY,
+        TEMPERATURE_TEPID,
+        calculate_campaign_temperature,
+        get_campaign_temperature_config,
+    )
     from sqlalchemy import and_
 
     today = get_business_today()
     min_days = int(get_setting('FIRST_FOLLOW_UP_MIN', '2'))
     max_days = int(get_setting('FIRST_FOLLOW_UP_MAX', '5'))
     resting_config = get_resting_eligibility_config()
+    temperature_config = get_campaign_temperature_config()
 
     eligible_campaigns = Campaign.query.filter(
-        Campaign.status.in_([CampaignStatus.ACTIVE, CampaignStatus.RESTING]),
+        Campaign.status == CampaignStatus.ACTIVE,
         Campaign.current_sequence == 1
     ).all()
 
@@ -1543,6 +1633,17 @@ def get_first_follow_ups():
     past_due = []
 
     for camp in eligible_campaigns:
+        if str(camp.domain.status).upper() in {'SOLD', 'EXPIRED'}:
+            continue
+        if select_latest_campaign(camp.domain.campaigns) is not camp:
+            continue
+        temperature = calculate_campaign_temperature(
+            camp,
+            business_today=today,
+            temperature_config=temperature_config,
+        )
+        if temperature == TEMPERATURE_READY:
+            continue
         latest = CampaignHistory.query.filter_by(
             campaign_id=camp.id
         ).order_by(CampaignHistory.sequence.desc()).first()
@@ -1558,6 +1659,14 @@ def get_first_follow_ups():
 
         context = build_campaign_context(
             camp, business_today=today, latest_history=latest
+        )
+        rest_suggested = (
+            temperature in {TEMPERATURE_HOT, TEMPERATURE_TEPID}
+            and evaluate_resting_eligibility(
+                camp,
+                resting_config,
+                business_today=today,
+            )['eligible']
         )
         emails_used = context['operational_emails']
         res = Reservation.query.filter_by(
@@ -1575,16 +1684,15 @@ def get_first_follow_ups():
             'days_since_outreach': days_since,
             'emails_used': emails_used,
             'reservation': res_info,
-            'resting_suggested': evaluate_resting_eligibility(
-                camp,
-                resting_config,
-                business_today=today,
-            )['eligible'],
+            'resting_suggested': rest_suggested,
             'operational_emails': context['operational_emails'],
             'current_sequence': context['current_sequence'],
             'current_price': context['current_price'],
             'last_contact_date': context['last_contact_date'],
             'days_since_last_contact': context['days_since_last_contact'],
+            'temperature': context['temperature'],
+            'temperature_label': context['label'],
+            'temperature_emoji': context['emoji'],
             'expiry_date': context['expiry_date'],
             'days_until_expiry': context['days_until_expiry'],
             'expiry_severity': context['expiry_severity'],
@@ -1607,14 +1715,21 @@ def get_normal_follow_ups():
     from app.services.settings_service import get_resting_eligibility_config
     from app.services.time_service import get_business_today
     from app.services.settings_service import get_setting
+    from app.services.expiry_service import select_latest_campaign
+    from app.services.campaign_temperature_service import (
+        calculate_campaign_temperature,
+        get_campaign_temperature_config,
+        is_active_followup_temperature,
+    )
 
     today = get_business_today()
     min_days = int(get_setting('NORMAL_FOLLOW_UP_MIN', '7'))
     max_days = int(get_setting('NORMAL_FOLLOW_UP_MAX', '7'))
     resting_config = get_resting_eligibility_config()
+    temperature_config = get_campaign_temperature_config()
 
     eligible_campaigns = Campaign.query.filter(
-        Campaign.status.in_([CampaignStatus.ACTIVE, CampaignStatus.RESTING]),
+        Campaign.status == CampaignStatus.ACTIVE,
         Campaign.current_sequence > 1
     ).all()
 
@@ -1622,6 +1737,17 @@ def get_normal_follow_ups():
     past_due = []
 
     for camp in eligible_campaigns:
+        if str(camp.domain.status).upper() in {'SOLD', 'EXPIRED'}:
+            continue
+        if select_latest_campaign(camp.domain.campaigns) is not camp:
+            continue
+        temperature = calculate_campaign_temperature(
+            camp,
+            business_today=today,
+            temperature_config=temperature_config,
+        )
+        if not is_active_followup_temperature(temperature):
+            continue
         latest = CampaignHistory.query.filter_by(
             campaign_id=camp.id
         ).order_by(CampaignHistory.sequence.desc()).first()
@@ -1638,6 +1764,11 @@ def get_normal_follow_ups():
         context = build_campaign_context(
             camp, business_today=today, latest_history=latest
         )
+        rest_suggested = evaluate_resting_eligibility(
+            camp,
+            resting_config,
+            business_today=today,
+        )['eligible']
         emails_used = context['operational_emails']
         res = Reservation.query.filter_by(
             campaign_id=camp.id, date=today, status=ReservationStatus.RESERVED
@@ -1654,16 +1785,15 @@ def get_normal_follow_ups():
             'days_since_contact': days_since,
             'emails_used': emails_used,
             'reservation': res_info,
-            'resting_suggested': evaluate_resting_eligibility(
-                camp,
-                resting_config,
-                business_today=today,
-            )['eligible'],
+            'resting_suggested': rest_suggested,
             'operational_emails': context['operational_emails'],
             'current_sequence': context['current_sequence'],
             'current_price': context['current_price'],
             'last_contact_date': context['last_contact_date'],
             'days_since_last_contact': context['days_since_last_contact'],
+            'temperature': context['temperature'],
+            'temperature_label': context['label'],
+            'temperature_emoji': context['emoji'],
             'expiry_date': context['expiry_date'],
             'days_until_expiry': context['days_until_expiry'],
             'expiry_severity': context['expiry_severity'],
@@ -1677,6 +1807,78 @@ def get_normal_follow_ups():
             past_due.append(camp_info)
 
     return jsonify({"due": due, "past_due": past_due})
+
+
+@bp.route('/dashboard/cooling', methods=['GET'])
+def get_cooling_campaigns():
+    from sqlalchemy.orm import selectinload
+    from app.models.models import CampaignHistory, CampaignStatus, Domain
+    from app.services.campaign_temperature_service import (
+        get_campaign_temperature_config,
+        is_cooling_campaign,
+        temperature_details,
+        calculate_campaign_temperature,
+    )
+    from app.services.dashboard_campaign_context_service import build_campaign_context
+    from app.services.expiry_service import select_latest_campaign
+    from app.services.time_service import get_business_today
+
+    today = get_business_today()
+    temperature_config = get_campaign_temperature_config()
+    domains = Domain.query.options(selectinload(Domain.campaigns)).filter(
+        Domain.status.notin_(['SOLD', 'EXPIRED'])
+    ).order_by(Domain.domain_name.asc(), Domain.id.asc()).all()
+
+    results = []
+    for domain in domains:
+        campaign = select_latest_campaign(domain.campaigns)
+        if campaign is None or campaign.status not in {
+            CampaignStatus.ACTIVE,
+            CampaignStatus.RESTING,
+        }:
+            continue
+        temperature = calculate_campaign_temperature(
+            campaign,
+            business_today=today,
+            temperature_config=temperature_config,
+        )
+        if not is_cooling_campaign(campaign, temperature):
+            continue
+
+        latest = CampaignHistory.query.filter_by(
+            campaign_id=campaign.id
+        ).order_by(CampaignHistory.sequence.desc(), CampaignHistory.id.desc()).first()
+        context = build_campaign_context(
+            campaign,
+            business_today=today,
+            latest_history=latest,
+        )
+        presentation = temperature_details(temperature)
+        results.append({
+            'campaign_id': campaign.id,
+            'domain': campaign.domain.domain_name,
+            'status': campaign.status.value,
+            'temperature': temperature,
+            'temperature_label': presentation['label'],
+            'temperature_emoji': presentation['emoji'],
+            'current_sequence': context['current_sequence'],
+            'current_price': context['current_price'],
+            'last_contact_date': context['last_contact_date'],
+            'days_since_last_contact': context['days_since_last_contact'],
+            'expiry_date': context['expiry_date'],
+            'days_until_expiry': context['days_until_expiry'],
+            'expiry_severity': context['expiry_severity'],
+            'operational_emails': context['operational_emails'],
+            'price_progression': context['price_progression'],
+            'price_progression_items': context['price_progression_items'],
+            'can_rest': campaign.status == CampaignStatus.ACTIVE,
+        })
+
+    return jsonify({
+        'business_today': today.isoformat(),
+        'count': len(results),
+        'domains': results,
+    })
 
 @bp.route('/campaigns/<int:campaign_id>/reservation', methods=['POST'])
 def reserve_campaign(campaign_id):

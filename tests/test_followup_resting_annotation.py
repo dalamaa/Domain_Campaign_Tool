@@ -12,7 +12,7 @@ def configure_resting(days_since_last_contact=True):
         "sequence": {"enabled": False, "threshold": 6},
         "days_since_last_contact": {
             "enabled": days_since_last_contact,
-            "threshold": 50,
+            "threshold": 20,
         },
         "campaign_age": {"enabled": False, "threshold": 50},
         "known_activity_age": {"enabled": False, "threshold": 50},
@@ -54,7 +54,7 @@ def test_first_followup_can_also_be_rest_eligible_and_remains_in_followups(clien
             1,
             ActionType.FIRST_OUTREACH,
             TODAY - timedelta(days=3),
-            TODAY - timedelta(days=50),
+            TODAY - timedelta(days=20),
         )
 
         response = client.get("/api/dashboard/first-follow-ups")
@@ -73,7 +73,7 @@ def test_normal_followup_can_also_be_rest_eligible_and_remains_in_followups(clie
             2,
             ActionType.FOLLOW_UP,
             TODAY - timedelta(days=7),
-            TODAY - timedelta(days=50),
+            TODAY - timedelta(days=20),
         )
 
         response = client.get("/api/dashboard/normal-follow-ups")
@@ -92,7 +92,7 @@ def test_followup_rest_annotation_false_when_rest_trigger_disabled(client, app, 
             2,
             ActionType.FOLLOW_UP,
             TODAY - timedelta(days=7),
-            TODAY - timedelta(days=50),
+            TODAY - timedelta(days=20),
         )
 
         response = client.get("/api/dashboard/normal-follow-ups")
@@ -114,7 +114,7 @@ def test_followup_rest_annotation_uses_persisted_threshold(client, app, monkeypa
             2,
             ActionType.FOLLOW_UP,
             TODAY - timedelta(days=7),
-            TODAY - timedelta(days=50),
+            TODAY - timedelta(days=20),
         )
 
         response = client.get("/api/dashboard/normal-follow-ups")
@@ -137,7 +137,7 @@ def test_followup_rest_annotation_keeps_or_semantics(client, app, monkeypatch):
             2,
             ActionType.FOLLOW_UP,
             TODAY - timedelta(days=7),
-            TODAY - timedelta(days=50),
+            TODAY - timedelta(days=20),
         )
 
         response = client.get("/api/dashboard/normal-follow-ups")
@@ -156,7 +156,7 @@ def test_resting_and_followup_suggestions_can_contain_same_campaign(client, app,
             2,
             ActionType.FOLLOW_UP,
             TODAY - timedelta(days=7),
-            TODAY - timedelta(days=50),
+            TODAY - timedelta(days=20),
         )
 
         followup = client.get("/api/dashboard/normal-follow-ups").get_json()
@@ -175,16 +175,15 @@ def test_resting_campaign_is_not_marked_as_rest_suggested_in_followups(client, a
             2,
             ActionType.FOLLOW_UP,
             TODAY - timedelta(days=7),
-            TODAY - timedelta(days=50),
+            TODAY - timedelta(days=20),
         )
         campaign.status = CampaignStatus.RESTING
         db.session.commit()
 
         response = client.get("/api/dashboard/normal-follow-ups")
 
-    item = response.get_json()["due"][0]
-    assert item["campaign_id"] == campaign.id
-    assert item["resting_suggested"] is False
+    assert response.get_json()["due"] == []
+    assert response.get_json()["past_due"] == []
 
 
 def test_followup_annotation_does_not_mutate_campaign_or_history(client, app, monkeypatch):

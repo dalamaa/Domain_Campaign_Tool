@@ -107,6 +107,11 @@ def _expiry_severity(days, threshold):
 def build_campaign_context(campaign, *, business_today=None, latest_history=None):
     """Return common display fields without applying section eligibility."""
     from app.services import expiry_service, time_service
+    from app.services.campaign_temperature_service import (
+        calculate_campaign_temperature,
+        get_campaign_temperature_config,
+        temperature_details,
+    )
 
     today = business_today or time_service.get_business_today()
     if latest_history is None:
@@ -128,6 +133,12 @@ def build_campaign_context(campaign, *, business_today=None, latest_history=None
         expiry_threshold = expiry_service.get_expiring_soon_days()
     except (TypeError, ValueError):
         expiry_threshold = None
+    temperature = calculate_campaign_temperature(
+        campaign,
+        business_today=today,
+        temperature_config=get_campaign_temperature_config(),
+    )
+    temperature_info = temperature_details(temperature)
 
     return {
         "domain": campaign.domain.domain_name if campaign.domain else None,
@@ -139,6 +150,7 @@ def build_campaign_context(campaign, *, business_today=None, latest_history=None
         "current_price": campaign.current_price,
         "last_contact_date": last_contact.isoformat() if last_contact else None,
         "days_since_last_contact": days_since,
+        **temperature_info,
         "expiry_date": expiry.isoformat() if expiry else None,
         "days_until_expiry": days_until,
         "expiry_severity": _expiry_severity(days_until, expiry_threshold),

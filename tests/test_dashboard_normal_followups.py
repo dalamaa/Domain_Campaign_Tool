@@ -10,7 +10,14 @@ def test_normal_follow_ups_logic(client, app):
         db.session.add(domain)
         db.session.flush()
         # Sequence 2 (Normal Follow-up)
-        campaign = Campaign(domain_id=domain.id, status=CampaignStatus.ACTIVE, current_sequence=2, start_date=datetime.utcnow(), current_price=100)
+        campaign = Campaign(
+            domain_id=domain.id,
+            status=CampaignStatus.ACTIVE,
+            current_sequence=2,
+            start_date=datetime.utcnow(),
+            last_contact_date=(datetime.utcnow() - timedelta(days=10)).date(),
+            current_price=100,
+        )
         db.session.add(campaign)
         db.session.flush()
 
