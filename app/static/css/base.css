@@ -1043,6 +1043,8 @@ tr[draggable="true"]:active { cursor: grabbing; }
   background: var(--color-primary);
   color: #fff;
 }
+.team-domain-mode-tabs[hidden],
+.team-domain-form[hidden] { display: none; }
 
 .team-domain-panel {
   margin-top: var(--space-5);
@@ -1122,6 +1124,7 @@ tr[draggable="true"]:active { cursor: grabbing; }
   box-shadow: var(--shadow-md);
 }
 .team-domain-form { display: grid; gap: var(--space-4); margin-top: var(--space-4); }
+.team-domain-field-help { color: var(--color-muted-text); font-size: 0.8rem; font-weight: 400; }
 .team-domain-form-actions { justify-content: flex-end; }
 .form-error { min-height: 1.5em; margin: 0; color: var(--color-danger); }
 

@@ -25,7 +25,25 @@ def test_team_domains_ui_has_required_oversight_fields_and_actions():
     assert html.count('id="add-team-assignment-button"') == 1
     assert 'id="bulk-add-team-assignment-button"' not in html
     assert 'id="bulk-team-assignment-dialog"' not in html
+    assert 'id="team-assignment-domain" type="text"' in html
+    assert 'id="bulk-team-assignment-domains"' in html
+    assert 'id="bulk-team-assignment-helper"' in html
+    assert "One domain per line" in html
+    assert '>Save Assignment</button>' in html
+    assert '>Add Assignments</button>' in html
+    assert 'class="team-domain-form" hidden' in html
     assert "setAssignmentMode" in script
+    assert 'byId("team-assignment-form").hidden = isBulk' in script
+    assert 'byId("bulk-team-assignment-form").hidden = !isBulk' in script
+
+    single_submit = script[script.index("async function saveAssignment"):script.index("async function saveBulkAssignment")]
+    bulk_submit = script[script.index("async function saveBulkAssignment"):script.index("async function deleteMember")]
+    assert 'byId("team-assignment-domain").value' in single_submit
+    assert 'byId("bulk-team-assignment-domains").value' in bulk_submit
+    assert 'byId("bulk-team-assignment-domains").value' not in single_submit
+    assert 'byId("team-assignment-domain").value' not in bulk_submit
+    assert 'byId("team-assignment-mode-tabs").hidden = Boolean(assignment)' in script
+    assert 'setAssignmentMode("single")' in script
     assert "TEAM_DOMAIN_WARNING_DAYS" not in html
     assert "team-domain-warning-days" in settings
     assert "team-domain-rest-days" in settings
@@ -43,5 +61,8 @@ def test_team_domain_styles_cover_age_and_expiry_guidance():
         ".team-expiry-attention",
         ".team-domain-missing",
         ".team-domain-incomplete",
+        ".team-domain-form[hidden]",
+        ".team-domain-mode-tabs[hidden]",
+        ".team-domain-field-help",
     ]:
         assert selector in styles
