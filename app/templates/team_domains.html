@@ -10,6 +10,7 @@
     <div class="team-domains-actions">
       <button class="btn btn-secondary" type="button" id="add-team-member-button">Add Member</button>
       <button class="btn btn-primary" type="button" id="add-team-assignment-button">Add Assignment</button>
+      <button class="btn btn-primary" type="button" id="bulk-add-team-assignment-button">Bulk Add Assignments</button>
     </div>
   </div>
 
@@ -108,12 +109,36 @@
         <select id="team-assignment-member" required></select>
       </label>
       <label>Domain name <input id="team-assignment-domain" type="text" required maxlength="255" /></label>
-      <label>Assigned date <input id="team-assignment-assigned-date" type="date" required /></label>
-      <label>Expiry date <input id="team-assignment-expiry-date" type="date" required /></label>
+      <label>Assigned date (optional) <input id="team-assignment-assigned-date" type="date" /></label>
+      <label>Expiry date (optional) <input id="team-assignment-expiry-date" type="date" /></label>
       <p id="team-assignment-form-error" class="form-error" role="alert"></p>
       <div class="team-domain-form-actions">
         <button class="btn btn-primary" type="submit">Save Assignment</button>
         <button class="btn btn-secondary" type="button" data-close-dialog="team-assignment-dialog">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="team-domain-dialog" id="bulk-team-assignment-dialog" hidden>
+  <div class="team-domain-dialog-card" role="dialog" aria-modal="true" aria-labelledby="bulk-team-assignment-dialog-title">
+    <div class="team-domain-panel-header">
+      <h3 id="bulk-team-assignment-dialog-title">Bulk Add Assignments</h3>
+      <button class="btn btn-subtle" type="button" data-close-dialog="bulk-team-assignment-dialog">Close</button>
+    </div>
+    <form id="bulk-team-assignment-form" class="team-domain-form">
+      <label>Team member
+        <select id="bulk-team-assignment-member" required></select>
+      </label>
+      <label>Domains (one per line)
+        <textarea id="bulk-team-assignment-domains" rows="8" required placeholder="example.com\nexample.net"></textarea>
+      </label>
+      <label>Assigned date (optional) <input id="bulk-team-assignment-assigned-date" type="date" /></label>
+      <label>Expiry date (optional) <input id="bulk-team-assignment-expiry-date" type="date" /></label>
+      <p id="bulk-team-assignment-form-error" class="form-error" role="alert"></p>
+      <div class="team-domain-form-actions">
+        <button class="btn btn-primary" type="submit">Add Assignments</button>
+        <button class="btn btn-secondary" type="button" data-close-dialog="bulk-team-assignment-dialog">Cancel</button>
       </div>
     </form>
   </div>

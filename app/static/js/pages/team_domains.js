@@ -42,17 +42,23 @@
   function renderMemberOptions() {
     const filter = byId("team-member-filter");
     const assignment = byId("team-assignment-member");
+    const bulkAssignment = byId("bulk-team-assignment-member");
     const selectedFilter = filter.value;
     const selectedAssignment = assignment.value;
+    const selectedBulkAssignment = bulkAssignment.value;
     const options = state.members.map((member) =>
       `<option value="${member.id}">${escapeHtml(member.name)} (${escapeHtml(member.member_type)})</option>`,
     ).join("");
     filter.innerHTML = `<option value="">All team members</option>${options}`;
     assignment.innerHTML = options;
+    bulkAssignment.innerHTML = options;
     filter.value = state.members.some((member) => String(member.id) === selectedFilter)
       ? selectedFilter : "";
     if (state.members.some((member) => String(member.id) === selectedAssignment)) {
       assignment.value = selectedAssignment;
+    }
+    if (state.members.some((member) => String(member.id) === selectedBulkAssignment)) {
+      bulkAssignment.value = selectedBulkAssignment;
     }
   }
 
@@ -78,16 +84,25 @@
     byId("team-domain-count").textContent = `${assignments.length} assignment${assignments.length === 1 ? "" : "s"}`;
     byId("team-domain-empty").hidden = assignments.length !== 0;
     byId("team-domain-table-body").innerHTML = assignments.map((assignment) => {
+      const incomplete = assignment.assigned_date == null || assignment.expiry_date == null;
       const ageClass = `team-age-${assignment.campaign_age_state}`;
       const expiryClass = `team-expiry-${assignment.expiry_state}`;
-      const ageLabel = assignment.campaign_age_state === "normal"
-        ? `${assignment.campaign_age_days}d`
-        : `${assignment.campaign_age_days}d · ${escapeHtml(assignment.campaign_age_label)}`;
-      return `<tr>
+      const ageLabel = assignment.campaign_age_days == null
+        ? `<span class="team-domain-missing">⚠️ Missing start date</span>`
+        : assignment.campaign_age_state === "normal"
+          ? `${assignment.campaign_age_days}d`
+          : `${assignment.campaign_age_days}d · ${escapeHtml(assignment.campaign_age_label)}`;
+      const assignedLabel = assignment.assigned_date
+        ? escapeHtml(formatDate(assignment.assigned_date))
+        : `<span class="team-domain-missing">⚠️ Missing start date</span>`;
+      const expiryLabel = assignment.expiry_date
+        ? `${escapeHtml(formatDate(assignment.expiry_date))}<small>${escapeHtml(assignment.expiry_label)}</small>`
+        : `<span class="team-domain-missing">⚠️ Missing expiry</span>`;
+      return `<tr class="${incomplete ? "team-domain-incomplete" : ""}">
         <td>${escapeHtml(assignment.team_member_name)}</td>
         <td>${escapeHtml(assignment.domain_name)}</td>
-        <td>${escapeHtml(formatDate(assignment.assigned_date))}</td>
-        <td class="${expiryClass}">${escapeHtml(formatDate(assignment.expiry_date))}<small>${escapeHtml(assignment.expiry_label)}</small></td>
+        <td>${assignedLabel}</td>
+        <td class="${expiryClass}">${expiryLabel}</td>
         <td class="${ageClass}">${ageLabel}</td>
         <td class="team-domain-row-actions">
           <button class="btn btn-subtle btn-compact" type="button" data-edit-assignment="${assignment.id}">Edit</button>
@@ -144,6 +159,14 @@
     byId("team-assignment-form-error").textContent = "";
   }
 
+  function resetBulkAssignmentForm() {
+    byId("bulk-team-assignment-member").value = "";
+    byId("bulk-team-assignment-domains").value = "";
+    byId("bulk-team-assignment-assigned-date").value = "";
+    byId("bulk-team-assignment-expiry-date").value = "";
+    byId("bulk-team-assignment-form-error").textContent = "";
+  }
+
   async function saveMember(event) {
     event.preventDefault();
     const id = byId("team-member-id").value;
@@ -171,8 +194,8 @@
     const payload = {
       team_member_id: Number(byId("team-assignment-member").value),
       domain_name: byId("team-assignment-domain").value,
-      assigned_date: byId("team-assignment-assigned-date").value,
-      expiry_date: byId("team-assignment-expiry-date").value,
+      assigned_date: byId("team-assignment-assigned-date").value || null,
+      expiry_date: byId("team-assignment-expiry-date").value || null,
     };
     try {
       await fetchJson(id ? `/api/team-domain-assignments/${id}` : "/api/team-domain-assignments", {
@@ -185,6 +208,28 @@
       await loadTeamDomains();
     } catch (error) {
       byId("team-assignment-form-error").textContent = error.message;
+    }
+  }
+
+  async function saveBulkAssignment(event) {
+    event.preventDefault();
+    const payload = {
+      team_member_id: Number(byId("bulk-team-assignment-member").value),
+      domain_names: byId("bulk-team-assignment-domains").value.split(/\r?\n/),
+      assigned_date: byId("bulk-team-assignment-assigned-date").value || null,
+      expiry_date: byId("bulk-team-assignment-expiry-date").value || null,
+    };
+    try {
+      const response = await fetchJson("/api/team-domain-assignments/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      closeDialog("bulk-team-assignment-dialog");
+      showToast(`${response.count} assignment${response.count === 1 ? "" : "s"} added.`);
+      await loadTeamDomains();
+    } catch (error) {
+      byId("bulk-team-assignment-form-error").textContent = error.message;
     }
   }
 
@@ -223,11 +268,20 @@
       resetAssignmentForm();
       openDialog("team-assignment-dialog");
     });
+    byId("bulk-add-team-assignment-button").addEventListener("click", () => {
+      if (!state.members.length) {
+        showToast("Add a team member before adding assignments.", "error");
+        return;
+      }
+      resetBulkAssignmentForm();
+      openDialog("bulk-team-assignment-dialog");
+    });
     byId("refresh-team-domains-button").addEventListener("click", loadTeamDomains);
     byId("team-domain-search").addEventListener("input", renderAssignments);
     byId("team-member-filter").addEventListener("change", renderAssignments);
     byId("team-member-form").addEventListener("submit", saveMember);
     byId("team-assignment-form").addEventListener("submit", saveAssignment);
+    byId("bulk-team-assignment-form").addEventListener("submit", saveBulkAssignment);
     document.querySelectorAll("[data-close-dialog]").forEach((button) => {
       button.addEventListener("click", () => closeDialog(button.dataset.closeDialog));
     });

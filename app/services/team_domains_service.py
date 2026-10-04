@@ -2,6 +2,8 @@
 
 from datetime import date
 
+from sqlalchemy import func, nullslast
+
 from app.models.models import (
     Setting,
     TeamDomainAssignment,
@@ -93,6 +95,8 @@ def update_team_domain_config(warning_days, rest_days):
 
 
 def calculate_campaign_age_days(assigned_date, *, business_today=None):
+    if assigned_date is None:
+        return None
     if not isinstance(assigned_date, date):
         raise TypeError("assigned_date must be a date.")
     today = business_today if business_today is not None else get_business_today()
@@ -102,6 +106,8 @@ def calculate_campaign_age_days(assigned_date, *, business_today=None):
 
 
 def campaign_age_guidance(age_days, *, config=None):
+    if age_days is None:
+        return {"state": "unknown", "label": "Missing start date"}
     if type(age_days) is not int:
         raise TypeError("age_days must be an integer.")
     config = config or get_team_domain_config()
@@ -114,7 +120,7 @@ def campaign_age_guidance(age_days, *, config=None):
 
 def expiry_guidance(expiry_date, *, business_today=None):
     if expiry_date is None:
-        return {"days_until_expiry": None, "state": "no_expiry", "label": "No expiry"}
+        return {"days_until_expiry": None, "state": "missing", "label": "Missing expiry"}
     if not isinstance(expiry_date, date):
         raise TypeError("expiry_date must be a date.")
     today = business_today if business_today is not None else get_business_today()
@@ -208,9 +214,11 @@ def delete_team_member(member_id):
 
 def create_assignment(team_member_id, domain_name, assigned_date, expiry_date):
     member = _member_or_raise(team_member_id)
-    if not isinstance(assigned_date, date) or not isinstance(expiry_date, date):
-        raise ValueError("Assigned date and expiry date are required dates.")
-    if expiry_date < assigned_date:
+    if assigned_date is not None and not isinstance(assigned_date, date):
+        raise ValueError("Assigned date must be a date when provided.")
+    if expiry_date is not None and not isinstance(expiry_date, date):
+        raise ValueError("Expiry date must be a date when provided.")
+    if assigned_date is not None and expiry_date is not None and expiry_date < assigned_date:
         raise ValueError("Expiry date cannot be before assigned date.")
     assignment = TeamDomainAssignment(
         team_member=member,
@@ -230,9 +238,11 @@ def create_assignment(team_member_id, domain_name, assigned_date, expiry_date):
 def update_assignment(assignment_id, team_member_id, domain_name, assigned_date, expiry_date):
     assignment = _assignment_or_raise(assignment_id)
     member = _member_or_raise(team_member_id)
-    if not isinstance(assigned_date, date) or not isinstance(expiry_date, date):
-        raise ValueError("Assigned date and expiry date are required dates.")
-    if expiry_date < assigned_date:
+    if assigned_date is not None and not isinstance(assigned_date, date):
+        raise ValueError("Assigned date must be a date when provided.")
+    if expiry_date is not None and not isinstance(expiry_date, date):
+        raise ValueError("Expiry date must be a date when provided.")
+    if assigned_date is not None and expiry_date is not None and expiry_date < assigned_date:
         raise ValueError("Expiry date cannot be before assigned date.")
     assignment.team_member = member
     assignment.domain_name = _required_text(domain_name, "Domain name")
@@ -244,6 +254,74 @@ def update_assignment(assignment_id, team_member_id, domain_name, assigned_date,
         db.session.rollback()
         raise
     return assignment
+
+
+def _normalize_bulk_domain_names(domain_names):
+    if isinstance(domain_names, str):
+        domain_names = domain_names.splitlines()
+    if not isinstance(domain_names, list) or not domain_names:
+        raise ValueError("domain_names must contain at least one domain name.")
+
+    normalized = []
+    seen = set()
+    for value in domain_names:
+        if not isinstance(value, str):
+            raise ValueError("Each domain name must be text.")
+        domain_name = value.strip()
+        if not domain_name:
+            continue
+        if len(domain_name) > 255:
+            raise ValueError("Domain names cannot exceed 255 characters.")
+        key = domain_name.casefold()
+        if key in seen:
+            raise ValueError(f"Duplicate domain in bulk submission: {domain_name}.")
+        seen.add(key)
+        normalized.append(domain_name)
+
+    if not normalized:
+        raise ValueError("domain_names must contain at least one non-empty domain name.")
+    return normalized
+
+
+def bulk_create_assignments(team_member_id, domain_names, assigned_date=None, expiry_date=None):
+    """Create a validated batch of assignments with one commit."""
+    member = _member_or_raise(team_member_id)
+    normalized_names = _normalize_bulk_domain_names(domain_names)
+    if assigned_date is not None and not isinstance(assigned_date, date):
+        raise ValueError("Assigned date must be a date when provided.")
+    if expiry_date is not None and not isinstance(expiry_date, date):
+        raise ValueError("Expiry date must be a date when provided.")
+    if assigned_date is not None and expiry_date is not None and expiry_date < assigned_date:
+        raise ValueError("Expiry date cannot be before assigned date.")
+
+    existing = TeamDomainAssignment.query.filter(
+        TeamDomainAssignment.team_member_id == member.id,
+        func.lower(TeamDomainAssignment.domain_name).in_(
+            [domain_name.casefold() for domain_name in normalized_names]
+        ),
+    ).all()
+    if existing:
+        existing_names = ", ".join(assignment.domain_name for assignment in existing)
+        raise TeamDomainValidationError(
+            f"Assignment already exists for: {existing_names}."
+        )
+
+    assignments = [
+        TeamDomainAssignment(
+            team_member=member,
+            domain_name=domain_name,
+            assigned_date=assigned_date,
+            expiry_date=expiry_date,
+        )
+        for domain_name in normalized_names
+    ]
+    try:
+        db.session.add_all(assignments)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+    return assignments
 
 
 def delete_assignment(assignment_id):
@@ -283,8 +361,8 @@ def serialize_assignment(assignment, *, business_today=None, config=None):
         "team_member_name": assignment.team_member.name,
         "team_member_type": assignment.team_member.member_type.value,
         "domain_name": assignment.domain_name,
-        "assigned_date": assignment.assigned_date.isoformat(),
-        "expiry_date": assignment.expiry_date.isoformat(),
+        "assigned_date": assignment.assigned_date.isoformat() if assignment.assigned_date else None,
+        "expiry_date": assignment.expiry_date.isoformat() if assignment.expiry_date else None,
         "campaign_age_days": age_days,
         "campaign_age_state": age["state"],
         "campaign_age_label": age["label"],
@@ -303,7 +381,7 @@ def list_assignments(*, search=None, team_member_id=None, business_today=None):
     if team_member_id is not None:
         query = query.filter(TeamDomainAssignment.team_member_id == team_member_id)
     assignments = query.order_by(
-        TeamDomainAssignment.expiry_date.asc(),
+        nullslast(TeamDomainAssignment.expiry_date.asc()),
         TeamDomainAssignment.id.asc(),
     ).all()
     config = get_team_domain_config()

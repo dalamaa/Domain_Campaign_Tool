@@ -10,6 +10,15 @@ def test_team_domains_ui_has_required_oversight_fields_and_actions():
         assert text in html
     for text in ["data-edit-assignment", "data-delete-assignment", "data-edit-member", "data-delete-member"]:
         assert text in script
+    for text in [
+        "bulk-team-assignment-dialog",
+        "bulk-team-assignment-form",
+        "/api/team-domain-assignments/bulk",
+        "Missing start date",
+        "Missing expiry",
+        "team-domain-incomplete",
+    ]:
+        assert text in script or text in html
     assert "TEAM_DOMAIN_WARNING_DAYS" not in html
     assert "team-domain-warning-days" in settings
     assert "team-domain-rest-days" in settings
@@ -25,5 +34,7 @@ def test_team_domain_styles_cover_age_and_expiry_guidance():
         ".team-expiry-urgent",
         ".team-expiry-warning",
         ".team-expiry-attention",
+        ".team-domain-missing",
+        ".team-domain-incomplete",
     ]:
         assert selector in styles

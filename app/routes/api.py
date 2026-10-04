@@ -31,8 +31,10 @@ def _parse_campaign_action_date(value):
 
 
 def _parse_team_domain_date(value, field_name):
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{field_name} is required.")
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be an ISO date (YYYY-MM-DD).")
     try:
         return date.fromisoformat(value.strip())
     except ValueError as exc:
@@ -673,6 +675,39 @@ def add_team_domain_assignment():
         if isinstance(exc, (TypeError, ValueError)):
             return jsonify({'error': str(exc)}), 400
         raise
+
+
+@bp.route('/team-domain-assignments/bulk', methods=['POST'])
+@bp.route('/team-domains/bulk', methods=['POST'])
+def bulk_add_team_domain_assignments():
+    from app.services.team_domains_service import (
+        TeamDomainNotFoundError,
+        TeamDomainValidationError,
+        bulk_create_assignments,
+        serialize_assignment,
+    )
+
+    data = request.get_json(silent=True)
+    try:
+        if not isinstance(data, dict):
+            raise ValueError('Bulk team domain assignment data must be an object.')
+        assignments = bulk_create_assignments(
+            _parse_positive_id(data.get('team_member_id'), 'team_member_id'),
+            data.get('domain_names', data.get('domains')),
+            _parse_team_domain_date(data.get('assigned_date'), 'Assigned date'),
+            _parse_team_domain_date(data.get('expiry_date'), 'Expiry date'),
+        )
+        return jsonify({
+            'success': True,
+            'count': len(assignments),
+            'assignments': [serialize_assignment(assignment) for assignment in assignments],
+        }), 201
+    except TeamDomainNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except TeamDomainValidationError as exc:
+        return jsonify({'error': str(exc)}), 409
+    except (TypeError, ValueError) as exc:
+        return jsonify({'error': str(exc)}), 400
 
 
 @bp.route('/team-domain-assignments/<int:assignment_id>', methods=['PUT'])

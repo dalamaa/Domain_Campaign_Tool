@@ -185,8 +185,8 @@ class TeamDomainAssignment(db.Model):
     id = db.Column(Integer, primary_key=True)
     team_member_id = db.Column(Integer, ForeignKey('team_members.id'), nullable=False, index=True)
     domain_name = db.Column(String, nullable=False, index=True)
-    assigned_date = db.Column(Date, nullable=False, index=True)
-    expiry_date = db.Column(Date, nullable=False, index=True)
+    assigned_date = db.Column(Date, nullable=True, index=True)
+    expiry_date = db.Column(Date, nullable=True, index=True)
     created_at = db.Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(
         DateTime,
