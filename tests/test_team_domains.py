@@ -1,6 +1,8 @@
 from datetime import date, timedelta
 from pathlib import Path
 
+import pytest
+
 from app.models.models import Setting, TeamDomainAssignment, TeamMember, db
 from app.services.team_domains_service import (
     campaign_age_guidance,
@@ -10,6 +12,14 @@ from app.services.team_domains_service import (
 
 
 TODAY = date(2026, 10, 4)
+
+
+@pytest.fixture(autouse=True)
+def fixed_business_today(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.team_domains_service.get_business_today",
+        lambda: TODAY,
+    )
 
 
 def create_member(client, name="Alex", member_type="STAFF"):

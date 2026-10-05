@@ -19,6 +19,7 @@ from app.models.models import (
     Domain,
     EmailAccount,
     HistoryEmailUsed,
+    HistoricalDomain,
     Reservation,
     ReservationEmailLink,
     Setting,
@@ -27,7 +28,7 @@ from app.services.time_service import get_business_today
 
 
 EXACT_BACKUP_FORMAT_NAME = 'domain-campaign-exact-backup'
-EXACT_BACKUP_FORMAT_VERSION = 1
+EXACT_BACKUP_FORMAT_VERSION = 2
 EXACT_BACKUP_APPLICATION = 'Domain Campaign Tool'
 
 
@@ -67,6 +68,9 @@ DATASET_COLUMNS = OrderedDict([
         'campaign_created_at', 'date', 'email_code',
     ]),
     ('settings', ['key', 'value']),
+    ('historical_domains', [
+        'historical_id', 'domain_name', 'expiry_date', 'last_email_used', 'retired_at',
+    ]),
 ])
 
 DATASET_SHEET_NAMES = OrderedDict(
@@ -362,6 +366,19 @@ def build_export_datasets():
         if not any(marker in setting.key.upper() for marker in _SENSITIVE_SETTING_MARKERS)
     ]
     rows['settings'] = settings
+    rows['historical_domains'] = [
+        {
+            'historical_id': record.id,
+            'domain_name': record.domain_name,
+            'expiry_date': record.expiry_date,
+            'last_email_used': record.last_email_used,
+            'retired_at': record.retired_at,
+        }
+        for record in sorted(
+            HistoricalDomain.query.all(),
+            key=lambda item: (item.domain_name, item.id or 0),
+        )
+    ]
 
     return [
         (name, DATASET_COLUMNS[name], [{column: _export_value(row.get(column)) for column in DATASET_COLUMNS[name]} for row in dataset_rows])

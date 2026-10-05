@@ -285,3 +285,15 @@ The application stores only the numeric price.
 The application does not store a separate price stage or price label.
 
 For example, a campaign's price history may contain: 499, 499 399 399 299  Foreign Key Rules  The following relationships must be enforced:  campaigns.domain_id → domains.id campaign_email_blocks.campaign_id → campaigns.id campaign_email_blocks.email_code → email_accounts.code reservations.campaign_id → campaigns.id reservation_email_links.reservation_id → reservations.id reservation_email_links.email_code → email_accounts.code campaign_history.campaign_id → campaigns.id  Campaign history must not be automatically deleted through cascading deletes.  EMAIL ACCOUNT SEED DATA  The following email accounts represent the actual email profiles available to the application.  These are not generic sample accounts.  They must be created as initial records when the database is seeded.  The exact order below is significant.  The seed order determines profile_order.  The scheduler must use this order when determining:  Email proximity Contiguous blocks Preferred email assignments Available blocks Reservation conflicts Alternative blocks  The application must never replace these codes with generic names such as Account 1, Account 2, etc.  Email Account Codes D03 D04 D05 D07  M01 M02 M04 M05 M06 M07 M08 M09 M10 M11 M12 M13 M14 M15 M16 M17 M18 M19 M20  ML06 ML07 ML08  N04 N09 N10  T01 T03 T04 T05 T06 T07 T08 T09 T10 T12 T13 T14 T15 T16 T17 T18  Y01 Y02 Y03 Y04  Z00 Z01 Z04 Z08 Z09 Seed Rules The first account in the list has profile_order = 1. The second account has profile_order = 2. Continue sequentially through the entire list. The final account has profile_order = 54. All seeded accounts have enabled = true. The group value must be explicitly stored for every account. Missing codes are intentional and must not be created. The seed process must create exactly these 54 email accounts.
+
+HISTORICAL DOMAINS
+
+historical_domains stores lightweight records after an expired operational Domain
+is manually retired. It contains id, domain_name, expiry_date, last_email_used,
+and retired_at. domain_name is unique by normalized lowercase value. Historical
+records have no foreign keys to operational campaign tables because those records
+are removed with the Domain after the archival snapshot succeeds.
+
+The settings table stores EXPIRED_DOMAIN_RETENTION_DAYS (default 60) and
+EXPIRED_DOMAIN_AUTO_ARCHIVE_DAYS (default 90). The automatic threshold must be
+greater than the manual threshold and both values are bounded at 3650 days.

@@ -22,6 +22,7 @@ from app.models.models import (
     DomainStatus,
     EmailAccount,
     HistoryEmailUsed,
+    HistoricalDomain,
     Reservation,
     ReservationEmailLink,
     ReservationStatus,
@@ -46,6 +47,7 @@ CONFIRMATION_TEXT = 'RESTORE EXACT BACKUP'
 
 OPERATIONAL_MODELS = (
     Domain,
+    HistoricalDomain,
     Campaign,
     EmailAccount,
     CampaignEmailBlock,
@@ -183,6 +185,13 @@ FIELD_PARSERS = {
         'status': _enum(DomainStatus),
         'notes': _optional_string,
         'created_at': _nullable(_datetime),
+    },
+    'historical_domains': {
+        'historical_id': _positive_integer,
+        'domain_name': _required_string,
+        'expiry_date': _nullable(_date),
+        'last_email_used': _optional_string,
+        'retired_at': _datetime,
     },
     'campaigns': {
         'campaign_id': _positive_integer,
@@ -418,6 +427,22 @@ def _validate_relationships(datasets):
             errors.append(
                 f"Duplicate normalized domain name {row['domain_name']} conflicts with {normalized_names[normalized]}.")
         normalized_names[normalized] = row['domain_name']
+
+    historical_ids = set()
+    historical_names = {}
+    for row in datasets['historical_domains']:
+        if row['historical_id'] in historical_ids:
+            errors.append(f"Duplicate historical_id {row['historical_id']}.")
+        historical_ids.add(row['historical_id'])
+        normalized = normalize_domain(row['domain_name'])
+        if not is_valid_domain(row['domain_name']):
+            errors.append(f"Invalid historical domain name {row['domain_name']}.")
+        if normalized in historical_names:
+            errors.append(
+                f"Duplicate normalized historical domain name {row['domain_name']} conflicts with "
+                f"{historical_names[normalized]}."
+            )
+        historical_names[normalized] = row['domain_name']
 
     email_accounts = datasets['email_accounts']
     email_codes = set()
@@ -691,6 +716,20 @@ def _restore_rows(plan):
     for row, obj in zip(sorted(datasets['domains'], key=lambda item: (item['domain_name'], item['domain_id'])), domain_objects):
         maps['domains'][row['domain_id']] = obj
 
+    db.session.add_all([
+        HistoricalDomain(
+            domain_name=row['domain_name'],
+            expiry_date=row['expiry_date'],
+            last_email_used=row['last_email_used'],
+            retired_at=row['retired_at'],
+        )
+        for row in sorted(
+            datasets['historical_domains'],
+            key=lambda item: (item['domain_name'], item['historical_id']),
+        )
+    ])
+    db.session.flush()
+
     campaign_rows = sorted(
         datasets['campaigns'],
         key=lambda item: (item['domain_name'], item['lifecycle_ordinal']),
@@ -787,6 +826,7 @@ def _operational_counts():
     """Return counts using the same dataset names as the exact backup."""
     model_by_dataset = {
         'domains': Domain,
+        'historical_domains': HistoricalDomain,
         'campaigns': Campaign,
         'campaign_history': CampaignHistory,
         'history_email_used': HistoryEmailUsed,

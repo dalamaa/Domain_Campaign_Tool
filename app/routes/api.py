@@ -569,6 +569,78 @@ def save_team_domain_settings():
         return jsonify({'error': str(exc)}), 400
 
 
+@bp.route('/settings/expired-domains', methods=['GET'])
+def get_expired_domain_settings():
+    from app.services.expired_historical_service import get_expired_domain_settings
+
+    try:
+        return jsonify(get_expired_domain_settings())
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@bp.route('/settings/expired-domains', methods=['POST'])
+def save_expired_domain_settings():
+    from app.services.expired_historical_service import update_expired_domain_settings
+
+    data = request.get_json(silent=True)
+    try:
+        allowed = {
+            'expired_domain_retention_days',
+            'expired_domain_auto_archive_days',
+        }
+        if not isinstance(data, dict) or not set(data) or not set(data) <= allowed:
+            raise ValueError(
+                'Expired Domain settings contain an unsupported field.'
+            )
+        settings = update_expired_domain_settings(
+            retention_days=data.get('expired_domain_retention_days'),
+            auto_archive_days=data.get('expired_domain_auto_archive_days'),
+        )
+        return jsonify({'success': True, **settings})
+    except (TypeError, ValueError) as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
+@bp.route('/expired-historical', methods=['GET'])
+@bp.route('/expired-domains', methods=['GET'])
+def get_expired_historical():
+    from app.services.expired_historical_service import list_expired_historical
+
+    try:
+        return jsonify(list_expired_historical(
+            expired_search=request.args.get('expired_search', request.args.get('search')),
+            historical_search=request.args.get('historical_search', request.args.get('search')),
+        ))
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+@bp.route('/expired-historical/archive', methods=['POST'])
+@bp.route('/expired-domains/archive', methods=['POST'])
+def archive_expired_domains():
+    from app.services.expired_historical_service import (
+        ExpiredHistoricalValidationError,
+        archive_eligible_domains,
+    )
+
+    data = request.get_json(silent=True)
+    try:
+        if data is None:
+            data = {}
+        if not isinstance(data, dict) or set(data) - {'domain_ids'}:
+            raise ValueError('Archive data may only contain domain_ids.')
+        result = archive_eligible_domains(data.get('domain_ids'))
+        return jsonify({'success': True, **result})
+    except ExpiredHistoricalValidationError as exc:
+        payload = {'error': str(exc)}
+        if exc.stale_domain_ids:
+            payload['stale_domain_ids'] = exc.stale_domain_ids
+        return jsonify(payload), 409
+    except (TypeError, ValueError) as exc:
+        return jsonify({'error': str(exc)}), 400
+
+
 @bp.route('/team-members', methods=['GET'])
 def get_team_members():
     from app.services.team_domains_service import list_team_members, serialize_team_member
@@ -768,16 +840,29 @@ def save_dashboard_section_order():
 @bp.route('/dashboard/overview', methods=['GET'])
 def get_dashboard_overview():
     from app.models.models import Domain, Campaign, CampaignStatus
+    from app.services.expired_historical_service import is_expired_domain
     from app.services.time_service import get_business_today
     from app.services.expiry_service import expiring_soon_bounds, get_expiring_soon_days
     today = get_business_today()
     expiry_days = get_expiring_soon_days()
     expiry_start, expiry_end = expiring_soon_bounds(today, expiry_days)
 
-    total_domains = Domain.query.count()
-    active_campaigns = Campaign.query.filter_by(status=CampaignStatus.ACTIVE).count()
-    resting_campaigns = Campaign.query.filter_by(status=CampaignStatus.RESTING).count()
-    dormant_campaigns = Campaign.query.filter_by(status=CampaignStatus.DORMANT).count()
+    total_domains = sum(
+        1 for domain in Domain.query.all()
+        if not is_expired_domain(domain, business_today=today)
+    )
+    active_campaigns = sum(
+        1 for campaign in Campaign.query.filter_by(status=CampaignStatus.ACTIVE).all()
+        if not is_expired_domain(campaign.domain, business_today=today)
+    )
+    resting_campaigns = sum(
+        1 for campaign in Campaign.query.filter_by(status=CampaignStatus.RESTING).all()
+        if not is_expired_domain(campaign.domain, business_today=today)
+    )
+    dormant_campaigns = sum(
+        1 for campaign in Campaign.query.filter_by(status=CampaignStatus.DORMANT).all()
+        if not is_expired_domain(campaign.domain, business_today=today)
+    )
     expiring_count = Domain.query.filter(
         Domain.expiry_date.isnot(None),
         Domain.expiry_date <= expiry_end,
@@ -867,6 +952,7 @@ def get_ready_for_campaign():
         evaluate_ready_for_campaign,
         get_ready_for_campaign_days,
     )
+    from app.services.expired_historical_service import is_expired_domain
     from app.services.time_service import get_business_today
     from app.services.dashboard_campaign_context_service import build_campaign_context
 
@@ -876,7 +962,7 @@ def get_ready_for_campaign():
     domains = Domain.query.options(selectinload(Domain.campaigns)).all()
 
     for domain in domains:
-        if str(domain.status).upper() in {'SOLD', 'EXPIRED'}:
+        if str(domain.status or '').upper() == 'SOLD' or is_expired_domain(domain, business_today=today):
             continue
 
         campaign = select_latest_campaign(domain.campaigns)
@@ -962,6 +1048,7 @@ def get_resting_suggestions():
         calculate_campaign_temperature,
         get_campaign_temperature_config,
     )
+    from app.services.expired_historical_service import is_expired_domain
 
     trigger_labels = {
         'sequence': 'Sequence',
@@ -986,7 +1073,7 @@ def get_resting_suggestions():
         ).join(Domain).order_by(Domain.domain_name.asc(), Campaign.id.asc()).all()
 
         for campaign in campaigns:
-            if str(campaign.domain.status).upper() in {'SOLD', 'EXPIRED'}:
+            if str(campaign.domain.status or '').upper() == 'SOLD' or is_expired_domain(campaign.domain, business_today=today):
                 continue
             if select_latest_campaign(campaign.domain.campaigns) is not campaign:
                 continue
@@ -1204,6 +1291,7 @@ def save_daily_use_limit():
 @bp.route('/dashboard/reservation-board', methods=['GET'])
 def get_reservation_board():
     from app.models.models import EmailAccount, Reservation, Campaign, ReservationStatus, ReservationEmailLink
+    from app.services.expired_historical_service import is_expired_domain
     from app.services.settings_service import get_setting
     from app.services.time_service import get_business_today
     from sqlalchemy import and_
@@ -1217,16 +1305,7 @@ def get_reservation_board():
         state = "AVAILABLE"
         reserved_domains = []
 
-        # Get count of reservations today for this email account
-        count = ReservationEmailLink.query.join(Reservation).filter(
-            and_(
-                ReservationEmailLink.email_code == acc.code,
-                Reservation.date == today,
-                Reservation.status == ReservationStatus.RESERVED
-            )
-        ).count()
-
-        # Get all RESERVED reservations
+        # Get reservations today for this email account, excluding expired work.
         links = ReservationEmailLink.query.join(Reservation).filter(
             and_(
                 ReservationEmailLink.email_code == acc.code,
@@ -1234,15 +1313,30 @@ def get_reservation_board():
                 Reservation.status == ReservationStatus.RESERVED
             )
         ).all()
+        links = [
+            link for link in links
+            if not is_expired_domain(link.reservation.campaign.domain, business_today=today)
+        ]
+        count = len(links)
 
         # Check for completed
-        completed = ReservationEmailLink.query.join(Reservation).filter(
+        completed_links = ReservationEmailLink.query.join(Reservation).filter(
             and_(
                 ReservationEmailLink.email_code == acc.code,
                 Reservation.date == today,
                 Reservation.status == ReservationStatus.COMPLETED
             )
-        ).first()
+        ).all()
+        completed = next(
+            (
+                link for link in completed_links
+                if not is_expired_domain(
+                    link.reservation.campaign.domain,
+                    business_today=today,
+                )
+            ),
+            None,
+        )
 
         if links:
             state = "RESERVED"
@@ -1267,22 +1361,27 @@ def get_reservation_board():
 @bp.route('/dashboard/todays-campaigns', methods=['GET'])
 def get_todays_campaigns():
     from app.models.models import Reservation, ReservationStatus, ReservationEmailLink, Campaign
+    from app.services.expired_historical_service import is_expired_domain
     from app.services.time_service import get_business_today
-    from sqlalchemy import func
 
     today = get_business_today()
 
     # Get all reservations for today
-    reservations = Reservation.query.filter_by(date=today, status=ReservationStatus.RESERVED).all()
+    reservations = [
+        reservation for reservation in Reservation.query.filter_by(
+            date=today,
+            status=ReservationStatus.RESERVED,
+        ).all()
+        if not is_expired_domain(reservation.campaign.domain, business_today=today)
+    ]
 
     # Get all email usage counts for today to identify shared accounts
-    email_usage = db.session.query(
-        ReservationEmailLink.email_code, func.count(ReservationEmailLink.reservation_id)
-    ).join(Reservation).filter(
-        Reservation.date == today, Reservation.status == ReservationStatus.RESERVED
-    ).group_by(ReservationEmailLink.email_code).all()
+    email_usage = {}
+    for reservation in reservations:
+        for link in reservation.email_links:
+            email_usage[link.email_code] = email_usage.get(link.email_code, 0) + 1
 
-    shared_emails = {code: count > 1 for code, count in email_usage}
+    shared_emails = {code: count > 1 for code, count in email_usage.items()}
 
     results = []
     for res in reservations:
@@ -1308,11 +1407,16 @@ def get_domains():
         build_domain_campaign_table_rows,
         serialize_domain_campaign_api_row,
     )
+    from app.services.expired_historical_service import is_expired_domain
 
-    domains = Domain.query.options(selectinload(Domain.campaigns)).all()
+    today = get_business_today()
+    domains = [
+        domain for domain in Domain.query.options(selectinload(Domain.campaigns)).all()
+        if not is_expired_domain(domain, business_today=today)
+    ]
     rows = build_domain_campaign_table_rows(
         domains,
-        business_today=get_business_today(),
+        business_today=today,
     )
     return jsonify([serialize_domain_campaign_api_row(row) for row in rows])
 
@@ -1868,6 +1972,7 @@ def get_first_follow_ups():
         calculate_campaign_temperature,
         get_campaign_temperature_config,
     )
+    from app.services.expired_historical_service import is_expired_domain
     from sqlalchemy import and_
 
     today = get_business_today()
@@ -1885,7 +1990,7 @@ def get_first_follow_ups():
     past_due = []
 
     for camp in eligible_campaigns:
-        if str(camp.domain.status).upper() in {'SOLD', 'EXPIRED'}:
+        if str(camp.domain.status or '').upper() == 'SOLD' or is_expired_domain(camp.domain, business_today=today):
             continue
         if select_latest_campaign(camp.domain.campaigns) is not camp:
             continue
@@ -1973,6 +2078,7 @@ def get_normal_follow_ups():
         get_campaign_temperature_config,
         is_active_followup_temperature,
     )
+    from app.services.expired_historical_service import is_expired_domain
 
     today = get_business_today()
     min_days = int(get_setting('NORMAL_FOLLOW_UP_MIN', '7'))
@@ -1989,7 +2095,7 @@ def get_normal_follow_ups():
     past_due = []
 
     for camp in eligible_campaigns:
-        if str(camp.domain.status).upper() in {'SOLD', 'EXPIRED'}:
+        if str(camp.domain.status or '').upper() == 'SOLD' or is_expired_domain(camp.domain, business_today=today):
             continue
         if select_latest_campaign(camp.domain.campaigns) is not camp:
             continue
@@ -2074,6 +2180,7 @@ def get_cooling_campaigns():
     from app.services.dashboard_campaign_context_service import build_campaign_context
     from app.services.expiry_service import select_latest_campaign
     from app.services.time_service import get_business_today
+    from app.services.expired_historical_service import is_expired_domain
 
     today = get_business_today()
     temperature_config = get_campaign_temperature_config()
@@ -2083,6 +2190,8 @@ def get_cooling_campaigns():
 
     results = []
     for domain in domains:
+        if is_expired_domain(domain, business_today=today):
+            continue
         campaign = select_latest_campaign(domain.campaigns)
         if campaign is None or campaign.status not in {
             CampaignStatus.ACTIVE,

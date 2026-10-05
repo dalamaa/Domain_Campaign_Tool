@@ -18,6 +18,10 @@ def domains():
 def team_domains():
     return render_template('team_domains.html')
 
+@bp.route('/expired-historical')
+def expired_historical():
+    return render_template('expired_historical.html')
+
 @bp.route('/settings')
 def settings():
     return render_template('settings.html')

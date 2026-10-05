@@ -180,6 +180,41 @@
     <p id="expiring-soon-status" role="status" aria-live="polite"></p>
   </div>
 
+  <div style="margin-top: 20px" id="expired-domain-settings">
+    <h3>Expired Domain Retention</h3>
+    <p>
+      Domains become manually archivable after the first threshold. If still
+      present at the second threshold, the scheduler moves them to Historical.
+    </p>
+    <label for="expired-domain-retention-days">Manual archive eligibility:</label>
+    <input
+      type="number"
+      id="expired-domain-retention-days"
+      min="0"
+      max="3650"
+      step="1"
+      required
+      style="width: 80px"
+    />
+    days
+    <br />
+    <label for="expired-domain-auto-archive-days">Automatically archive after:</label>
+    <input
+      type="number"
+      id="expired-domain-auto-archive-days"
+      min="1"
+      max="3650"
+      step="1"
+      required
+      style="width: 80px"
+    />
+    days
+    <button class="btn btn-primary" type="button" onclick="saveExpiredDomainRetention()">
+      Save Expired Domain Retention
+    </button>
+    <p id="expired-domain-retention-status" role="status" aria-live="polite"></p>
+  </div>
+
   <div style="margin-top: 20px" id="ready-for-campaign-settings">
     <h3>Campaign Temperature</h3>
     <label for="campaign-temperature-hot-through">
@@ -367,6 +402,8 @@
     const temperatureData = await temperatureRes.json();
     const teamDomainsRes = await fetch("/api/settings/team-domains");
     const teamDomainsData = await teamDomainsRes.json();
+    const expiredDomainRetentionRes = await fetch("/api/settings/expired-domains");
+    const expiredDomainRetentionData = await expiredDomainRetentionRes.json();
 
     originalConfig = {
       config,
@@ -375,6 +412,12 @@
       readyForCampaignDays: readyRes.ok ? readyData.ready_for_campaign_days : null,
       campaignTemperature: temperatureRes.ok ? temperatureData : null,
       teamDomains: teamDomainsRes.ok ? teamDomainsData : null,
+      expiredDomainRetentionDays: expiredDomainRetentionRes.ok
+        ? expiredDomainRetentionData.expired_domain_retention_days
+        : null,
+      expiredDomainAutoArchiveDays: expiredDomainRetentionRes.ok
+        ? expiredDomainRetentionData.expired_domain_auto_archive_days
+        : null,
       restingConfig: null,
     };
     if (expiringRes.ok) {
@@ -411,6 +454,17 @@
     } else {
       setTeamDomainSettingsStatus(
         teamDomainsData.error || "Unable to load Team Domains settings.",
+        true,
+      );
+    }
+    if (expiredDomainRetentionRes.ok) {
+      document.getElementById("expired-domain-retention-days").value =
+        expiredDomainRetentionData.expired_domain_retention_days;
+      document.getElementById("expired-domain-auto-archive-days").value =
+        expiredDomainRetentionData.expired_domain_auto_archive_days;
+    } else {
+      setExpiredDomainRetentionStatus(
+        expiredDomainRetentionData.error || "Unable to load Expired Domain Retention settings.",
         true,
       );
     }
@@ -481,6 +535,13 @@
 
   function setTeamDomainSettingsStatus(message, isError = false) {
     const status = document.getElementById("team-domain-settings-status");
+    if (!status) return;
+    status.textContent = message;
+    status.style.color = isError ? "#b00020" : "#176b2c";
+  }
+
+  function setExpiredDomainRetentionStatus(message, isError = false) {
+    const status = document.getElementById("expired-domain-retention-status");
     if (!status) return;
     status.textContent = message;
     status.style.color = isError ? "#b00020" : "#176b2c";
@@ -653,6 +714,62 @@
       setExpiringSoonStatus("Expiring Domains setting saved.");
     } catch (error) {
       setExpiringSoonStatus(error.message, true);
+    }
+  }
+
+  function readExpiredDomainSettings() {
+    const fields = [
+      ["expired-domain-retention-days", "Manual archive eligibility", false],
+      ["expired-domain-auto-archive-days", "Automatic archive threshold", true],
+    ];
+    const values = fields.map(([id, label, positive]) => {
+      const raw = document.getElementById(id).value.trim();
+      if (!/^\d+$/.test(raw)) {
+        throw new Error(`${label} must be a non-negative integer.`);
+      }
+      const value = Number(raw);
+      if (!Number.isSafeInteger(value) || value > 3650 || (positive && value <= 0)) {
+        throw new Error(`${label} must be between ${positive ? 1 : 0} and 3650 days.`);
+      }
+      return value;
+    });
+    if (values[1] <= values[0]) {
+      throw new Error("Automatic archive threshold must be greater than manual retention.");
+    }
+    return {
+      expired_domain_retention_days: values[0],
+      expired_domain_auto_archive_days: values[1],
+    };
+  }
+
+  async function saveExpiredDomainRetention() {
+    let settings;
+    try {
+      settings = readExpiredDomainSettings();
+    } catch (error) {
+      setExpiredDomainRetentionStatus(error.message, true);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/settings/expired-domains", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settings),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to save Expired Domain Retention settings.");
+      }
+      originalConfig.expiredDomainRetentionDays = data.expired_domain_retention_days;
+      originalConfig.expiredDomainAutoArchiveDays = data.expired_domain_auto_archive_days;
+      document.getElementById("expired-domain-retention-days").value =
+        data.expired_domain_retention_days;
+      document.getElementById("expired-domain-auto-archive-days").value =
+        data.expired_domain_auto_archive_days;
+      setExpiredDomainRetentionStatus("Expired Domain Retention setting saved.");
+    } catch (error) {
+      setExpiredDomainRetentionStatus(error.message, true);
     }
   }
 

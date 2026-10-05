@@ -1,5 +1,5 @@
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import Enum, ForeignKey, Integer, String, Date, Boolean, DateTime, UniqueConstraint, Index
+from sqlalchemy import Enum, ForeignKey, Integer, String, Date, Boolean, DateTime, UniqueConstraint, Index, func
 from sqlalchemy.orm import relationship, DeclarativeBase
 import enum
 from datetime import datetime
@@ -196,3 +196,22 @@ class TeamDomainAssignment(db.Model):
     )
 
     team_member = relationship('TeamMember', back_populates='assignments')
+
+
+class HistoricalDomain(db.Model):
+    """Lightweight record retained after an expired domain is retired."""
+
+    __tablename__ = 'historical_domains'
+    id = db.Column(Integer, primary_key=True)
+    domain_name = db.Column(String, nullable=False, index=True)
+    expiry_date = db.Column(Date, nullable=True)
+    last_email_used = db.Column(String, nullable=True)
+    retired_at = db.Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index(
+            'uq_historical_domains_domain_name_lower',
+            func.lower(domain_name),
+            unique=True,
+        ),
+    )

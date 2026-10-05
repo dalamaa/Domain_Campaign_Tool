@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="expired-historical-page">
+  <div class="expired-historical-header">
+    <div>
+      <h2>Expired / Historical</h2>
+      <p class="muted">Expired domains retain full operational records during retention, then become lightweight historical records.</p>
+    </div>
+    <button class="btn btn-primary" type="button" id="archive-eligible-button" disabled>Move Eligible to Historical</button>
+  </div>
+
+  <section class="expired-historical-panel" aria-labelledby="expired-domains-heading">
+    <div class="expired-historical-panel-header">
+      <div>
+        <h3 id="expired-domains-heading">Expired Domains</h3>
+        <p id="expired-retention-note" class="muted" aria-live="polite"></p>
+      </div>
+      <span id="expired-domain-count" class="muted" aria-live="polite"></span>
+    </div>
+    <div class="expired-historical-toolbar">
+      <label>
+        Search expired domains
+        <input id="expired-domain-search" type="search" placeholder="Search domain name" autocomplete="off" />
+      </label>
+      <button class="btn btn-secondary" type="button" id="refresh-expired-historical-button">Refresh</button>
+    </div>
+    <div class="table-scroll">
+      <table class="expired-historical-table" id="expired-domain-table">
+        <thead>
+          <tr>
+            <th>Select</th>
+            <th>Domain</th>
+            <th>Expiry</th>
+            <th>Days Expired</th>
+            <th>Historical In</th>
+            <th>Last Contact</th>
+            <th>Seq</th>
+            <th>Email Used</th>
+            <th>Last Price</th>
+          </tr>
+        </thead>
+        <tbody id="expired-domain-table-body"></tbody>
+      </table>
+    </div>
+    <p id="expired-domain-empty" class="muted" hidden>No expired domains match the current search.</p>
+  </section>
+
+  <section class="expired-historical-panel" aria-labelledby="historical-domains-heading">
+    <div class="expired-historical-panel-header">
+      <div>
+        <h3 id="historical-domains-heading">Historical Domains</h3>
+        <p class="muted">Lightweight records retained to show domains previously owned or worked.</p>
+      </div>
+      <span id="historical-domain-count" class="muted" aria-live="polite"></span>
+    </div>
+    <div class="expired-historical-toolbar">
+      <label>
+        Search historical domains
+        <input id="historical-domain-search" type="search" placeholder="Search domain name" autocomplete="off" />
+      </label>
+    </div>
+    <div class="table-scroll">
+      <table class="expired-historical-table" id="historical-domain-table">
+        <thead>
+          <tr>
+            <th>Domain</th>
+            <th>Expiry</th>
+            <th>Last Email Used</th>
+            <th>Retired</th>
+          </tr>
+        </thead>
+        <tbody id="historical-domain-table-body"></tbody>
+      </table>
+    </div>
+    <p id="historical-domain-empty" class="muted" hidden>No historical domains match the current search.</p>
+  </section>
+</div>
+
+<script src="{{ url_for('static', filename='js/shared.js') }}"></script>
+<script src="{{ url_for('static', filename='js/pages/expired_historical.js') }}"></script>
+{% endblock %}

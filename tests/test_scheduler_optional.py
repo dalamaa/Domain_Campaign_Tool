@@ -63,6 +63,33 @@ def test_testing_mode_still_skips_opted_in_scheduler(monkeypatch):
     assert calls == []
 
 
+def test_enabled_scheduler_registers_expiry_and_automatic_archival_jobs(app, monkeypatch):
+    import apscheduler.schedulers.background as background
+
+    class FakeScheduler:
+        def __init__(self):
+            self.jobs = []
+            self.started = False
+
+        def add_job(self, **kwargs):
+            self.jobs.append(kwargs)
+
+        def start(self):
+            self.started = True
+
+    scheduler = FakeScheduler()
+    monkeypatch.setattr(background, "BackgroundScheduler", lambda: scheduler)
+
+    init_scheduler(app)
+
+    assert scheduler.started is True
+    assert {job["id"] for job in scheduler.jobs} == {
+        "domain_expiry_check",
+        "expired_domain_auto_archive",
+    }
+    assert all(job["args"] == [app] for job in scheduler.jobs)
+
+
 def test_migration_command_still_skips_opted_in_scheduler(monkeypatch):
     calls = []
     monkeypatch.setattr("app.scheduler.init_scheduler", lambda app: calls.append(app))

@@ -15,6 +15,7 @@ from app.models.models import (
     Domain,
     EmailAccount,
     HistoryEmailUsed,
+    HistoricalDomain,
     Reservation,
     ReservationEmailLink,
     ReservationStatus,
@@ -40,6 +41,12 @@ def _seed_export_data():
         Setting(key='BUSINESS_TIMEZONE', value='UTC'),
         Setting(key='ADMIN_PASSWORD', value='must-not-export'),
         Setting(key='SECRET_KEY', value='must-not-export'),
+        HistoricalDomain(
+            domain_name='retired.example.com',
+            expiry_date=date(2025, 1, 1),
+            last_email_used='T05',
+            retired_at=datetime(2026, 1, 1, 9, 0),
+        ),
     ])
     db.session.flush()
     older = Campaign(
@@ -148,7 +155,7 @@ def test_xlsx_export_contains_expected_data_and_safe_values(app, client):
     assert workbook.sheetnames == [
         'Domains', 'Campaigns', 'Campaign History', 'History Email Used',
         'Email Accounts', 'Campaign Email Associations', 'Reservations',
-        'Reservation Email Links', 'Settings', 'Manifest',
+        'Reservation Email Links', 'Settings', 'Historical Domains', 'Manifest',
     ]
     domains = list(workbook['Domains'].values)
     assert domains[1][1:5] == ('example.com', '2030-01-02', 'SOLD', 'Keep this domain note')
@@ -177,7 +184,8 @@ def test_csv_zip_export_has_normalized_files_and_logical_references(app, client)
             'domains.csv', 'campaigns.csv', 'campaign_history.csv',
             'history_email_used.csv', 'email_accounts.csv',
             'campaign_email_associations.csv', 'reservations.csv',
-            'reservation_email_links.csv', 'settings.csv', 'manifest.json',
+            'reservation_email_links.csv', 'settings.csv', 'historical_domains.csv',
+            'manifest.json',
         ]
         campaigns = list(csv.DictReader(io.StringIO(archive.read('campaigns.csv').decode('utf-8'))))
         assert {row['lifecycle_ordinal'] for row in campaigns if row['domain_name'] == 'example.com'} == {'1', '2'}
@@ -220,11 +228,11 @@ def test_exact_zip_manifest_describes_every_csv_without_changing_csv_data(app, c
     with zipfile.ZipFile(io.BytesIO(response.data)) as archive:
         manifest = json.loads(archive.read('manifest.json'))
         assert manifest['format_name'] == 'domain-campaign-exact-backup'
-        assert manifest['format_version'] == 1
+        assert manifest['format_version'] == 2
         assert manifest['application'] == 'Domain Campaign Tool'
         datetime.fromisoformat(manifest['exported_at'])
         date.fromisoformat(manifest['business_date'])
-        assert len(manifest['datasets']) == 9
+        assert len(manifest['datasets']) == 10
         for dataset in manifest['datasets']:
             rows = list(csv.reader(io.StringIO(archive.read(dataset['filename']).decode('utf-8'))))
             assert dataset['columns'] == rows[0]
@@ -243,7 +251,7 @@ def test_exact_xlsx_manifest_matches_all_data_sheets(app, client):
         for row in manifest.iter_rows(min_row=1, max_row=7)
     }
     assert metadata['format_name'] == 'domain-campaign-exact-backup'
-    assert metadata['format_version'] == 1
+    assert metadata['format_version'] == 2
     assert metadata['application'] == 'Domain Campaign Tool'
     datetime.fromisoformat(metadata['exported_at'])
     date.fromisoformat(metadata['business_date'])
@@ -251,7 +259,7 @@ def test_exact_xlsx_manifest_matches_all_data_sheets(app, client):
     assert [cell.value for cell in manifest[9]] == [
         'dataset', 'sheet_name', 'filename', 'columns', 'row_count',
     ]
-    for row in manifest.iter_rows(min_row=10, max_row=18, values_only=True):
+    for row in manifest.iter_rows(min_row=10, max_row=19, values_only=True):
         dataset, sheet_name, _filename, columns_json, row_count = row
         sheet = workbook[sheet_name]
         assert json.loads(columns_json) == [cell.value for cell in sheet[1]]

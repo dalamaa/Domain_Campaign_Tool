@@ -692,3 +692,41 @@ The scheduler should maximize efficient email block usage while minimizing reser
 The application should favor predictable email block assignments over random allocation.
 
 This helps maintain campaign consistency and reduces future scheduling conflicts.
+
+---
+
+# EXPIRED / HISTORICAL DOMAIN LIFECYCLE
+
+## EH001
+
+A domain is operationally expired when its status is `EXPIRED` or its expiry date
+is before the business date. Expired domains are excluded from the normal
+Domains table, reservation work, and Suggested Work views while their full
+operational records are retained.
+
+## EH002
+
+`EXPIRED_DOMAIN_RETENTION_DAYS` controls when an expired domain may be moved to
+Historical manually. The default is 60 days; valid values are integers from 0
+through 3650.
+
+## EH005
+
+`EXPIRED_DOMAIN_AUTO_ARCHIVE_DAYS` controls delayed automatic archival. The
+default is 90 days and it must be greater than manual retention and no greater
+than 3650 days. When the business date reaches expiry date plus this threshold,
+the scheduler may move the domain to Historical through the same transactional
+archive operation used by manual actions.
+
+## EH003
+
+Moving a domain to Historical snapshots its domain name, expiry date, and latest
+email used, then deletes the operational Domain in the same transaction. Existing
+cascade rules remove its dependent operational records. If the snapshot or delete
+fails, the transaction is rolled back and the operational records remain.
+
+## EH004
+
+Historical records are unique by normalized lowercase domain name. If a domain is
+reworked and later archived again, the existing Historical record is updated
+instead of creating a duplicate row.

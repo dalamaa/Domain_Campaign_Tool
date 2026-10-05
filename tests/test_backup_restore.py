@@ -13,6 +13,7 @@ from app.models.models import (
     Domain,
     EmailAccount,
     HistoryEmailUsed,
+    HistoricalDomain,
     Reservation,
     ReservationEmailLink,
     Setting,
@@ -50,6 +51,7 @@ def _clear_operational_database():
         CampaignHistory,
         Campaign,
         Domain,
+        HistoricalDomain,
         EmailAccount,
         Setting,
     ):
@@ -98,6 +100,7 @@ def _logical_csv_snapshot(content):
         'campaigns': {'campaign_id'},
         'campaign_history': {'history_id'},
         'history_email_used': {'history_email_used_id', 'history_id'},
+        'historical_domains': {'historical_id'},
         'email_accounts': set(),
         'campaign_email_associations': {'association_id', 'campaign_id'},
         'reservations': {'reservation_id', 'campaign_id'},
@@ -120,19 +123,19 @@ def test_valid_exact_zip_preflight_is_read_only_and_reports_counts(app):
     with app.app_context():
         before = [model.query.count() for model in (
             Domain, Campaign, EmailAccount, CampaignHistory, HistoryEmailUsed,
-            CampaignEmailBlock, Reservation, ReservationEmailLink, Setting,
+            CampaignEmailBlock, Reservation, ReservationEmailLink, Setting, HistoricalDomain,
         )]
         result = preflight_backup(io.BytesIO(content))
         after = [model.query.count() for model in (
             Domain, Campaign, EmailAccount, CampaignHistory, HistoryEmailUsed,
-            CampaignEmailBlock, Reservation, ReservationEmailLink, Setting,
+            CampaignEmailBlock, Reservation, ReservationEmailLink, Setting, HistoricalDomain,
         )]
     assert result['valid'] is True
     assert result['database_empty'] is True
     assert result['format_name'] == 'domain-campaign-exact-backup'
-    assert result['format_version'] == 1
+    assert result['format_version'] == 2
     assert result['datasets']['domains'] == 2
-    assert before == after == [0] * 9
+    assert before == after == [0] * 10
 
 
 @pytest.mark.parametrize('mutation,expected', [
@@ -232,6 +235,7 @@ def test_successful_restore_reconstructs_all_logical_state_and_nullable_values(a
     with app.app_context():
         counts = restore_backup(io.BytesIO(content))
         assert counts['domains'] == 2
+        assert counts['historical_domains'] == 1
         assert Domain.query.filter_by(domain_name='example.com').one().expiry_date == date(2030, 1, 2)
         domain = Domain.query.filter_by(domain_name='example.com').one()
         campaigns = sorted(domain.campaigns, key=lambda item: (item.created_at, item.id))
@@ -249,6 +253,7 @@ def test_successful_restore_reconstructs_all_logical_state_and_nullable_values(a
         assert EmailAccount.query.filter_by(code='T05').one().enabled is False
         assert Setting.query.filter_by(key='BUSINESS_TIMEZONE').one().value == 'UTC'
         assert Setting.query.filter_by(key='ADMIN_PASSWORD').count() == 0
+        assert HistoricalDomain.query.filter_by(domain_name='retired.example.com').one().last_email_used == 'T05'
 
 
 def test_exact_backup_round_trip_preserves_logical_state_while_ids_are_generated(app):
@@ -338,8 +343,8 @@ def test_mid_restore_failure_rolls_back_everything(app, monkeypatch):
             restore_backup(io.BytesIO(content))
         assert [model.query.count() for model in (
             Domain, Campaign, EmailAccount, CampaignHistory, HistoryEmailUsed,
-            CampaignEmailBlock, Reservation, ReservationEmailLink, Setting,
-        )] == [0] * 9
+            CampaignEmailBlock, Reservation, ReservationEmailLink, Setting, HistoricalDomain,
+        )] == [0] * 10
 
 
 def test_settings_page_exposes_zip_restore_flow(client):
