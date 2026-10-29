@@ -1850,8 +1850,7 @@ def add_campaign_action(campaign_id):
     from app.services.campaign_service import (
         FirstFollowUpAlreadyExistsError,
         PriceReductionValidationError,
-        create_new_action,
-        sync_campaign_state,
+        record_campaign_action,
     )
     from app.models.models import ActionType, Campaign, CampaignStatus
     from datetime import datetime
@@ -1876,12 +1875,15 @@ def add_campaign_action(campaign_id):
         if 'campaign_status' in data:
             campaign_status = CampaignStatus(data['campaign_status'])
 
-        new_hist = create_new_action(campaign_id, action_type, action_date, price, notes, email_codes)
-        sync_campaign_state(campaign_id, commit=False)
-        camp = Campaign.query.get(campaign_id)
-        if camp and campaign_status is not None:
-            camp.status = campaign_status
-        db.session.commit()
+        new_hist = record_campaign_action(
+            campaign_id,
+            action_type,
+            action_date,
+            price,
+            notes,
+            email_codes,
+            campaign_status=campaign_status,
+        )
         return jsonify({'success': True, 'sequence': new_hist.sequence}), 201
     except EmailCodeValidationError as exc:
         db.session.rollback()
@@ -1895,6 +1897,57 @@ def add_campaign_action(campaign_id):
     except Exception:
         db.session.rollback()
         return jsonify({'error': 'Unable to save campaign action.'}), 400
+
+
+@bp.route('/campaigns/quick-update/preview', methods=['POST'])
+def preview_campaign_quick_update():
+    from app.services.quick_update_service import (
+        QuickUpdateRequestError,
+        preview_quick_update,
+    )
+
+    data = request.get_json(silent=True) or {}
+    try:
+        preview = preview_quick_update(
+            data.get('input'),
+        )
+        return jsonify(preview)
+    except QuickUpdateRequestError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+
+
+@bp.route('/campaigns/quick-update', methods=['POST'])
+def confirm_campaign_quick_update():
+    from app.services.quick_update_service import (
+        QuickUpdateRequestError,
+        QuickUpdateTokenError,
+        StaleQuickUpdateError,
+        confirm_quick_update,
+    )
+
+    data = request.get_json(silent=True) or {}
+    try:
+        result = confirm_quick_update(data.get('preview_token'))
+        return jsonify({
+            'success': True,
+            'updated_count': result['updated_count'],
+        })
+    except StaleQuickUpdateError as exc:
+        return jsonify({
+            'success': False,
+            'stale': True,
+            'error': str(exc),
+            'preview': exc.preview,
+        }), 409
+    except (QuickUpdateRequestError, QuickUpdateTokenError) as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': 'Unable to update campaigns. No campaigns were updated.',
+        }), 500
 
 @bp.route('/campaigns/<int:campaign_id>/actions', methods=['GET'])
 def get_campaign_actions(campaign_id):

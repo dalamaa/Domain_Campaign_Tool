@@ -108,6 +108,9 @@ def test_suggested_action_wrapper_wraps_compact_controls_without_overflowing_cel
     assert 'return `<div class="dashboard-row-actions">${actions || ""}</div>`' in source
     assert "display: flex;" in wrapper
     assert "flex-wrap: wrap;" in wrapper
+    assert ".dashboard-rest-action" in styles
+    assert ".dashboard-resting-table th:last-child" in styles
+    assert "min-width: 7rem;" in styles
     assert "gap: 0.25rem;" in wrapper
     assert "white-space: normal;" in wrapper
     assert ".dashboard-suggested-table .dashboard-reservation-cell," in styles

@@ -116,9 +116,29 @@
 
 .email-code-search-table {
   width: 100%;
-  min-width: 650px;
+  min-width: 760px;
+  table-layout: fixed;
   border-collapse: collapse;
   text-align: left;
+}
+
+.email-code-search-table th:nth-child(1),
+.email-code-search-table td:nth-child(1) {
+  width: 22%;
+  min-width: 12rem;
+}
+
+.email-code-search-table th:nth-child(2),
+.email-code-search-table td:nth-child(2) {
+  width: 18%;
+  min-width: 9rem;
+}
+
+.email-code-search-table th:nth-child(3),
+.email-code-search-table td:nth-child(3) {
+  width: 12%;
+  min-width: 6.5rem;
+  white-space: nowrap;
 }
 
 .email-code-search-table th,
@@ -133,6 +153,17 @@
   color: var(--color-muted-text);
   font-size: 0.8rem;
   font-weight: 650;
+}
+
+.email-code-search-table tbody th[scope="row"] {
+  position: static;
+  background: transparent;
+  color: var(--color-text);
+  font-size: inherit;
+  font-weight: 650;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
 }
 
 .email-code-search-table tbody tr:last-child th,
@@ -153,6 +184,22 @@
   flex-wrap: wrap;
   column-gap: var(--space-2);
   align-items: baseline;
+}
+
+.email-code-match-meta {
+  display: inline-flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  min-width: 0;
+  align-items: baseline;
+  column-gap: var(--space-2);
+  row-gap: var(--space-1);
+  color: var(--color-muted-text);
+  font-size: 0.82rem;
+}
+
+.email-code-match-meta > span {
+  white-space: nowrap;
 }
 
 .email-code-match-context {

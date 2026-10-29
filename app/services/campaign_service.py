@@ -1,4 +1,4 @@
-from app.models.models import db, Campaign, CampaignHistory, Setting, CampaignEmailBlock, EmailAccount, HistoryEmailUsed, ActionType
+from app.models.models import db, Campaign, CampaignHistory, Setting, CampaignEmailBlock, EmailAccount, HistoryEmailUsed, ActionType, CampaignStatus
 from app.services.email_account_service import validate_email_codes
 from datetime import datetime, timedelta
 
@@ -97,7 +97,15 @@ def sync_campaign_state(campaign_id, commit=True):
     if commit:
         db.session.commit()
 
-def create_new_action(campaign_id, action_type, action_date, price, notes, email_codes=None):
+def create_new_action(
+    campaign_id,
+    action_type,
+    action_date,
+    price,
+    notes,
+    email_codes=None,
+    update_campaign_email_block=True,
+):
     """Create a new CampaignHistory record and associate used email accounts."""
     if isinstance(action_type, str):
         action_type = ActionType(action_type)
@@ -147,7 +155,7 @@ def create_new_action(campaign_id, action_type, action_date, price, notes, email
     if email_codes:
         for code in email_codes:
             # If sequence 1, update campaign default assigned accounts
-            if new_sequence == 1:
+            if new_sequence == 1 and update_campaign_email_block:
                 if not CampaignEmailBlock.query.filter_by(campaign_id=campaign_id, email_code=code).first():
                     db.session.add(CampaignEmailBlock(campaign_id=campaign_id, email_code=code))
 
@@ -156,6 +164,43 @@ def create_new_action(campaign_id, action_type, action_date, price, notes, email
                 db.session.add(HistoryEmailUsed(history_id=new_hist.id, email_code=code))
 
     return new_hist
+
+
+def record_campaign_action(
+    campaign_id,
+    action_type,
+    action_date,
+    price,
+    notes,
+    email_codes=None,
+    campaign_status=None,
+    commit=True,
+    update_campaign_email_block=True,
+):
+    """Create history and synchronize campaign state through one action path.
+
+    ``commit=False`` lets a caller include several actions in one transaction.
+    """
+    history = create_new_action(
+        campaign_id,
+        action_type,
+        action_date,
+        price,
+        notes,
+        email_codes,
+        update_campaign_email_block=update_campaign_email_block,
+    )
+    sync_campaign_state(campaign_id, commit=False)
+    campaign = db.session.get(Campaign, campaign_id)
+    if campaign is not None and campaign_status is not None:
+        campaign.status = (
+            CampaignStatus(campaign_status)
+            if isinstance(campaign_status, str)
+            else campaign_status
+        )
+    if commit:
+        db.session.commit()
+    return history
 
 def update_existing_action(campaign_id, sequence, action_type, action_date, price, notes, email_codes=None, commit=True):
     """Update fields of an existing CampaignHistory record."""

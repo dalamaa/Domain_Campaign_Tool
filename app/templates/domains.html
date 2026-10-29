@@ -22,28 +22,43 @@
         disabled
       ><span aria-hidden="true">×</span></button>
     </div>
-    <span id="domain-count"></span>
-    <button class="btn btn-primary" type="button" onclick="openBulkImportModal()">
-      Import CSV
-    </button>
-    <button class="btn btn-primary" type="button" onclick="openModal()">+ Add Domain</button>
-    <button class="btn btn-secondary" id="edit-btn" type="button" onclick="editSelected()" disabled>Edit</button>
-    <button class="btn btn-danger" id="delete-btn" type="button" onclick="bulkDeleteDomains()" disabled>
-      Delete
-    </button>
-    <button class="btn btn-secondary" id="bulk-edit-btn" type="button" onclick="openBulkModal()" disabled>
-      Bulk Edit
-    </button>
-    <button class="btn btn-secondary" id="action-btn" type="button" onclick="openActionModal()" disabled>Action</button>
-    <button class="btn btn-secondary" id="export-selected-btn" type="button" onclick="exportSelectedDomains()" disabled>
-      Export Selected
-    </button>
-    <button class="btn btn-secondary" id="rest-selected-btn" type="button" onclick="restSelectedCampaigns()" disabled>
-      Rest Campaign
-    </button>
-    <button class="btn btn-danger" id="reset-campaign-btn" type="button" onclick="resetSelectedCampaign()" disabled>
-      Reset Campaign
-    </button>
+    <span id="domain-count" class="domain-count" aria-live="polite"></span>
+    <div class="domain-toolbar-actions" role="group" aria-label="Domain campaign actions">
+      <button class="btn btn-primary btn-compact" type="button" onclick="openModal()">+ Add Domain</button>
+      <button class="btn btn-secondary btn-compact" id="quick-update-btn" type="button" aria-haspopup="dialog" aria-controls="quick-update-modal" onclick="openQuickUpdateModal()">Quick Update</button>
+      <button class="btn btn-secondary btn-compact" id="action-btn" type="button" onclick="openActionModal()" disabled>Record Activity</button>
+
+      <div class="domain-toolbar-menu" data-domain-toolbar-menu>
+        <button class="btn btn-secondary btn-compact" id="edit-menu-toggle" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="edit-menu">
+          Edit <span aria-hidden="true">▾</span>
+        </button>
+        <div class="domain-toolbar-menu-panel" id="edit-menu" role="menu" aria-label="Edit actions" hidden>
+          <button class="domain-toolbar-menu-item" id="edit-btn" type="button" role="menuitem" tabindex="-1" onclick="editSelected()" disabled>Edit Selected</button>
+          <button class="domain-toolbar-menu-item" id="bulk-edit-btn" type="button" role="menuitem" tabindex="-1" onclick="openBulkModal(Array.from(selectedDomains))" disabled>Bulk Edit</button>
+        </div>
+      </div>
+
+      <div class="domain-toolbar-menu" data-domain-toolbar-menu>
+        <button class="btn btn-secondary btn-compact" id="campaign-menu-toggle" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="campaign-menu">
+          Campaign <span aria-hidden="true">▾</span>
+        </button>
+        <div class="domain-toolbar-menu-panel" id="campaign-menu" role="menu" aria-label="Campaign lifecycle actions" hidden>
+          <button class="domain-toolbar-menu-item" id="rest-selected-btn" type="button" role="menuitem" tabindex="-1" onclick="restSelectedCampaigns()" disabled>Rest Campaign</button>
+          <button class="domain-toolbar-menu-item domain-toolbar-menu-item-danger" id="reset-campaign-btn" type="button" role="menuitem" tabindex="-1" onclick="resetSelectedCampaign()" disabled>Reset Campaign</button>
+          <button class="domain-toolbar-menu-item domain-toolbar-menu-item-danger" id="delete-btn" type="button" role="menuitem" tabindex="-1" onclick="bulkDeleteDomains()" disabled>Delete</button>
+        </div>
+      </div>
+
+      <div class="domain-toolbar-menu" data-domain-toolbar-menu>
+        <button class="btn btn-secondary btn-compact" id="data-menu-toggle" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="data-menu">
+          Data <span aria-hidden="true">▾</span>
+        </button>
+        <div class="domain-toolbar-menu-panel" id="data-menu" role="menu" aria-label="Domain data actions" hidden>
+          <button class="domain-toolbar-menu-item" type="button" role="menuitem" tabindex="-1" onclick="openBulkImportModal()">Import Domains</button>
+          <button class="domain-toolbar-menu-item" id="export-selected-btn" type="button" role="menuitem" tabindex="-1" onclick="exportSelectedDomains()" disabled>Export Selected</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="table-container">
@@ -141,6 +156,72 @@
   <div id="action-mode-content"></div>
   <br />
   <button class="btn btn-secondary" type="button" onclick="closeActionModal()">Cancel</button>
+</div>
+<div
+  id="quick-update-modal"
+  class="modal quick-update-modal"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="quick-update-title"
+  aria-describedby="quick-update-description"
+  tabindex="-1"
+  hidden
+>
+  <h3 id="quick-update-title">Quick Campaign Update</h3>
+  <p id="quick-update-description" class="quick-update-description">
+    Record completed campaign actions for multiple domains. Nothing is saved until you confirm the preview.
+  </p>
+
+  <section id="quick-update-input-step" aria-labelledby="quick-update-input-heading">
+    <h4 id="quick-update-input-heading">Paste one domain per line</h4>
+    <p id="quick-update-input-help" class="quick-update-help">
+      Add an optional lower price with a space or comma, for example: example.com 250
+    </p>
+    <label for="quick-update-input">Domains and optional prices</label>
+    <textarea
+      id="quick-update-input"
+      rows="7"
+      aria-describedby="quick-update-input-help quick-update-input-feedback"
+      placeholder="Abc.com&#10;Aad.com 150&#10;Example.com, 250"
+    ></textarea>
+    <div id="quick-update-input-feedback" class="quick-update-feedback" role="alert" aria-live="polite" hidden></div>
+
+    <div class="quick-update-footer">
+      <button class="btn btn-secondary" type="button" onclick="closeQuickUpdateModal()">Cancel</button>
+      <button class="btn btn-primary" id="quick-update-preview-btn" type="button" onclick="previewQuickUpdate()">Preview</button>
+    </div>
+  </section>
+
+  <section id="quick-update-preview-step" aria-labelledby="quick-update-preview-heading" hidden>
+    <h4 id="quick-update-preview-heading" tabindex="-1">Review campaign updates</h4>
+    <p class="quick-update-help">Review every row. The database will not change until you confirm Update.</p>
+    <div id="quick-update-error-summary" class="quick-update-error-summary" role="alert" tabindex="-1" hidden>
+      <h5 id="quick-update-error-heading">Some rows need correction</h5>
+      <ul id="quick-update-error-list"></ul>
+    </div>
+    <div class="quick-update-preview-table-wrap" role="region" aria-label="Quick Update preview rows" tabindex="0">
+      <table class="quick-update-preview-table">
+        <caption class="visually-hidden">Preview of campaign actions to record</caption>
+        <thead>
+          <tr>
+            <th scope="col">Domain</th>
+            <th scope="col">Action</th>
+            <th scope="col">Sequence</th>
+            <th scope="col">Current Price</th>
+            <th scope="col">New Price</th>
+            <th scope="col">Status</th>
+          </tr>
+        </thead>
+        <tbody id="quick-update-preview-rows"></tbody>
+      </table>
+    </div>
+    <p id="quick-update-preview-feedback" class="quick-update-feedback" role="status" aria-live="polite" aria-atomic="true"></p>
+    <div class="quick-update-footer">
+      <button class="btn btn-secondary" id="quick-update-back-btn" type="button" onclick="backToQuickUpdateInput()">Back</button>
+      <button class="btn btn-secondary" type="button" onclick="closeQuickUpdateModal()">Cancel</button>
+      <button class="btn btn-primary" id="quick-update-confirm-btn" type="button" onclick="confirmQuickUpdate()" disabled>Update Campaigns</button>
+    </div>
+  </section>
 </div>
 <div
   id="domain-modal"

@@ -75,6 +75,8 @@ def test_today_board_column_sort_is_temporary_and_custom_order_is_restorable():
     )[0]
 
     assert 'data-sort-key="domain"' in dashboard_html
+    assert 'data-sort-column="domain"' in dashboard_html
+    assert 'data-sort-column="current_price"' in dashboard_html
     assert 'id="today-board-custom-order"' in dashboard_html
     assert '() => renderTodaysCampaigns()' in dashboard_js
     assert 'updateTodayBoardSortControls(table)' in sort_function

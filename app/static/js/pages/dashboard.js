@@ -74,6 +74,27 @@ function setDashboardSectionOrderStatus(message, isError = false) {
   status.style.color = isError ? "#b00020" : "#28632d";
 }
 
+async function moveDashboardSectionByKeyboard(section, offset) {
+  const sections = getDashboardSectionElements();
+  const currentIndex = sections.indexOf(section);
+  const nextIndex = currentIndex + offset;
+  if (currentIndex < 0 || nextIndex < 0 || nextIndex >= sections.length) return;
+
+  const previousOrder = normalizeDashboardSectionOrder(
+    dashboardSectionOrder || getCurrentDashboardSectionOrder(),
+  );
+  const nextSection = sections[nextIndex];
+  const container = section.parentElement;
+  if (offset < 0) container.insertBefore(section, nextSection);
+  else container.insertBefore(section, nextSection.nextSibling);
+
+  const nextOrder = getCurrentDashboardSectionOrder();
+  dashboardSectionOrder = nextOrder;
+  const label = section.querySelector(".accordion-toggle")?.textContent.trim() || "Section";
+  setDashboardSectionOrderStatus(`Moving ${label} to position ${nextIndex + 1}.`);
+  await saveDashboardSectionOrder(nextOrder, previousOrder);
+}
+
 async function saveDashboardSectionOrder(order, previousOrder) {
   try {
     const response = await fetch("/api/settings/dashboard-section-order", {
@@ -138,6 +159,13 @@ function initializeDashboardSectionSorting() {
     handle.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
+    });
+
+    handle.addEventListener("keydown", async (event) => {
+      if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+      event.preventDefault();
+      const offset = event.key === "ArrowUp" ? -1 : 1;
+      await moveDashboardSectionByKeyboard(section, offset);
     });
 
     section.addEventListener("dragover", (event) => {
@@ -670,19 +698,37 @@ async function updateReservationBoard() {
   list.innerHTML = data
     .map((acc) => {
       const presentation = reservationBoardStatePresentation(acc.state);
-      const stateClass = presentation.className;
-      const stateLabel = presentation.label;
-      let domainLabel = "";
-
-      if (acc.state === "RESERVED") {
-        domainLabel = `<br><small>${(acc.reserved_domains || []).join("<br>")}</small>`;
-      }
+      const code = escapeDashboardHtml(acc.code);
+      const stateLabel = escapeDashboardHtml(presentation.label);
+      const count = escapeDashboardHtml(acc.count ?? 0);
+      const limit = escapeDashboardHtml(acc.limit ?? 0);
+      const reservedDomains = acc.state === "RESERVED" && Array.isArray(acc.reserved_domains)
+        ? acc.reserved_domains.map((domain) => String(domain ?? ""))
+        : [];
+      const visibleDomains = reservedDomains.slice(0, 2);
+      const additionalDomains = reservedDomains.slice(2);
+      const domainMarkup = visibleDomains.length
+        ? `<div class="reservation-board-domains" role="list" aria-label="Reserved domains">
+            ${visibleDomains.map((domain) => {
+              const fullDomain = escapeDashboardHtml(domain);
+              return `<span class="reservation-board-domain" role="listitem" title="${fullDomain}" aria-label="${fullDomain}">${fullDomain}</span>`;
+            }).join("")}
+            ${additionalDomains.length ? (() => {
+              const additionalNames = escapeDashboardHtml(additionalDomains.join(", "));
+              const additionalLabel = `${additionalDomains.length} more domains: ${additionalNames}`;
+              return `<span class="reservation-board-domain reservation-board-more" title="Additional domains: ${additionalNames}" aria-label="${escapeDashboardHtml(additionalLabel)}">+${additionalDomains.length} more</span>`;
+            })() : ""}
+          </div>`
+        : "";
 
       return `
-        <div class="acc-item ${stateClass}">
-          <strong>${acc.code}</strong>${domainLabel}
-          <br><small>${stateLabel}</small>
-          <br><small>${acc.count}/${acc.limit}</small>
+        <div class="acc-item ${presentation.className}">
+          <strong class="reservation-board-code" title="${code}">${code}</strong>
+          ${domainMarkup}
+          <div class="reservation-board-meta">
+            <span class="reservation-board-state">${stateLabel}</span>
+            <span class="reservation-board-count">${count}/${limit}</span>
+          </div>
         </div>`;
     })
     .join("");
@@ -1476,7 +1522,11 @@ function reserveBlock(domain) {
 // Fix Dashboard: Add missing toggleAccordion
 function toggleAccordion(id) {
   const el = document.getElementById(id);
-  if (el) el.style.display = el.style.display === "block" ? "none" : "block";
+  if (!el) return;
+  const expanded = el.style.display === "block";
+  el.style.display = expanded ? "none" : "block";
+  const toggle = document.querySelector(`.accordion-toggle[aria-controls="${id}"]`);
+  if (toggle) toggle.setAttribute("aria-expanded", String(!expanded));
 }
 
 document.addEventListener("DOMContentLoaded", refreshDashboard);

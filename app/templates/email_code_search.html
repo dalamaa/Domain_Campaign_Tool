@@ -72,15 +72,25 @@
                   <li>
                     <strong>{{ match.label }}</strong>
                     {% if match.source == 'history_email_used' %}
-                      <span>{{ match.action_date or 'Date unavailable' }} · {{ match.action_type }}{% if match.sequence is not none %} · Sequence {{ match.sequence }}{% endif %}</span>
+                      <span class="email-code-match-meta">
+                        <span>{{ match.action_date or 'Date unavailable' }}</span>
+                        <span>{{ match.action_type }}</span>
+                        {% if match.sequence is not none %}<span>Sequence {{ match.sequence }}</span>{% endif %}
+                      </span>
                       {% if match.campaign_context %}<span class="email-code-match-context">{{ match.campaign_context }}</span>{% endif %}
                     {% elif match.source == 'reservation_email_link' %}
-                      <span>{{ match.reservation_date or 'Date unavailable' }} · {{ match.reservation_status }}</span>
+                      <span class="email-code-match-meta">
+                        <span>{{ match.reservation_date or 'Date unavailable' }}</span>
+                        <span>{{ match.reservation_status }}</span>
+                      </span>
                       {% if match.campaign_context %}<span class="email-code-match-context">{{ match.campaign_context }}</span>{% endif %}
                     {% elif match.source == 'campaign_email_block' %}
                       {% if match.campaign_context %}<span class="email-code-match-context">{{ match.campaign_context }}</span>{% endif %}
                     {% elif match.source == 'historical_domain_snapshot' %}
-                      <span>Last email snapshot: {{ match.last_email_used }}{% if match.retired_at %} · Retired {{ match.retired_at[:10] }}{% endif %}</span>
+                      <span class="email-code-match-meta">
+                        <span>Last email snapshot: {{ match.last_email_used }}</span>
+                        {% if match.retired_at %}<span>Retired {{ match.retired_at[:10] }}</span>{% endif %}
+                      </span>
                     {% endif %}
                   </li>
                   {% endfor %}

@@ -8,6 +8,7 @@ SOURCE = ROOT / "app/static/js/pages/domains.js"
 
 def test_action_modal_has_single_first_follow_up_option_and_date_only_controls():
     source = SOURCE.read_text()
+    styles = (ROOT / "app/static/css/base.css").read_text()
 
     assert source.count('type="date"') == 2
     assert 'datetime-local' not in source
@@ -20,6 +21,8 @@ def test_action_modal_has_single_first_follow_up_option_and_date_only_controls()
     assert 'renderEmailAccountPicker("new-action-email-picker"' in source
     assert 'renderEmailAccountPicker(' in source and '"edit-action-email-picker"' in source
     assert 'toggleEmailEditMode' not in source
+    assert 'label.textContent = "Current price"' in source
+    assert "#action-price[readonly]" in styles
 
 
 def test_action_modal_hides_used_first_follow_up_and_save_is_pending_and_network_safe():

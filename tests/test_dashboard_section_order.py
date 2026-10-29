@@ -100,3 +100,7 @@ def test_dashboard_sections_have_stable_ids_and_native_drag_contract(client):
     assert "container.appendChild(section)" in script
     assert "previous order restored" in script
     assert "dashboardSectionOrder" in script
+    assert html.count('aria-keyshortcuts="ArrowUp ArrowDown"') == 7
+    assert 'aria-controls="first-followup"' in html
+    assert 'aria-expanded="false"' in html
+    assert "moveDashboardSectionByKeyboard" in script
