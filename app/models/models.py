@@ -76,6 +76,11 @@ class Campaign(db.Model):
         back_populates="campaign",
         cascade="all, delete-orphan",
     )
+    today_board_entries = relationship(
+        "TodayBoardEntry",
+        back_populates="campaign",
+        cascade="all, delete-orphan",
+    )
     history = relationship(
         "CampaignHistory",
         back_populates="campaign",
@@ -113,6 +118,40 @@ class Reservation(db.Model):
     email_links = relationship("ReservationEmailLink", back_populates="reservation", cascade="all, delete-orphan")
 
     __table_args__ = (UniqueConstraint('date', 'campaign_id', name='uix_date_campaign'),)
+
+
+class TodayBoardEntry(db.Model):
+    __tablename__ = 'today_board_entries'
+
+    id = db.Column(Integer, primary_key=True)
+    business_date = db.Column(Date, nullable=False, index=True)
+    campaign_id = db.Column(
+        Integer,
+        ForeignKey('campaigns.id'),
+        nullable=False,
+        index=True,
+    )
+    position = db.Column(Integer, nullable=False)
+    is_done = db.Column(Boolean, nullable=False, default=False)
+    is_removed = db.Column(Boolean, nullable=False, default=False)
+    created_at = db.Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+    campaign = relationship("Campaign", back_populates="today_board_entries")
+
+    __table_args__ = (
+        UniqueConstraint(
+            'business_date',
+            'campaign_id',
+            name='uix_today_board_date_campaign',
+        ),
+        Index('ix_today_board_date_position', 'business_date', 'position'),
+    )
 
 class ReservationEmailLink(db.Model):
     __tablename__ = 'reservation_email_links'

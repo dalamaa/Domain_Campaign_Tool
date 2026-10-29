@@ -51,6 +51,37 @@ def test_reserve_campaign(client, campaign, app):
         res_db = Reservation.query.filter_by(campaign_id=campaign, status=ReservationStatus.RESERVED).first()
         assert res_db is not None
 
+
+def test_repeated_reserve_request_does_not_create_duplicate_reservation_or_links(client, campaign, app):
+    assert client.post(f'/api/campaigns/{campaign}/reservation').status_code == 200
+
+    duplicate = client.post(f'/api/campaigns/{campaign}/reservation')
+
+    assert duplicate.status_code == 409
+    with app.app_context():
+        reservations = Reservation.query.filter_by(campaign_id=campaign).all()
+        assert len(reservations) == 1
+        assert reservations[0].status == ReservationStatus.RESERVED
+        assert ReservationEmailLink.query.filter_by(reservation_id=reservations[0].id).count() == 1
+
+
+def test_reserve_from_recently_worked_uses_existing_flow_and_seeds_today_board(client, campaign):
+    recently_worked = client.get('/api/dashboard/recently-worked').get_json()
+    row = next(item for item in recently_worked['domains'] if item['campaign_id'] == campaign)
+    assert row['reservation']['state'] == 'Unreserved'
+
+    reserved = client.post(f'/api/campaigns/{campaign}/reservation')
+    assert reserved.status_code == 200
+
+    today_rows = client.get('/api/dashboard/todays-campaigns').get_json()
+    assert [item['campaign_id'] for item in today_rows] == [campaign]
+    refreshed_recently_worked = client.get('/api/dashboard/recently-worked').get_json()
+    refreshed_row = next(
+        item for item in refreshed_recently_worked['domains']
+        if item['campaign_id'] == campaign
+    )
+    assert refreshed_row['reservation']['state'] == 'Reserved'
+
 def test_unreserve_campaign(client, campaign, app):
     client.post(f'/api/campaigns/{campaign}/reservation')
     res = client.delete(f'/api/campaigns/{campaign}/reservation')

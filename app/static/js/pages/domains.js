@@ -1408,6 +1408,90 @@ function removeDisabledEmailPickerCode(pickerId, code) {
   updateEmailPickerButtons(pickerId);
 }
 
+function setNewActionPriceError(message) {
+  const error = document.getElementById("action-price-error");
+  const input = document.getElementById("action-price");
+  if (!error) return;
+  error.textContent = message || "";
+  error.hidden = !message;
+  if (input) {
+    if (message) input.setAttribute("aria-invalid", "true");
+    else input.removeAttribute("aria-invalid");
+  }
+}
+
+function validateNewActionPrice() {
+  const actionType = document.getElementById("action-type")?.value;
+  const input = document.getElementById("action-price");
+  if (!input || actionType !== "PRICE_REDUCTION") return true;
+
+  const rawPrice = input.value.trim();
+  const amount = Number(rawPrice);
+  const currentPrice = Number(input.dataset.currentPrice || 0);
+  let error = "";
+  if (!rawPrice) {
+    error = "New price is required for a Price Reduction.";
+  } else if (!/^\d+$/.test(rawPrice) || !Number.isSafeInteger(amount) || amount <= 0) {
+    error = "New price must be a positive whole number.";
+  } else if (amount >= currentPrice) {
+    error = `Price Reduction must be lower than the current price of $${currentPrice.toLocaleString("en-US")}.`;
+  }
+  setNewActionPriceError(error);
+  return !error;
+}
+
+function updateNewActionPriceFields() {
+  const actionType = document.getElementById("action-type")?.value;
+  const input = document.getElementById("action-price");
+  const label = document.getElementById("action-price-label");
+  const currentPriceDisplay = document.getElementById("action-current-price");
+  const help = document.getElementById("action-price-help");
+  if (!input) return;
+
+  const rawCurrentPrice = Number(input.dataset.currentPrice || 0);
+  const currentPrice = Number.isFinite(rawCurrentPrice) ? rawCurrentPrice : 0;
+  setNewActionPriceError("");
+
+  if (actionType === "FOLLOW_UP") {
+    if (label) label.textContent = "Price";
+    input.value = String(currentPrice);
+    input.readOnly = true;
+    input.required = false;
+    input.setAttribute("aria-readonly", "true");
+    input.removeAttribute("min");
+    input.removeAttribute("max");
+    input.removeAttribute("step");
+    if (currentPriceDisplay) currentPriceDisplay.hidden = true;
+    if (help) help.textContent = "Current campaign price. A Follow-up keeps this price.";
+    return;
+  }
+
+  input.value = "";
+  input.readOnly = false;
+  input.removeAttribute("aria-readonly");
+  if (actionType === "PRICE_REDUCTION") {
+    if (label) label.textContent = "New price (required)";
+    input.required = true;
+    input.setAttribute("min", "1");
+    input.setAttribute("max", String(Math.max(0, currentPrice - 1)));
+    input.setAttribute("step", "1");
+    if (currentPriceDisplay) {
+      currentPriceDisplay.textContent = `Current price: $${currentPrice.toLocaleString("en-US")}`;
+      currentPriceDisplay.hidden = false;
+    }
+    if (help) help.textContent = "Enter a positive whole-number price below the current price.";
+    return;
+  }
+
+  if (label) label.textContent = "Price";
+  input.required = false;
+  input.removeAttribute("min");
+  input.removeAttribute("max");
+  input.removeAttribute("step");
+  if (currentPriceDisplay) currentPriceDisplay.hidden = true;
+  if (help) help.textContent = "";
+}
+
 async function setActionMode(mode) {
   editActionLoadRequestId += 1;
   const container = document.getElementById("action-mode-content");
@@ -1484,6 +1568,9 @@ async function setActionMode(mode) {
       }
     }
     const pickerAccounts = await loadEmailPickerAccounts();
+    const currentPrice = Number.isFinite(Number(campaign?.price))
+      ? Number(campaign.price)
+      : 0;
     const firstFollowUpOption = hasFirstFollowUp
       ? ""
       : '<option value="FIRST_FOLLOW_UP">First Follow-up</option>';
@@ -1519,13 +1606,28 @@ async function setActionMode(mode) {
         <label>Date: <input type="date" id="action-date" value="${defaultActionDate}"></label>
     </div>
     <div class="form-group">
-        <label>Price: <input type="number" id="action-price"></label>
+        <label id="action-price-label" for="action-price">Price</label>
+        <div id="action-current-price" hidden></div>
+        <input type="number" id="action-price" data-current-price="${currentPrice}" aria-describedby="action-price-help action-price-error">
+        <small id="action-price-help"></small>
+        <p class="form-error" id="action-price-error" role="alert" aria-live="polite" hidden></p>
     </div>
     <div class="form-group">
         <label>Notes: <textarea id="action-notes"></textarea></label>
       </div>
       <button id="save-new-action-btn" type="button" onclick="saveNewAction(${campaignId})">Save Action</button>
     `;
+    document.getElementById("action-type")?.addEventListener(
+      "change",
+      updateNewActionPriceFields,
+    );
+    const newActionPrice = document.getElementById("action-price");
+    newActionPrice?.addEventListener("blur", validateNewActionPrice);
+    newActionPrice?.addEventListener("input", () => {
+      const error = document.getElementById("action-price-error");
+      if (error && !error.hidden) validateNewActionPrice();
+    });
+    updateNewActionPriceFields();
     renderEmailAccountPicker("new-action-email-picker", pickerAccounts, exactEmails);
   } else {
     // Edit Mode
@@ -1612,6 +1714,12 @@ async function saveNewAction(campaignId) {
   const saveButton = document.getElementById("save-new-action-btn");
   if (saveButton && saveButton.disabled) return;
 
+  const actionType = document.getElementById("action-type").value;
+  if (actionType === "PRICE_REDUCTION" && !validateNewActionPrice()) {
+    document.getElementById("action-price")?.focus();
+    return;
+  }
+
   const emailCodes = getEmailPickerSelectedCodes("new-action-email-picker");
 
   if (emailCodes.length === 0) {
@@ -1627,9 +1735,11 @@ async function saveNewAction(campaignId) {
   }
 
   const payload = {
-    action_type: document.getElementById("action-type").value,
+    action_type: actionType,
     action_date: formatDateInputValue(document.getElementById("action-date").value),
-    price_after: document.getElementById("action-price").value,
+    price_after: actionType === "FOLLOW_UP"
+      ? ""
+      : document.getElementById("action-price").value,
     notes: document.getElementById("action-notes").value,
     campaign_status: document.getElementById("action-status").value,
     email_codes: emailCodes,
@@ -1652,7 +1762,13 @@ async function saveNewAction(campaignId) {
         // The action response was already confirmed; leave the saved state intact.
       }
     } else {
-      alert(result.error || "Unable to save action. Please review the form and try again.");
+      const error = result.error || "Unable to save action. Please review the form and try again.";
+      if (actionType === "PRICE_REDUCTION") {
+        setNewActionPriceError(error);
+        document.getElementById("action-price")?.focus();
+      } else {
+        alert(error);
+      }
     }
   } catch (_error) {
     alert(

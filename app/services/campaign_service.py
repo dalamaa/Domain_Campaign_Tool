@@ -10,12 +10,56 @@ class FirstFollowUpAlreadyExistsError(ValueError):
         super().__init__("This campaign already has a First Follow-up action.")
 
 
+class PriceReductionValidationError(ValueError):
+    """Raised when a new price reduction has no valid lower price."""
+
+
 def _is_first_follow_up(action_type):
     return action_type in (ActionType.FIRST_FOLLOW_UP, ActionType.FIRST_FOLLOW_UP.value)
 
 
+def _is_follow_up(action_type):
+    return _action_type_value(action_type) == ActionType.FOLLOW_UP.value
+
+
+def _is_price_reduction(action_type):
+    return _action_type_value(action_type) == ActionType.PRICE_REDUCTION.value
+
+
 def _action_type_value(action_type):
     return action_type.value if isinstance(action_type, ActionType) else action_type
+
+
+def _parse_price_reduction_amount(value):
+    if value is None or (isinstance(value, str) and not value.strip()):
+        raise PriceReductionValidationError(
+            "New price is required for a Price Reduction."
+        )
+    if isinstance(value, bool):
+        raise PriceReductionValidationError(
+            "New price must be a positive whole number."
+        )
+    if type(value) is int:
+        amount = value
+    elif isinstance(value, float) and value.is_integer():
+        amount = int(value)
+    elif isinstance(value, str):
+        normalized = value.strip()
+        digits = normalized[1:] if normalized.startswith("+") else normalized
+        if not digits.isdecimal():
+            raise PriceReductionValidationError(
+                "New price must be a positive whole number."
+            )
+        amount = int(normalized)
+    else:
+        raise PriceReductionValidationError(
+            "New price must be a positive whole number."
+        )
+    if amount <= 0:
+        raise PriceReductionValidationError(
+            "New price must be a positive whole number."
+        )
+    return amount
 
 
 def _ensure_first_follow_up_available(campaign_id, excluding_history_id=None):
@@ -55,15 +99,36 @@ def sync_campaign_state(campaign_id, commit=True):
 
 def create_new_action(campaign_id, action_type, action_date, price, notes, email_codes=None):
     """Create a new CampaignHistory record and associate used email accounts."""
+    if isinstance(action_type, str):
+        action_type = ActionType(action_type)
+
     if _is_first_follow_up(action_type):
         _ensure_first_follow_up_available(campaign_id)
 
     if email_codes is not None:
         email_codes = validate_email_codes(email_codes)
+    campaign = db.session.get(Campaign, campaign_id)
+    if campaign is None:
+        raise ValueError("Campaign not found.")
+
+    current_price = campaign.current_price or 0
+    if _is_follow_up(action_type):
+        price = current_price
+    elif _is_price_reduction(action_type):
+        price = _parse_price_reduction_amount(price)
+        if price >= current_price:
+            raise PriceReductionValidationError(
+                "Price Reduction must be lower than the current price of "
+                f"${current_price}."
+            )
+
     prev_max = CampaignHistory.query.filter_by(campaign_id=campaign_id).order_by(CampaignHistory.sequence.desc()).first()
 
     new_sequence = (prev_max.sequence if prev_max else 0) + 1
-    prev_price = prev_max.price_after if prev_max else 0
+    if _is_follow_up(action_type) or _is_price_reduction(action_type):
+        prev_price = current_price
+    else:
+        prev_price = prev_max.price_after if prev_max else 0
 
     new_hist = CampaignHistory(
         campaign_id=campaign_id,

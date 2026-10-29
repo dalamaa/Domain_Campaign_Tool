@@ -59,6 +59,17 @@ def list_recently_worked_campaigns():
         item["days_since_action"],
         item["domain"].lower(),
     ))
+    from app.services.dashboard_reservation_state_service import (
+        get_today_reservation_states,
+    )
+
+    reservation_states = get_today_reservation_states(
+        (item['campaign_id'] for item in results),
+        today,
+    )
+    for item in results:
+        item['reservation'] = reservation_states[item['campaign_id']]
+
     return {
         "business_today": today.isoformat(),
         "count": len(results),

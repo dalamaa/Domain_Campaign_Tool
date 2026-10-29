@@ -67,6 +67,22 @@ if (!(compare("alpha.example", "Beta.example", "text", 1) < 0)) process.exit(5);
     assert result.returncode == 0, result.stderr
 
 
+def test_today_board_column_sort_is_temporary_and_custom_order_is_restorable():
+    dashboard_js = SCRIPT.read_text()
+    dashboard_html = (ROOT / "app/templates/dashboard.html").read_text()
+    sort_function = dashboard_js.split("function sortDashboardTable(", 1)[1].split(
+        "function setupDashboardSortableTable(", 1
+    )[0]
+
+    assert 'data-sort-key="domain"' in dashboard_html
+    assert 'id="today-board-custom-order"' in dashboard_html
+    assert '() => renderTodaysCampaigns()' in dashboard_js
+    assert 'updateTodayBoardSortControls(table)' in sort_function
+    assert 'dashboardTableSortState["todays_campaigns"]' not in sort_function
+    assert "fetch(" not in sort_function
+    assert '"/api/dashboard/todays-campaigns/reorder"' in dashboard_js
+
+
 def test_campaign_context_renderers_are_compact_and_null_safe():
     node_script = r'''
 const fs = require("fs");
@@ -148,7 +164,7 @@ def test_suggested_domain_and_metric_columns_have_the_requested_compact_contract
     assert "white-space: nowrap;" in styles
     assert ".dashboard-followup-table td:nth-child(1) { width: 24%; }" in styles
     assert ".dashboard-followup-table td:nth-child(2) { width: 19%; }" in styles
-    assert ".dashboard-followup-table td:nth-child(8) { width: 4%; }" in styles
+    assert ".dashboard-followup-table td:nth-child(8) { width: 5%; }" in styles
     assert '{ key: "last_contact", label: "LC"' in dashboard_js
     assert '{ key: "expiry", label: "Expiry"' in dashboard_js
     assert 'class="dashboard-domain-cell"' in dashboard_js

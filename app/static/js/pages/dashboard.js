@@ -279,6 +279,9 @@ function sortDashboardTable(table, tableId, column) {
     })
     .forEach(({ row }) => body.appendChild(row));
   updateDashboardSortIndicators(table, column.key, direction);
+  if (tableId === "todays_campaigns") {
+    updateTodayBoardSortControls(table);
+  }
 }
 
 function setupDashboardSortableTable(table, tableId, columns) {
@@ -356,28 +359,298 @@ async function refreshDashboard() {
   }
 }
 
+const TODAY_BOARD_SORT_COLUMNS = [
+  { key: "domain", label: "Domain", type: "text" },
+  { key: "status", label: "Status", type: "text" },
+  { key: "sequence", label: "Sequence", type: "number" },
+  { key: "current_price", label: "Current Price", type: "number" },
+  { key: "emails", label: "Email", type: "text" },
+  { key: "shared_emails", label: "Shared Email", type: "text" },
+];
+
+function escapeDashboardHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]);
+}
+
+function updateTodayBoardDragHandles(table) {
+  const sorted = Boolean(dashboardTableSortState.todays_campaigns);
+  const rows = Array.from(table.tBodies[0]?.rows || []);
+  rows.forEach((row) => {
+    const handle = row.querySelector(".today-board-drag-handle");
+    if (!handle) return;
+    handle.draggable = !sorted;
+    handle.tabIndex = sorted ? -1 : 0;
+    handle.setAttribute("aria-disabled", sorted ? "true" : "false");
+    handle.classList.toggle("is-disabled", sorted);
+  });
+}
+
+function updateTodayBoardSortControls(table) {
+  const sorted = Boolean(dashboardTableSortState.todays_campaigns);
+  const customOrderButton = document.getElementById("today-board-custom-order");
+  if (customOrderButton) {
+    customOrderButton.hidden = !sorted;
+  }
+  const status = document.getElementById("today-board-status");
+  if (status) status.textContent = sorted ? "Temporary column sort is active." : "";
+  updateTodayBoardDragHandles(table);
+}
+
+function resetTodayBoardSort(table) {
+  delete dashboardTableSortState.todays_campaigns;
+  table.querySelectorAll("[data-sort-indicator]").forEach((indicator) => {
+    indicator.textContent = "↕";
+  });
+  table.querySelectorAll("th[aria-sort]").forEach((header) => {
+    header.removeAttribute("aria-sort");
+  });
+  updateTodayBoardSortControls(table);
+}
+
+function initializeTodayBoardTable() {
+  const table = document.getElementById("todays-campaigns-table");
+  if (!table || table.dataset.todayBoardInitialized === "true") return table;
+  table.dataset.todayBoardInitialized = "true";
+
+  setupDashboardSortableTable(table, "todays_campaigns", TODAY_BOARD_SORT_COLUMNS);
+  table.addEventListener("change", async (event) => {
+    const checkbox = event.target.closest(".today-board-done-checkbox");
+    if (checkbox) await updateTodayBoardDone(checkbox);
+  });
+  table.addEventListener("click", async (event) => {
+    const removeButton = event.target.closest(".today-board-remove");
+    if (removeButton) await removeTodayBoardEntry(removeButton);
+  });
+  table.addEventListener("keydown", async (event) => {
+    const handle = event.target.closest(".today-board-drag-handle");
+    if (!handle || dashboardTableSortState.todays_campaigns) return;
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    event.preventDefault();
+    const row = handle.closest("tr");
+    const rows = Array.from(table.tBodies[0].rows);
+    const index = rows.indexOf(row);
+    const nextIndex = index + (event.key === "ArrowUp" ? -1 : 1);
+    if (nextIndex < 0 || nextIndex >= rows.length) return;
+    if (event.key === "ArrowUp") {
+      row.parentElement.insertBefore(row, rows[nextIndex]);
+    } else {
+      row.parentElement.insertBefore(rows[nextIndex], row);
+    }
+    await persistTodayBoardOrder(
+      Array.from(table.tBodies[0].rows, (item) => Number(item.dataset.campaignId)),
+      row.dataset.campaignId,
+    );
+  });
+  table.addEventListener("dragstart", (event) => {
+    const handle = event.target.closest(".today-board-drag-handle");
+    const row = handle?.closest("tr");
+    if (!handle || !row || dashboardTableSortState.todays_campaigns) {
+      event.preventDefault();
+      return;
+    }
+    row.classList.add("today-board-dragging");
+    table.dataset.todayBoardDropHandled = "false";
+    handle.setAttribute("aria-grabbed", "true");
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", row.dataset.campaignId);
+    }
+    event.stopPropagation();
+  });
+  table.addEventListener("dragover", (event) => {
+    const targetRow = event.target.closest("tbody tr.today-board-row");
+    const draggingRow = table.querySelector("tbody tr.today-board-dragging");
+    if (
+      !targetRow ||
+      !draggingRow ||
+      targetRow === draggingRow ||
+      dashboardTableSortState.todays_campaigns
+    ) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    const bounds = targetRow.getBoundingClientRect();
+    if (event.clientY < bounds.top + bounds.height / 2) {
+      targetRow.parentElement.insertBefore(draggingRow, targetRow);
+    } else {
+      targetRow.parentElement.insertBefore(draggingRow, targetRow.nextSibling);
+    }
+  });
+  table.addEventListener("drop", async (event) => {
+    const draggingRow = table.querySelector("tbody tr.today-board-dragging");
+    if (!draggingRow) return;
+    event.preventDefault();
+    event.stopPropagation();
+    table.dataset.todayBoardDropHandled = "true";
+    const campaignId = draggingRow.dataset.campaignId;
+    const campaignIds = Array.from(
+      table.tBodies[0].rows,
+      (row) => Number(row.dataset.campaignId),
+    );
+    draggingRow.classList.remove("today-board-dragging");
+    await persistTodayBoardOrder(campaignIds, campaignId);
+  });
+  table.addEventListener("dragend", (event) => {
+    const handle = event.target.closest(".today-board-drag-handle");
+    if (handle) handle.setAttribute("aria-grabbed", "false");
+    table.querySelector("tbody tr.today-board-dragging")?.classList.remove("today-board-dragging");
+    const dropped = table.dataset.todayBoardDropHandled === "true";
+    delete table.dataset.todayBoardDropHandled;
+    if (!dropped) renderTodaysCampaigns();
+  });
+
+  document.getElementById("today-board-custom-order")?.addEventListener(
+    "click",
+    () => renderTodaysCampaigns(),
+  );
+  document.getElementById("today-board-reset")?.addEventListener(
+    "click",
+    resetTodayBoard,
+  );
+  return table;
+}
+
+async function postTodayBoardRequest(url, payload = {}) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Today board update failed.");
+  return data;
+}
+
 async function renderTodaysCampaigns() {
-  const container = document
-    .getElementById("todays-campaigns-table")
-    .querySelector("tbody");
+  const table = initializeTodayBoardTable();
+  const container = table?.querySelector("tbody");
   if (!container) return;
 
-  const res = await fetch("/api/dashboard/todays-campaigns");
-  const data = await res.json();
+  try {
+    const response = await fetch("/api/dashboard/todays-campaigns");
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Unable to load Today board.");
 
-  container.innerHTML = data
-    .map(
-      (c) => `
-    <tr>
-      <td><a href="/domains?history_id=${c.campaign_id}&domain=${encodeURIComponent(c.domain)}" target="_blank" rel="noopener noreferrer">${c.domain}</a></td>
-      <td>${c.status}</td>
-      <td>${c.sequence}</td>
-      <td>$${c.current_price}</td>
-      <td>${c.emails.join(", ")}</td>
-      <td>${c.shared_emails.join(", ") || "—"}</td>
-    </tr>`,
-    )
-    .join("");
+    resetTodayBoardSort(table);
+    container.innerHTML = data.map((campaign) => {
+      const domain = escapeDashboardHtml(campaign.domain);
+      const emails = campaign.emails || [];
+      const sharedEmails = campaign.shared_emails || [];
+      const encodedDomain = encodeURIComponent(campaign.domain || "");
+      const checked = campaign.is_done ? " checked" : "";
+      const doneClass = campaign.is_done ? " today-board-done" : "";
+      return `
+        <tr class="today-board-row${doneClass}"
+          data-campaign-id="${campaign.campaign_id}"
+          data-sort-domain="${domain}"
+          data-sort-status="${escapeDashboardHtml(campaign.status)}"
+          data-sort-sequence="${campaign.sequence ?? ""}"
+          data-sort-current-price="${campaign.current_price ?? ""}"
+          data-sort-emails="${escapeDashboardHtml(emails.join(", "))}"
+          data-sort-shared-emails="${escapeDashboardHtml(sharedEmails.join(", "))}"
+        >
+          <td><input class="today-board-done-checkbox" type="checkbox"${checked} aria-label="Mark ${domain} as done"></td>
+          <td class="dashboard-domain-cell"><a class="today-board-domain" href="/domains?history_id=${campaign.campaign_id}&domain=${encodedDomain}" target="_blank" rel="noopener noreferrer">${domain}</a></td>
+          <td>${escapeDashboardHtml(campaign.status)}</td>
+          <td>${escapeDashboardHtml(campaign.sequence)}</td>
+          <td>$${escapeDashboardHtml(campaign.current_price)}</td>
+          <td>${escapeDashboardHtml(emails.join(", "))}</td>
+          <td>${escapeDashboardHtml(sharedEmails.join(", ")) || "—"}</td>
+          <td class="today-board-drag-cell">
+          <span class="today-board-drag-handle" draggable="true" role="button" tabindex="0" aria-label="Reorder ${domain}; use arrow keys to move" aria-grabbed="false" title="Drag to reorder">⋮⋮</span>
+          </td>
+          <td><button type="button" class="today-board-remove" aria-label="Remove ${domain} from Today board" title="Remove from Today board">×</button></td>
+        </tr>`;
+    }).join("");
+    updateTodayBoardDragHandles(table);
+  } catch (error) {
+    container.innerHTML = `<tr><td colspan="9" class="dashboard-error">${escapeDashboardHtml(error.message)}</td></tr>`;
+  }
+}
+
+async function updateTodayBoardDone(checkbox) {
+  const campaignId = checkbox.closest("tr")?.dataset.campaignId;
+  if (!campaignId) return;
+  const done = checkbox.checked;
+  checkbox.disabled = true;
+  try {
+    await postTodayBoardRequest(
+      `/api/dashboard/todays-campaigns/${campaignId}/done`,
+      { is_done: done },
+    );
+    checkbox.closest("tr")?.classList.toggle("today-board-done", done);
+    if (typeof showToast === "function") {
+      showToast(done ? "Marked done for today." : "Done mark cleared.");
+    }
+  } catch (error) {
+    checkbox.checked = !done;
+    if (typeof showToast === "function") showToast(error.message, "error");
+  } finally {
+    checkbox.disabled = false;
+  }
+}
+
+async function persistTodayBoardOrder(campaignIds, focusCampaignId = null) {
+  const focusHandle = () => {
+    if (!focusCampaignId) return;
+    document
+      .querySelector(`#todays-campaigns-table tr[data-campaign-id="${focusCampaignId}"] .today-board-drag-handle`)
+      ?.focus();
+  };
+  try {
+    await postTodayBoardRequest(
+      "/api/dashboard/todays-campaigns/reorder",
+      { campaign_ids: campaignIds },
+    );
+    await renderTodaysCampaigns();
+    focusHandle();
+  } catch (error) {
+    if (typeof showToast === "function") showToast(error.message, "error");
+    await renderTodaysCampaigns();
+    focusHandle();
+  }
+}
+
+async function removeTodayBoardEntry(button) {
+  const row = button.closest("tr");
+  const campaignId = row?.dataset.campaignId;
+  const domain = row?.querySelector(".today-board-domain")?.textContent || "this campaign";
+  if (!campaignId || !window.confirm(`Remove ${domain} from today's board only? Its reservation will remain unchanged.`)) return;
+
+  row.remove();
+  const table = document.getElementById("todays-campaigns-table");
+  updateTodayBoardDragHandles(table);
+  try {
+    await postTodayBoardRequest(
+      `/api/dashboard/todays-campaigns/${campaignId}/remove`,
+    );
+    if (typeof showToast === "function") showToast("Removed from Today board. Reservation unchanged.");
+  } catch (error) {
+    if (typeof showToast === "function") showToast(error.message, "error");
+    await renderTodaysCampaigns();
+  }
+}
+
+async function resetTodayBoard() {
+  const confirmation = "This resets only today's board order, Done state, and Today-only removals. Campaigns and reservations are not changed.";
+  if (!window.confirm(confirmation)) return;
+
+  const button = document.getElementById("today-board-reset");
+  if (button) button.disabled = true;
+  try {
+    await postTodayBoardRequest("/api/dashboard/todays-campaigns/reset");
+    await renderTodaysCampaigns();
+    if (typeof showToast === "function") showToast("Today board reset.");
+  } catch (error) {
+    if (typeof showToast === "function") showToast(error.message, "error");
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 function reservationBoardStatePresentation(state) {
@@ -445,6 +718,37 @@ async function reserveFromDashboardButton(button, campaignId) {
     button.textContent = originalText;
     alert(error && error.message ? error.message : "Unable to reserve campaign.");
   }
+}
+
+function attachDashboardReservationActions(container) {
+  if (!container) return;
+  container.querySelectorAll("button.dashboard-reservation-button[data-action]").forEach((button) => {
+    button.onclick = async (event) => {
+      const clicked = event.currentTarget;
+      const action = clicked.dataset.action;
+      const campaignId = clicked.dataset.campaignId;
+      if (action === "reserve") {
+        await reserveFromDashboardButton(clicked, campaignId);
+        return;
+      }
+      if (action !== "unreserve") return;
+
+      clicked.disabled = true;
+      try {
+        const response = await fetch(`/api/campaigns/${campaignId}/reservation`, {
+          method: "DELETE",
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || "Unable to unreserve campaign.");
+        }
+        await refreshDashboard();
+      } catch (error) {
+        alert(error.message || "Unable to unreserve campaign.");
+        clicked.disabled = false;
+      }
+    };
+  });
 }
 
 function escapeDashboardHtml(value) {
@@ -565,6 +869,10 @@ function renderDashboardPriceProgression(progression, progressionItems = []) {
   return `<span class="compact-price-progression" title="${tooltip}" aria-label="Price progression: ${value}">${value}</span>`;
 }
 
+function renderDashboardRowActions(actions) {
+  return `<div class="dashboard-row-actions">${actions || ""}</div>`;
+}
+
 function renderSuggestedWork() {
   const categories = [
     { id: "first-followup", action: "First Follow-up" },
@@ -598,36 +906,22 @@ function renderSuggestedWork() {
       followupSortColumns(),
     );
 
-    // Attach event delegation for Reserve/Unreserve
-    container.querySelectorAll("button[data-action]").forEach((btn) => {
-      btn.onclick = async (e) => {
-        const action = e.currentTarget.dataset.action;
-        const campId = e.currentTarget.dataset.campaignId;
-        if (action === "reserve") {
-          await reserveFromDashboardButton(e.currentTarget, campId);
-        } else if (action === "unreserve") {
-          await fetch(`/api/campaigns/${campId}/reservation`, {
-            method: "DELETE",
-          });
-          refreshDashboard();
-        }
-      };
-    });
+    attachDashboardReservationActions(container);
   };
 
   const getResButtons = (c) => {
-    const res = c.reservation;
+    const res = c.reservation || { state: "Unreserved", reserved_by: null };
+    const status = String(c.campaign_status || c.status || "").toUpperCase();
     let buttons = "";
 
     if (res.state === "Reserved" && res.reserved_by === c.domain) {
-      buttons = `<button type="button" class="dashboard-reservation-button" data-action="reserve" data-campaign-id="${c.campaign_id}" title="Reserve campaign" aria-label="Reserve campaign" disabled>+</button>
-                     <button type="button" class="dashboard-reservation-button" data-action="unreserve" data-campaign-id="${c.campaign_id}" title="Unreserve campaign" aria-label="Unreserve campaign">×</button>`;
+      buttons = `<button type="button" class="dashboard-reservation-button" data-action="reserve" data-campaign-id="${c.campaign_id}" title="Reserve campaign" aria-label="Reserve campaign" disabled>+</button><button type="button" class="dashboard-reservation-button" data-action="unreserve" data-campaign-id="${c.campaign_id}" title="Unreserve campaign" aria-label="Unreserve campaign">×</button>`;
     } else if (res.state === "Reserved") {
-      buttons = `<button type="button" class="dashboard-reservation-button" data-action="reserve" data-campaign-id="${c.campaign_id}" title="Reserve campaign" aria-label="Reserve campaign" disabled>+</button>
-                     <button type="button" class="dashboard-reservation-button" data-action="unreserve" data-campaign-id="${c.campaign_id}" title="Unreserve campaign" aria-label="Unreserve campaign" disabled>×</button> ⚠`;
+      buttons = `<button type="button" class="dashboard-reservation-button" data-action="reserve" data-campaign-id="${c.campaign_id}" title="Reserve campaign" aria-label="Reserve campaign" disabled>+</button><button type="button" class="dashboard-reservation-button" data-action="unreserve" data-campaign-id="${c.campaign_id}" title="Unreserve campaign" aria-label="Unreserve campaign" disabled>×</button><span aria-label="Reserved by another campaign" title="Reserved by another campaign">⚠</span>`;
+    } else if (status === "DORMANT") {
+      buttons = '<span class="dashboard-reservation-unavailable" title="Start the campaign before reserving it">Start first</span>';
     } else {
-      buttons = `<button type="button" class="dashboard-reservation-button" data-action="reserve" data-campaign-id="${c.campaign_id}" title="Reserve campaign" aria-label="Reserve campaign">+</button>
-                     <button type="button" class="dashboard-reservation-button" data-action="unreserve" data-campaign-id="${c.campaign_id}" title="Unreserve campaign" aria-label="Unreserve campaign" disabled>×</button>`;
+      buttons = `<button type="button" class="dashboard-reservation-button" data-action="reserve" data-campaign-id="${c.campaign_id}" title="Reserve campaign" aria-label="Reserve campaign">+</button><button type="button" class="dashboard-reservation-button" data-action="unreserve" data-campaign-id="${c.campaign_id}" title="Unreserve campaign" aria-label="Unreserve campaign" disabled>×</button>`;
     }
 
     return buttons;
@@ -664,7 +958,7 @@ function renderSuggestedWork() {
           <td class="dashboard-metric-column">${renderDashboardExpiry(c)}</td>
           <td class="dashboard-metric-column">${renderDashboardSequence(c.current_sequence)}</td>
           <td class="dashboard-price-cell">${renderDashboardPriceProgression(c.price_progression, c.price_progression_items)}</td>
-          <td class="dashboard-reservation-cell">${getResButtons(c)}</td>
+          <td class="dashboard-reservation-cell">${renderDashboardRowActions(getResButtons(c))}</td>
           <td class="dashboard-rest-cell">${c.resting_suggested ? '<span class="rest-suggested rest-indicator" title="Rest suggested" aria-label="Rest suggested">R</span>' : ""}</td>
         </tr>`,
           )
@@ -712,7 +1006,7 @@ function renderSuggestedWork() {
                 <th>Email Used</th>
                 ${renderDashboardSortHeaders(columns.slice(2))}
                 <th>Price Progression</th>
-                <th>Rest</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -738,17 +1032,7 @@ function renderSuggestedWork() {
                   <td class="dashboard-metric-column">${renderDashboardExpiry(campaign)}</td>
                   <td class="dashboard-metric-column">${renderDashboardSequence(campaign.current_sequence)}</td>
                   <td class="dashboard-price-cell">${renderDashboardPriceProgression(campaign.price_progression, campaign.price_progression_items)}</td>
-                  <td class="dashboard-rest-cell">
-                    <button
-                      type="button"
-                      class="dashboard-rest-action"
-                      data-action="rest"
-                      data-campaign-id="${campaign.campaign_id}"
-                      data-domain="${campaign.domain}"
-                      title="Move to Resting"
-                      aria-label="Move to Resting"
-                    >R</button>
-                  </td>
+                  <td class="dashboard-actions-cell">${renderDashboardRowActions(`${getResButtons(campaign)}<button type="button" class="dashboard-rest-action" data-action="rest" data-campaign-id="${campaign.campaign_id}" data-domain="${campaign.domain}" title="Move to Resting" aria-label="Move to Resting">R</button>`)}</td>
                 </tr>`,
                 )
                 .join("")}
@@ -762,6 +1046,7 @@ function renderSuggestedWork() {
         "resting_suggestions",
         columns,
       );
+      attachDashboardReservationActions(container);
 
       container.querySelectorAll("button[data-action='rest']").forEach((button) => {
         button.onclick = async () => {
@@ -833,7 +1118,7 @@ function renderSuggestedWork() {
                 ${renderDashboardSortHeaders(columns.slice(0, 3))}
                 <th>Email Used</th>
                 ${renderDashboardSortHeaders(columns.slice(3))}
-                <th>Price Progression</th><th>Rest</th>
+                <th>Price Progression</th><th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -854,7 +1139,7 @@ function renderSuggestedWork() {
                   <td class="dashboard-metric-column">${renderDashboardExpiry(campaign)}</td>
                   <td class="dashboard-metric-column">${renderDashboardSequence(campaign.current_sequence)}</td>
                   <td class="dashboard-price-cell">${renderDashboardPriceProgression(campaign.price_progression, campaign.price_progression_items)}</td>
-                  <td class="dashboard-rest-cell">${campaign.can_rest ? `<button type="button" class="dashboard-rest-action" data-action="rest" data-campaign-id="${campaign.campaign_id}" data-domain="${campaign.domain}" title="Move to Resting" aria-label="Move to Resting">R</button>` : ""}</td>
+                  <td class="dashboard-actions-cell">${renderDashboardRowActions(`${getResButtons(campaign)}${campaign.can_rest ? `<button type="button" class="dashboard-rest-action" data-action="rest" data-campaign-id="${campaign.campaign_id}" data-domain="${campaign.domain}" title="Move to Resting" aria-label="Move to Resting">R</button>` : ""}`)}</td>
                 </tr>`).join("")}
             </tbody>
           </table>
@@ -863,6 +1148,7 @@ function renderSuggestedWork() {
 
       const table = container.querySelector('table[data-sort-table="cooling"]');
       setupDashboardSortableTable(table, "cooling", columns);
+      attachDashboardReservationActions(container);
       container.querySelectorAll("button[data-action='rest']").forEach((button) => {
         button.onclick = async () => {
           const domain = button.dataset.domain;
@@ -1000,7 +1286,7 @@ function renderSuggestedWork() {
                 ${renderDashboardSortHeaders(columns.slice(0, 2))}
                 <th>Email Used</th>
                 ${renderDashboardSortHeaders(columns.slice(2))}
-                <th>Price Progression</th>
+                <th>Price Progression</th><th>Reserve</th>
               </tr>
             </thead>
             <tbody>
@@ -1023,6 +1309,11 @@ function renderSuggestedWork() {
                   <td class="dashboard-metric-column">${renderDashboardExpiry(domain)}</td>
                   <td class="dashboard-metric-column">${renderDashboardSequence(domain.current_sequence)}</td>
                   <td class="dashboard-price-cell">${renderDashboardPriceProgression(domain.price_progression, domain.price_progression_items)}</td>
+                  <td class="dashboard-reservation-cell">${renderDashboardRowActions(getResButtons({
+                    ...domain,
+                    domain: domain.domain_name,
+                    status: domain.campaign_status,
+                  }))}</td>
                 </tr>`,
                 )
                 .join("")}
@@ -1035,6 +1326,7 @@ function renderSuggestedWork() {
         "ready_for_campaign",
         columns,
       );
+      attachDashboardReservationActions(container);
     } catch (error) {
       if (count) count.textContent = "—";
       container.innerHTML = `<p class="dashboard-error">${error.message}</p>`;
@@ -1067,21 +1359,7 @@ function renderSuggestedWork() {
       followupSortColumns(),
     );
 
-    // Attach event delegation for Reserve/Unreserve
-    container.querySelectorAll("button[data-action]").forEach((btn) => {
-      btn.onclick = async (e) => {
-        const action = e.currentTarget.dataset.action;
-        const campId = e.currentTarget.dataset.campaignId;
-        if (action === "reserve") {
-          await reserveFromDashboardButton(e.currentTarget, campId);
-        } else if (action === "unreserve") {
-          await fetch(`/api/campaigns/${campId}/reservation`, {
-            method: "DELETE",
-          });
-          refreshDashboard();
-        }
-      };
-    });
+    attachDashboardReservationActions(container);
   };
 
   const renderRecentlyWorked = async () => {
@@ -1120,6 +1398,7 @@ function renderSuggestedWork() {
                 ${renderDashboardSortHeaders(columns.slice(0, 2))}
                 <th>Email Used</th>
                 ${renderDashboardSortHeaders(columns.slice(2))}
+                <th>Reserve</th>
               </tr>
             </thead>
             <tbody>
@@ -1137,6 +1416,7 @@ function renderSuggestedWork() {
                   <td class="dashboard-metric-column">${renderDashboardActionAge(campaign)}</td>
                   <td class="dashboard-metric-column">${renderDashboardExpiry(campaign)}</td>
                   <td class="dashboard-metric-column">${renderDashboardSequence(campaign.current_sequence)}</td>
+                  <td class="dashboard-reservation-cell">${renderDashboardRowActions(getResButtons(campaign))}</td>
                 </tr>`).join("")}
             </tbody>
           </table>
@@ -1147,6 +1427,7 @@ function renderSuggestedWork() {
         "recently_worked",
         columns,
       );
+      attachDashboardReservationActions(container);
     } catch (error) {
       if (count) count.textContent = "—";
       container.innerHTML = `<p class="dashboard-error">${error.message}</p>`;

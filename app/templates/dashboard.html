@@ -77,16 +77,24 @@
   <!-- Today's Campaigns -->
   <section id="todays-campaigns">
     <h2>Today's Campaigns</h2>
+    <div class="today-board-toolbar">
+      <button class="btn btn-secondary btn-compact" id="today-board-custom-order" type="button" hidden>Custom order</button>
+      <button class="btn btn-secondary btn-compact" id="today-board-reset" type="button">Reset Today Board</button>
+      <span id="today-board-status" role="status" aria-live="polite"></span>
+    </div>
     <div class="table-container">
       <table id="todays-campaigns-table">
       <thead>
         <tr>
-          <th>Domain</th>
-          <th>Status</th>
-          <th>Sequence</th>
-          <th>Current Price</th>
-          <th>Email</th>
-          <th>Shared Email</th>
+          <th>Done</th>
+          <th><button class="dashboard-sort-button" type="button" data-sort-key="domain">Domain <span data-sort-indicator="domain">↕</span></button></th>
+          <th><button class="dashboard-sort-button" type="button" data-sort-key="status">Status <span data-sort-indicator="status">↕</span></button></th>
+          <th><button class="dashboard-sort-button" type="button" data-sort-key="sequence">Sequence <span data-sort-indicator="sequence">↕</span></button></th>
+          <th><button class="dashboard-sort-button" type="button" data-sort-key="current_price">Current Price <span data-sort-indicator="current_price">↕</span></button></th>
+          <th><button class="dashboard-sort-button" type="button" data-sort-key="emails">Email <span data-sort-indicator="emails">↕</span></button></th>
+          <th><button class="dashboard-sort-button" type="button" data-sort-key="shared_emails">Shared Email <span data-sort-indicator="shared_emails">↕</span></button></th>
+          <th>Order</th>
+          <th>Remove</th>
         </tr>
       </thead>
       <tbody>
