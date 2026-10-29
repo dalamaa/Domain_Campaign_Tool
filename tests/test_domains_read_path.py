@@ -1,4 +1,6 @@
-from datetime import datetime
+from datetime import date, datetime, timedelta
+
+from sqlalchemy import event
 
 from app.models.models import (
     ActionType,
@@ -12,6 +14,13 @@ from app.models.models import (
     db,
 )
 from app.services.dashboard_campaign_context_service import build_campaign_context
+from app.services.campaign_temperature_service import (
+    TEMPERATURE_COOLING,
+    TEMPERATURE_NOT_STARTED,
+    TEMPERATURE_READY,
+    update_campaign_temperature_config,
+)
+from app.services.expiry_service import update_expiring_soon_days
 
 
 def add_campaign(domain_name="read-path.example.com", *, last_action=None):
@@ -294,3 +303,186 @@ def test_domain_email_used_preserves_campaign_block_fallback_without_history(cli
         response = client.get("/api/domains")
 
     assert domain_record(response, domain.domain_name)["latestEmails"] == "T01"
+
+
+def test_domains_api_exposes_planner_fields_without_changing_lifecycle_state(
+    client, app, monkeypatch
+):
+    today = date(2026, 9, 5)
+    monkeypatch.setattr("app.routes.api.get_business_today", lambda: today)
+    with app.app_context():
+        update_campaign_temperature_config(10, 20, 30)
+        update_expiring_soon_days(14)
+
+        active_domain, active = add_campaign("planner-active.example.com")
+        active_domain.expiry_date = today + timedelta(days=14)
+        active.current_price = 420
+        active.last_contact_date = today - timedelta(days=30)
+
+        resting_domain, resting = add_campaign("planner-resting.example.com")
+        resting_domain.expiry_date = today + timedelta(days=15)
+        resting.status = CampaignStatus.RESTING
+        resting.last_contact_date = today - timedelta(days=30)
+
+        recent_domain, recent = add_campaign("planner-recent.example.com")
+        recent_domain.expiry_date = today + timedelta(days=20)
+        recent.last_contact_date = today - timedelta(days=29)
+
+        dormant_domain = Domain(
+            domain_name="planner-dormant.example.com",
+            expiry_date=today + timedelta(days=5),
+            status="AVAILABLE",
+        )
+        db.session.add(dormant_domain)
+        db.session.flush()
+        dormant = Campaign(
+            domain_id=dormant_domain.id,
+            status=CampaignStatus.DORMANT,
+            current_sequence=0,
+            current_price=0,
+            last_contact_date=None,
+        )
+        db.session.add(dormant)
+
+        sold_domain = Domain(
+            domain_name="planner-sold.example.com",
+            expiry_date=today + timedelta(days=5),
+            status="SOLD",
+        )
+        db.session.add(sold_domain)
+        db.session.flush()
+        sold_campaign = Campaign(
+            domain_id=sold_domain.id,
+            status=CampaignStatus.DORMANT,
+            current_sequence=0,
+            current_price=0,
+            last_contact_date=None,
+        )
+        db.session.add(sold_campaign)
+
+        no_campaign = Domain(
+            domain_name="planner-no-campaign.example.com",
+            expiry_date=today + timedelta(days=40),
+            status="AVAILABLE",
+        )
+        expired_by_status = Domain(
+            domain_name="planner-expired-status.example.com",
+            expiry_date=today + timedelta(days=40),
+            status="EXPIRED",
+        )
+        expired_by_date = Domain(
+            domain_name="planner-expired-date.example.com",
+            expiry_date=today - timedelta(days=1),
+            status="AVAILABLE",
+        )
+        db.session.add_all([no_campaign, expired_by_status, expired_by_date])
+        db.session.commit()
+
+        before = (
+            Domain.query.count(),
+            Campaign.query.count(),
+            CampaignHistory.query.count(),
+            [
+                (
+                    row.id,
+                    row.status,
+                    row.current_price,
+                    row.current_sequence,
+                    row.last_contact_date,
+                )
+                for row in Campaign.query.order_by(Campaign.id).all()
+            ],
+        )
+        response = client.get("/api/domains")
+        db.session.expire_all()
+        after = (
+            Domain.query.count(),
+            Campaign.query.count(),
+            CampaignHistory.query.count(),
+            [
+                (
+                    row.id,
+                    row.status,
+                    row.current_price,
+                    row.current_sequence,
+                    row.last_contact_date,
+                )
+                for row in Campaign.query.order_by(Campaign.id).all()
+            ],
+        )
+
+    assert response.status_code == 200
+    assert before == after
+    rows = response.get_json()
+    active_row = domain_record(response, "planner-active.example.com")
+    resting_row = domain_record(response, "planner-resting.example.com")
+    recent_row = domain_record(response, "planner-recent.example.com")
+    dormant_row = domain_record(response, "planner-dormant.example.com")
+    sold_row = domain_record(response, "planner-sold.example.com")
+    no_campaign_row = domain_record(response, "planner-no-campaign.example.com")
+
+    assert active_row["domain_status"] == "AVAILABLE"
+    assert active_row["status"] == "ACTIVE"
+    assert active_row["campaign_status"] == "ACTIVE"
+    assert active_row["temperature"] == TEMPERATURE_READY
+    assert active_row["ready_for_campaign"] is True
+    assert active_row["expiring_soon"] is True
+    assert active_row["days_until_expiry"] == 14
+    assert active_row["days_since_last_contact"] == 30
+    assert active_row["price"] == 420
+
+    assert resting_row["campaign_status"] == "RESTING"
+    assert resting_row["temperature"] == TEMPERATURE_READY
+    assert resting_row["ready_for_campaign"] is True
+    assert resting_row["expiring_soon"] is False
+    assert resting_row["days_until_expiry"] == 15
+
+    assert recent_row["temperature"] == TEMPERATURE_COOLING
+    assert recent_row["ready_for_campaign"] is False
+    assert recent_row["days_since_last_contact"] == 29
+
+    assert dormant_row["campaign_status"] == "DORMANT"
+    assert dormant_row["temperature"] == TEMPERATURE_NOT_STARTED
+    assert dormant_row["ready_for_campaign"] is True
+
+    assert sold_row["domain_status"] == "SOLD"
+    assert sold_row["campaign_status"] == "DORMANT"
+    assert sold_row["ready_for_campaign"] is False
+    assert sold_row["expiring_soon"] is False
+
+    assert no_campaign_row["campaign_status"] == ""
+    assert no_campaign_row["temperature"] == TEMPERATURE_NOT_STARTED
+    assert no_campaign_row["ready_for_campaign"] is False
+    assert no_campaign_row["days_until_expiry"] == 40
+    assert no_campaign_row["days_since_last_contact"] is None
+    assert "planner-expired-status.example.com" not in {row["domain"] for row in rows}
+    assert "planner-expired-date.example.com" not in {row["domain"] for row in rows}
+
+
+def test_domains_api_loads_planner_settings_once_per_request(client, app, monkeypatch):
+    today = date(2026, 9, 5)
+    monkeypatch.setattr("app.routes.api.get_business_today", lambda: today)
+    with app.app_context():
+        for index in range(4):
+            domain, _ = add_campaign(f"planner-query-{index}.example.com")
+            domain.expiry_date = today + timedelta(days=30 + index)
+        db.session.commit()
+
+        statements = []
+
+        def capture_statement(_conn, _cursor, statement, _parameters, _context, _many):
+            statements.append(statement.lower())
+
+        engine = db.engine
+        event.listen(engine, "before_cursor_execute", capture_statement)
+        try:
+            response = client.get("/api/domains")
+        finally:
+            event.remove(engine, "before_cursor_execute", capture_statement)
+
+    assert response.status_code == 200
+    setting_selects = [
+        statement for statement in statements
+        if "from settings" in statement
+    ]
+    assert len(setting_selects) <= 4

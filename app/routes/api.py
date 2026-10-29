@@ -1459,15 +1459,21 @@ def get_domains():
         serialize_domain_campaign_api_row,
     )
     from app.services.expired_historical_service import is_expired_domain
+    from app.services.expiry_service import get_expiring_soon_days
+    from app.services.campaign_temperature_service import get_campaign_temperature_config
 
     today = get_business_today()
     domains = [
         domain for domain in Domain.query.options(selectinload(Domain.campaigns)).all()
         if not is_expired_domain(domain, business_today=today)
     ]
+    temperature_config = get_campaign_temperature_config()
+    expiring_soon_days = get_expiring_soon_days()
     rows = build_domain_campaign_table_rows(
         domains,
         business_today=today,
+        temperature_config=temperature_config,
+        expiring_soon_days=expiring_soon_days,
     )
     return jsonify([serialize_domain_campaign_api_row(row) for row in rows])
 
