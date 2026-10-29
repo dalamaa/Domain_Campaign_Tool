@@ -365,6 +365,46 @@ button[data-action="rest"] { border-color: var(--color-success); background: var
   margin-right: 0;
 }
 
+.domain-search-control {
+  position: relative;
+  flex: 0 1 200px;
+  min-width: 160px;
+}
+
+.domain-search-control > input {
+  width: 100%;
+  padding-inline-end: 2.25rem;
+}
+
+.domain-search-clear {
+  position: absolute;
+  top: 50%;
+  inset-inline-end: 0.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  min-height: 1.9rem;
+  padding: 0;
+  transform: translateY(-50%);
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-muted-text);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.domain-search-clear:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+}
+
+.domain-search-clear[hidden] {
+  display: none;
+}
+
 /* 7. Forms */
 label {
   color: var(--color-text);
@@ -1316,6 +1356,8 @@ tr[draggable="true"]:active { cursor: grabbing; }
   .action-bar { align-items: stretch; }
   .action-bar input { flex: 1 1 100%; }
   .action-bar button { flex: 1 1 auto; }
+  .action-bar .domain-search-control { flex: 1 1 100%; min-width: 0; }
+  .action-bar .domain-search-control > input { flex: 1 1 auto; }
   .modal { padding: var(--space-4); }
   #side-panel { width: min(92vw, 400px); }
 }

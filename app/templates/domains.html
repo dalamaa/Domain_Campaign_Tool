@@ -3,11 +3,25 @@
   <h2>Domains / Campaigns</h2>
 
   <div class="action-bar" id="domain-action-bar">
-    <input
-      type="text"
-      placeholder="Search domains..."
-      oninput="updateSearch(this.value)"
-    />
+    <div class="domain-search-control">
+      <input
+        id="domain-search-input"
+        type="text"
+        aria-label="Search domains"
+        placeholder="Search domains..."
+        oninput="updateSearch(this.value)"
+      />
+      <button
+        class="domain-search-clear"
+        id="domain-search-clear"
+        type="button"
+        aria-label="Clear search"
+        title="Clear search"
+        onclick="clearDomainSearch()"
+        hidden
+        disabled
+      ><span aria-hidden="true">×</span></button>
+    </div>
     <span id="domain-count"></span>
     <button class="btn btn-primary" type="button" onclick="openBulkImportModal()">
       Import CSV

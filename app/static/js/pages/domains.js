@@ -33,7 +33,28 @@ async function fetchDomains() {
 
 function updateSearch(val) {
   searchTerm = val.trim().toLowerCase();
-  renderDomainTable();
+  syncDomainSearchClearButton();
+  return renderDomainTable();
+}
+
+function syncDomainSearchClearButton() {
+  const input = document.getElementById("domain-search-input");
+  const clearButton = document.getElementById("domain-search-clear");
+  if (!input || !clearButton) return;
+
+  const hasValue = input.value.length > 0;
+  clearButton.hidden = !hasValue;
+  clearButton.disabled = !hasValue;
+}
+
+function clearDomainSearch() {
+  const input = document.getElementById("domain-search-input");
+  if (!input) return;
+
+  input.value = "";
+  const renderPromise = updateSearch(input.value);
+  input.focus();
+  return renderPromise;
 }
 
 function sortTable(key) {
