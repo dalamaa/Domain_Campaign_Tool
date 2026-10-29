@@ -1430,7 +1430,7 @@ function renderSuggestedWork() {
 
       const columns = [
         { key: "domain", label: "Domain", type: "text", defaultDirection: "asc" },
-        { key: "temperature", label: "Temperature", type: "text", defaultDirection: "asc" },
+        { key: "temperature", label: "Temp", type: "text", defaultDirection: "asc" },
         { key: "days_since_action", label: "Worked", sortLabel: "Sort by Recent Action", type: "number", defaultDirection: "asc", className: "dashboard-metric-column" },
         { key: "expiry", label: "Expiry", type: "number", defaultDirection: "asc", className: "dashboard-metric-column" },
         { key: "sequence", label: "Seq", type: "number", defaultDirection: "asc", className: "dashboard-metric-column" },
@@ -1438,7 +1438,7 @@ function renderSuggestedWork() {
 
       container.innerHTML = `
         <div class="table-container">
-          <table class="dashboard-suggested-table dashboard-followup-table" data-sort-table="recently_worked">
+          <table class="dashboard-suggested-table dashboard-followup-table dashboard-recently-worked-table" data-sort-table="recently_worked">
             <thead>
               <tr>
                 ${renderDashboardSortHeaders(columns.slice(0, 2))}

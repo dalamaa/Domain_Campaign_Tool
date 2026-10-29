@@ -665,6 +665,27 @@ table {
 .dashboard-followup-table th:nth-child(8),
 .dashboard-followup-table td:nth-child(8) { width: 5%; }
 
+.dashboard-recently-worked-table th:nth-child(1),
+.dashboard-recently-worked-table td:nth-child(1) { width: 29%; min-width: 12rem; }
+
+.dashboard-recently-worked-table th:nth-child(2),
+.dashboard-recently-worked-table td:nth-child(2) { width: 4.75rem; min-width: 4.75rem; }
+
+.dashboard-recently-worked-table th:nth-child(3),
+.dashboard-recently-worked-table td:nth-child(3) { width: 33%; min-width: 11rem; }
+
+.dashboard-recently-worked-table th:nth-child(4),
+.dashboard-recently-worked-table td:nth-child(4) { width: 8%; min-width: 4.5rem; }
+
+.dashboard-recently-worked-table th:nth-child(5),
+.dashboard-recently-worked-table td:nth-child(5) { width: 7%; min-width: 4.5rem; }
+
+.dashboard-recently-worked-table th:nth-child(6),
+.dashboard-recently-worked-table td:nth-child(6) { width: 8%; min-width: 4rem; }
+
+.dashboard-recently-worked-table th:nth-child(7),
+.dashboard-recently-worked-table td:nth-child(7) { width: 8%; min-width: 5.5rem; }
+
 .compact-email-list {
   display: block;
   width: 100%;

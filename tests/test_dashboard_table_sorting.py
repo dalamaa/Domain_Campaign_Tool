@@ -16,6 +16,7 @@ def test_suggested_work_tables_expose_sortable_columns_and_raw_values():
         "normal_followup_due",
         "normal_followup_past_due",
         "resting_suggestions",
+        "recently_worked",
         "expiring_soon",
         "ready_for_campaign",
     ):
@@ -31,6 +32,41 @@ def test_suggested_work_tables_expose_sortable_columns_and_raw_values():
     assert "updateDashboardSortIndicators" in dashboard_js
     assert 'direction === 1 ? "▲" : "▼"' in dashboard_js
     assert "aria-sort" in dashboard_js
+
+
+def test_recently_worked_columns_use_compact_temp_wide_email_and_keep_sorting():
+    dashboard_js = SCRIPT.read_text()
+    styles = STYLES.read_text()
+    renderer = dashboard_js.split("const renderRecentlyWorked = async () =>", 1)[1].split(
+        "\n  return Promise.all([", 1
+    )[0]
+
+    assert (
+        '{ key: "temperature", label: "Temp", type: "text", '
+        'defaultDirection: "asc" }'
+    ) in renderer
+    assert 'dashboard-followup-table dashboard-recently-worked-table' in renderer
+    assert 'data-sort-temperature="${campaign.temperature || ""}"' in renderer
+    assert 'renderDashboardTemperature(campaign.temperature, campaign.label, campaign.emoji)' in renderer
+    assert 'setupDashboardSortableTable(' in renderer
+    assert '"recently_worked",\n        columns' in renderer
+
+    expected_widths = (
+        (1, "29%", "12rem"),
+        (2, "4.75rem", "4.75rem"),
+        (3, "33%", "11rem"),
+        (4, "8%", "4.5rem"),
+        (5, "7%", "4.5rem"),
+        (6, "8%", "4rem"),
+        (7, "8%", "5.5rem"),
+    )
+    for column, width, min_width in expected_widths:
+        rule = (
+            f".dashboard-recently-worked-table th:nth-child({column}),\n"
+            f".dashboard-recently-worked-table td:nth-child({column}) "
+            f"{{ width: {width}; min-width: {min_width}; }}"
+        )
+        assert rule in styles
 
 
 def test_dashboard_sort_helper_uses_numeric_order_and_keeps_unknown_values_last():
