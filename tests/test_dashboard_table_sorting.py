@@ -16,6 +16,7 @@ def test_suggested_work_tables_expose_sortable_columns_and_raw_values():
         "normal_followup_due",
         "normal_followup_past_due",
         "resting_suggestions",
+        "recently_worked",
         "expiring_soon",
         "ready_for_campaign",
     ):
@@ -31,6 +32,41 @@ def test_suggested_work_tables_expose_sortable_columns_and_raw_values():
     assert "updateDashboardSortIndicators" in dashboard_js
     assert 'direction === 1 ? "▲" : "▼"' in dashboard_js
     assert "aria-sort" in dashboard_js
+
+
+def test_recently_worked_columns_use_compact_temp_wide_email_and_keep_sorting():
+    dashboard_js = SCRIPT.read_text()
+    styles = STYLES.read_text()
+    renderer = dashboard_js.split("const renderRecentlyWorked = async () =>", 1)[1].split(
+        "\n  return Promise.all([", 1
+    )[0]
+
+    assert (
+        '{ key: "temperature", label: "Temp", type: "text", '
+        'defaultDirection: "asc" }'
+    ) in renderer
+    assert 'dashboard-followup-table dashboard-recently-worked-table' in renderer
+    assert 'data-sort-temperature="${campaign.temperature || ""}"' in renderer
+    assert 'renderDashboardTemperature(campaign.temperature, campaign.label, campaign.emoji)' in renderer
+    assert 'setupDashboardSortableTable(' in renderer
+    assert '"recently_worked",\n        columns' in renderer
+
+    expected_widths = (
+        (1, "29%", "12rem"),
+        (2, "4.75rem", "4.75rem"),
+        (3, "33%", "11rem"),
+        (4, "8%", "4.5rem"),
+        (5, "7%", "4.5rem"),
+        (6, "8%", "4rem"),
+        (7, "8%", "5.5rem"),
+    )
+    for column, width, min_width in expected_widths:
+        rule = (
+            f".dashboard-recently-worked-table th:nth-child({column}),\n"
+            f".dashboard-recently-worked-table td:nth-child({column}) "
+            f"{{ width: {width}; min-width: {min_width}; }}"
+        )
+        assert rule in styles
 
 
 def test_dashboard_sort_helper_uses_numeric_order_and_keeps_unknown_values_last():
@@ -65,6 +101,24 @@ if (!(compare("alpha.example", "Beta.example", "text", 1) < 0)) process.exit(5);
         text=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_today_board_column_sort_is_temporary_and_custom_order_is_restorable():
+    dashboard_js = SCRIPT.read_text()
+    dashboard_html = (ROOT / "app/templates/dashboard.html").read_text()
+    sort_function = dashboard_js.split("function sortDashboardTable(", 1)[1].split(
+        "function setupDashboardSortableTable(", 1
+    )[0]
+
+    assert 'data-sort-key="domain"' in dashboard_html
+    assert 'data-sort-column="domain"' in dashboard_html
+    assert 'data-sort-column="current_price"' in dashboard_html
+    assert 'id="today-board-custom-order"' in dashboard_html
+    assert '() => renderTodaysCampaigns()' in dashboard_js
+    assert 'updateTodayBoardSortControls(table)' in sort_function
+    assert 'dashboardTableSortState["todays_campaigns"]' not in sort_function
+    assert "fetch(" not in sort_function
+    assert '"/api/dashboard/todays-campaigns/reorder"' in dashboard_js
 
 
 def test_campaign_context_renderers_are_compact_and_null_safe():
@@ -148,7 +202,7 @@ def test_suggested_domain_and_metric_columns_have_the_requested_compact_contract
     assert "white-space: nowrap;" in styles
     assert ".dashboard-followup-table td:nth-child(1) { width: 24%; }" in styles
     assert ".dashboard-followup-table td:nth-child(2) { width: 19%; }" in styles
-    assert ".dashboard-followup-table td:nth-child(8) { width: 4%; }" in styles
+    assert ".dashboard-followup-table td:nth-child(8) { width: 5%; }" in styles
     assert '{ key: "last_contact", label: "LC"' in dashboard_js
     assert '{ key: "expiry", label: "Expiry"' in dashboard_js
     assert 'class="dashboard-domain-cell"' in dashboard_js

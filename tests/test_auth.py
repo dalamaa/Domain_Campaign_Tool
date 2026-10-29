@@ -106,6 +106,25 @@ def test_unauthenticated_api_returns_json_401(auth_client):
     assert b'<html' not in response.data.lower()
 
 
+def test_unauthenticated_domains_api_returns_json_401(auth_client):
+    response = auth_client.get('/api/domains')
+
+    assert response.status_code == 401
+    assert response.is_json
+    assert response.get_json() == {'error': 'Authentication required'}
+
+
+def test_unauthenticated_today_board_mutation_returns_json_401(auth_client):
+    response = auth_client.post(
+        '/api/dashboard/todays-campaigns/reset',
+        json={},
+    )
+
+    assert response.status_code == 401
+    assert response.is_json
+    assert response.get_json() == {'error': 'Authentication required'}
+
+
 def test_logout_clears_session(auth_client):
     login(auth_client)
 

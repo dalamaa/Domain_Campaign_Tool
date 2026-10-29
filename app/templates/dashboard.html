@@ -25,61 +25,90 @@
       <span id="dashboard-section-order-status" role="status" aria-live="polite"></span>
     </h2>
     <div class="accordion dashboard-section" data-dashboard-section="first_followups">
-      <button class="accordion-toggle" type="button" onclick="toggleAccordion('first-followup')">
-        <span class="dashboard-section-drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag First Follow-ups">⋮⋮</span>
-        First Follow-ups (<span id="first-followup-count">0</span>)
-      </button>
+      <div class="accordion-header">
+        <button class="dashboard-section-drag-handle" type="button" draggable="true" title="Drag to reorder, or use arrow keys" aria-label="Reorder First Follow-ups; use arrow keys to move" aria-keyshortcuts="ArrowUp ArrowDown">⋮⋮</button>
+        <button class="accordion-toggle" type="button" aria-expanded="false" aria-controls="first-followup" onclick="toggleAccordion('first-followup')">
+          First Follow-ups (<span id="first-followup-count">0</span>)
+        </button>
+      </div>
       <div id="first-followup" class="content"></div>
     </div>
     <div class="accordion dashboard-section" data-dashboard-section="normal_followups">
-      <button class="accordion-toggle" type="button" onclick="toggleAccordion('normal-followup')">
-        <span class="dashboard-section-drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag Normal Follow-ups">⋮⋮</span>
-        Normal Follow-ups (<span id="normal-followup-count">0</span>)
-      </button>
+      <div class="accordion-header">
+        <button class="dashboard-section-drag-handle" type="button" draggable="true" title="Drag to reorder, or use arrow keys" aria-label="Reorder Normal Follow-ups; use arrow keys to move" aria-keyshortcuts="ArrowUp ArrowDown">⋮⋮</button>
+        <button class="accordion-toggle" type="button" aria-expanded="false" aria-controls="normal-followup" onclick="toggleAccordion('normal-followup')">
+          Normal Follow-ups (<span id="normal-followup-count">0</span>)
+        </button>
+      </div>
       <div id="normal-followup" class="content"></div>
     </div>
+    <div class="accordion dashboard-section" data-dashboard-section="recently_worked">
+      <div class="accordion-header">
+        <button class="dashboard-section-drag-handle" type="button" draggable="true" title="Drag to reorder, or use arrow keys" aria-label="Reorder Recently Worked; use arrow keys to move" aria-keyshortcuts="ArrowUp ArrowDown">⋮⋮</button>
+        <button class="accordion-toggle" type="button" aria-expanded="false" aria-controls="recently-worked" onclick="toggleAccordion('recently-worked')">
+          Recently Worked (<span id="recently-worked-count">0</span>)
+        </button>
+      </div>
+      <div id="recently-worked" class="content"></div>
+    </div>
     <div class="accordion dashboard-section" data-dashboard-section="cooling">
-      <button class="accordion-toggle" type="button" onclick="toggleAccordion('cooling')">
-        <span class="dashboard-section-drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag Cooling">⋮⋮</span>
-        Cooling (<span id="cooling-count">0</span>)
-      </button>
+      <div class="accordion-header">
+        <button class="dashboard-section-drag-handle" type="button" draggable="true" title="Drag to reorder, or use arrow keys" aria-label="Reorder Cooling; use arrow keys to move" aria-keyshortcuts="ArrowUp ArrowDown">⋮⋮</button>
+        <button class="accordion-toggle" type="button" aria-expanded="false" aria-controls="cooling" onclick="toggleAccordion('cooling')">
+          Cooling (<span id="cooling-count">0</span>)
+        </button>
+      </div>
       <div id="cooling" class="content"></div>
     </div>
     <div class="accordion dashboard-section" data-dashboard-section="resting_suggestions">
-      <button class="accordion-toggle" type="button" onclick="toggleAccordion('resting-suggestions')">
-        <span class="dashboard-section-drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag Resting Suggestions">⋮⋮</span>
-        Resting Suggestions (<span id="resting-suggestions-count">0</span>)
-      </button>
+      <div class="accordion-header">
+        <button class="dashboard-section-drag-handle" type="button" draggable="true" title="Drag to reorder, or use arrow keys" aria-label="Reorder Resting Suggestions; use arrow keys to move" aria-keyshortcuts="ArrowUp ArrowDown">⋮⋮</button>
+        <button class="accordion-toggle" type="button" aria-expanded="false" aria-controls="resting-suggestions" onclick="toggleAccordion('resting-suggestions')">
+          Resting Suggestions (<span id="resting-suggestions-count">0</span>)
+        </button>
+      </div>
       <div id="resting-suggestions" class="content"></div>
     </div>
     <div class="accordion dashboard-section" data-dashboard-section="expiring_soon">
-      <button class="accordion-toggle" type="button" onclick="toggleAccordion('expiring-soon')">
-        <span class="dashboard-section-drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag Expiring Soon">⋮⋮</span>
-        Expiring Soon (<span id="expiring-soon-count">0</span>)
-      </button>
+      <div class="accordion-header">
+        <button class="dashboard-section-drag-handle" type="button" draggable="true" title="Drag to reorder, or use arrow keys" aria-label="Reorder Expiring Soon; use arrow keys to move" aria-keyshortcuts="ArrowUp ArrowDown">⋮⋮</button>
+        <button class="accordion-toggle" type="button" aria-expanded="false" aria-controls="expiring-soon" onclick="toggleAccordion('expiring-soon')">
+          Expiring Soon (<span id="expiring-soon-count">0</span>)
+        </button>
+      </div>
       <div id="expiring-soon" class="content"></div>
     </div>
     <div class="accordion dashboard-section" data-dashboard-section="ready_for_campaign">
-      <button class="accordion-toggle" type="button" onclick="toggleAccordion('ready-for-campaign')">
-        <span class="dashboard-section-drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag Ready for Campaign">⋮⋮</span>
-        Ready for Campaign (<span id="ready-for-campaign-count">0</span>)
-      </button>
+      <div class="accordion-header">
+        <button class="dashboard-section-drag-handle" type="button" draggable="true" title="Drag to reorder, or use arrow keys" aria-label="Reorder Ready for Campaign; use arrow keys to move" aria-keyshortcuts="ArrowUp ArrowDown">⋮⋮</button>
+        <button class="accordion-toggle" type="button" aria-expanded="false" aria-controls="ready-for-campaign" onclick="toggleAccordion('ready-for-campaign')">
+          Ready for Campaign (<span id="ready-for-campaign-count">0</span>)
+        </button>
+      </div>
       <div id="ready-for-campaign" class="content"></div>
     </div>
   </section>
   <!-- Today's Campaigns -->
   <section id="todays-campaigns">
     <h2>Today's Campaigns</h2>
+    <div class="today-board-toolbar">
+      <button class="btn btn-secondary btn-compact" id="today-board-custom-order" type="button" hidden>Custom order</button>
+      <button class="btn btn-secondary btn-compact" id="today-board-reset" type="button">Reset Today Board</button>
+      <span id="today-board-status" role="status" aria-live="polite"></span>
+    </div>
     <div class="table-container">
       <table id="todays-campaigns-table">
       <thead>
         <tr>
-          <th>Domain</th>
-          <th>Status</th>
-          <th>Sequence</th>
-          <th>Current Price</th>
-          <th>Email</th>
-          <th>Shared Email</th>
+          <th scope="col">Done</th>
+          <th scope="col" data-sort-column="domain"><button class="dashboard-sort-button" type="button" data-sort-key="domain" aria-label="Sort by Domain">Domain <span data-sort-indicator="domain">↕</span></button></th>
+          <th scope="col" data-sort-column="status"><button class="dashboard-sort-button" type="button" data-sort-key="status" aria-label="Sort by Status">Status <span data-sort-indicator="status">↕</span></button></th>
+          <th scope="col" data-sort-column="sequence"><button class="dashboard-sort-button" type="button" data-sort-key="sequence" aria-label="Sort by Sequence">Sequence <span data-sort-indicator="sequence">↕</span></button></th>
+          <th scope="col" data-sort-column="current_price"><button class="dashboard-sort-button" type="button" data-sort-key="current_price" aria-label="Sort by Current Price">Current Price <span data-sort-indicator="current_price">↕</span></button></th>
+          <th scope="col" data-sort-column="emails"><button class="dashboard-sort-button" type="button" data-sort-key="emails" aria-label="Sort by Email">Email <span data-sort-indicator="emails">↕</span></button></th>
+          <th scope="col" data-sort-column="shared_emails"><button class="dashboard-sort-button" type="button" data-sort-key="shared_emails" aria-label="Sort by Shared Email">Shared Email <span data-sort-indicator="shared_emails">↕</span></button></th>
+          <th scope="col">Order</th>
+          <th scope="col">Remove</th>
         </tr>
       </thead>
       <tbody>

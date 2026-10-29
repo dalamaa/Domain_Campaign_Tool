@@ -26,6 +26,7 @@ def test_dashboard_section_order_can_be_saved_and_loaded(client):
         "ready_for_campaign",
         "first_followups",
         "normal_followups",
+        "recently_worked",
         "cooling",
         "resting_suggestions",
     ]
@@ -76,6 +77,7 @@ def test_malformed_or_stale_saved_order_is_safe_to_load(client, app):
             "expiring_soon",
             "first_followups",
             "normal_followups",
+            "recently_worked",
             "cooling",
             "resting_suggestions",
             "ready_for_campaign",
@@ -90,7 +92,7 @@ def test_dashboard_sections_have_stable_ids_and_native_drag_contract(client):
 
     for section_id in DEFAULT_ORDER:
         assert f'data-dashboard-section="{section_id}"' in html
-    assert html.count('class="dashboard-section-drag-handle"') == 6
+    assert html.count('class="dashboard-section-drag-handle"') == 7
     assert "normalizeDashboardSectionOrder" in script
     assert "loadDashboardSectionOrder" in script
     assert 'fetch("/api/settings/dashboard-section-order"' in script
@@ -98,3 +100,7 @@ def test_dashboard_sections_have_stable_ids_and_native_drag_contract(client):
     assert "container.appendChild(section)" in script
     assert "previous order restored" in script
     assert "dashboardSectionOrder" in script
+    assert html.count('aria-keyshortcuts="ArrowUp ArrowDown"') == 7
+    assert 'aria-controls="first-followup"' in html
+    assert 'aria-expanded="false"' in html
+    assert "moveDashboardSectionByKeyboard" in script

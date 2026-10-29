@@ -2,8 +2,6 @@
 <div class="email-management">
   <h2>Email Accounts Management</h2>
   <div class="action-bar" id="action-bar">
-<!-- In app/templates/email_accounts.html -->
-<div class="action-bar" id="action-bar">
     <button class="btn btn-primary" type="button" onclick="openAddModal()">+ Add Account</button>
     <button class="btn btn-primary" id="bulk-add-btn" type="button" onclick="openBulkAddModal()">Bulk Add Accounts</button>
     <button class="btn btn-secondary" id="move-up-btn" type="button" onclick="bulkMove(-1)" disabled>Move Up</button>
@@ -11,13 +9,6 @@
     <button class="btn btn-warning" id="edit-btn" type="button" onclick="bulkToggle()" disabled>Enable/Disable</button>
     <button class="btn btn-danger" id="delete-btn" type="button" onclick="bulkDelete()" disabled>Delete</button>
     <button class="btn btn-subtle" type="button" onclick="fixOrder()">Fix Order</button>
-</div>
-    <button class="btn btn-secondary" id="move-up-btn" type="button" onclick="bulkMove(-1)" disabled>Move Up</button>
-    <button class="btn btn-secondary" id="move-down-btn" type="button" onclick="bulkMove(1)" disabled>Move Down</button>
-    <button class="btn btn-warning" id="edit-btn" type="button" onclick="bulkToggle()" disabled>
-      Enable/Disable
-    </button>
-    <button class="btn btn-danger" id="delete-btn" type="button" onclick="bulkDelete()" disabled>Delete</button>
   </div>
   <div class="table-container">
     <table id="email-table">

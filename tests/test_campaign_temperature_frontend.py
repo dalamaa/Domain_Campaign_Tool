@@ -39,9 +39,9 @@ def test_cooling_table_uses_symbol_only_temperature_and_scoped_column_layout():
     assert ".dashboard-cooling-table" in styles
     assert ".dashboard-cooling-table .dashboard-domain-value" in styles
     for width in [
-        ".dashboard-cooling-table td:nth-child(1) { width: 30%; }",
-        ".dashboard-cooling-table td:nth-child(4) { width: 18%; }",
-        ".dashboard-cooling-table td:nth-child(8) { width: 18%; }",
+        ".dashboard-cooling-table td:nth-child(1) { width: 28%; }",
+        ".dashboard-cooling-table td:nth-child(4) { width: 16%; }",
+        ".dashboard-cooling-table td:nth-child(8) { width: 16%; }",
         ".dashboard-cooling-table td:nth-child(2) { width: 5%; }",
         ".dashboard-cooling-table td:nth-child(7) { width: 5%; }",
     ]:

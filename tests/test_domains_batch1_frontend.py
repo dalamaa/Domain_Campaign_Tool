@@ -8,6 +8,7 @@ SOURCE = ROOT / "app/static/js/pages/domains.js"
 
 def test_action_modal_has_single_first_follow_up_option_and_date_only_controls():
     source = SOURCE.read_text()
+    styles = (ROOT / "app/static/css/base.css").read_text()
 
     assert source.count('type="date"') == 2
     assert 'datetime-local' not in source
@@ -20,6 +21,8 @@ def test_action_modal_has_single_first_follow_up_option_and_date_only_controls()
     assert 'renderEmailAccountPicker("new-action-email-picker"' in source
     assert 'renderEmailAccountPicker(' in source and '"edit-action-email-picker"' in source
     assert 'toggleEmailEditMode' not in source
+    assert 'label.textContent = "Current price"' in source
+    assert "#action-price[readonly]" in styles
 
 
 def test_action_modal_hides_used_first_follow_up_and_save_is_pending_and_network_safe():
@@ -33,10 +36,30 @@ const tabNew = { style: {} };
 const tabEdit = { style: {} };
 const actionModal = { style: {} };
 const editActionFields = { innerHTML: "" };
+const makeElement = (properties = {}) => Object.assign({
+  attributes: {},
+  listeners: {},
+  addEventListener(name, callback) {
+    this.listeners[name] = callback;
+  },
+  setAttribute(name, value) {
+    this.attributes[name] = value;
+  },
+  removeAttribute(name) {
+    delete this.attributes[name];
+  },
+  focus() {
+    this.focused = true;
+  },
+}, properties);
 const actionElements = {
-  "action-type": { value: "FOLLOW_UP" },
+  "action-type": makeElement({ value: "FOLLOW_UP" }),
   "action-date": { value: "2026-09-17" },
-  "action-price": { value: "200" },
+  "action-price": makeElement({ value: "200", dataset: { currentPrice: "650" } }),
+  "action-price-label": { textContent: "Price" },
+  "action-current-price": { hidden: true, textContent: "" },
+  "action-price-help": { textContent: "" },
+  "action-price-error": { hidden: true, textContent: "" },
   "action-notes": { value: "" },
   "action-status": { value: "ACTIVE" },
   "edit-type": { value: "FOLLOW_UP" },
@@ -50,7 +73,7 @@ const actionElements = {
   "edit-action-fields": editActionFields,
   "action-modal": actionModal,
 };
-const record = { id: 7, campaign_id: 42, domain: "example.com", hasValues: true };
+const record = { id: 7, campaign_id: 42, domain: "example.com", price: 650, hasValues: true };
 let actionHistory = [{ sequence: 1, action_type: "FIRST_FOLLOW_UP" }];
 let alerts = [];
 let fetchCalls = 0;
@@ -92,6 +115,21 @@ context.selectedDomainRecord = () => record;
 (async () => {
   await context.setActionMode("new");
   if (container.innerHTML.includes('value="FIRST_FOLLOW_UP"')) process.exit(1);
+  const priceInput = actionElements["action-price"];
+  const changeActionType = (value) => {
+    actionElements["action-type"].value = value;
+    actionElements["action-type"].listeners.change();
+  };
+  if (priceInput.value !== "650" || !priceInput.readOnly || priceInput.required) process.exit(22);
+  changeActionType("PRICE_REDUCTION");
+  if (priceInput.value !== "" || priceInput.readOnly || !priceInput.required) process.exit(23);
+  if (actionElements["action-current-price"].textContent !== "Current price: $650") process.exit(24);
+  priceInput.value = "450";
+  changeActionType("FOLLOW_UP");
+  if (priceInput.value !== "650" || !priceInput.readOnly) process.exit(25);
+  changeActionType("PRICE_REDUCTION");
+  if (priceInput.value !== "" || !priceInput.required) process.exit(26);
+  changeActionType("FOLLOW_UP");
   if (JSON.stringify(context.getEmailPickerSelectedCodes("new-action-email-picker")) !== JSON.stringify(["M01"])) process.exit(16);
   const newDate = container.innerHTML.match(/id="action-date"[^>]*value="([^"]*)"/);
   if (!newDate || !/^\d{4}-\d{2}-\d{2}$/.test(newDate[1])) process.exit(2);
@@ -124,7 +162,30 @@ context.selectedDomainRecord = () => record;
   if (fetchCalls !== 1) process.exit(6);
   if (actionElements["save-new-action-btn"].disabled || actionElements["save-new-action-btn"].textContent !== "Save Action") process.exit(7);
   if (!lastPayload || lastPayload.action_date !== "2026-09-17") process.exit(8);
+  if (lastPayload.action_type !== "FOLLOW_UP" || lastPayload.price_after !== "") process.exit(27);
   if (JSON.stringify(lastPayload.email_codes) !== JSON.stringify(["M01", "M02"])) process.exit(19);
+
+  context.renderEmailAccountPicker("new-action-email-picker", [
+    { code: "M01", order: 1, enabled: true },
+    { code: "M02", order: 2, enabled: true },
+  ], ["M01", "M02"]);
+  changeActionType("PRICE_REDUCTION");
+  fetchCalls = 0;
+  await context.saveNewAction(42);
+  if (fetchCalls !== 0 || !actionElements["action-price"].focused) process.exit(28);
+  if (!actionElements["action-price-error"].textContent.includes("required")) process.exit(29);
+  priceInput.value = "450";
+  context.fetch = async (url, options) => {
+    fetchCalls += 1;
+    if (options && options.body) lastPayload = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ success: true }) };
+  };
+  await context.saveNewAction(42);
+  if (!lastPayload || lastPayload.action_type !== "PRICE_REDUCTION" || lastPayload.price_after !== "450") {
+    console.error(JSON.stringify(lastPayload));
+    process.exit(30);
+  }
+  changeActionType("FOLLOW_UP");
 
   context.renderEmailAccountPicker("edit-action-email-picker", [
     { code: "M01", order: 1, enabled: true },

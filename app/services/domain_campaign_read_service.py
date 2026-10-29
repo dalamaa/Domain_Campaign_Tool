@@ -2,7 +2,17 @@
 
 from app.models.models import CampaignHistory
 from app.services.campaign_email_service import resolve_operational_email_codes
-from app.services.expiry_service import days_until_expiry, select_latest_campaign
+from app.services.campaign_temperature_service import (
+    TEMPERATURE_NOT_STARTED,
+    calculate_campaign_temperature,
+)
+from app.services.expired_historical_service import is_expired_domain
+from app.services.expiry_service import (
+    days_until_expiry,
+    is_expiring_soon,
+    select_latest_campaign,
+)
+from app.services.ready_for_campaign_service import evaluate_ready_for_campaign
 from app.services.time_service import get_business_today
 
 
@@ -30,8 +40,12 @@ DOMAIN_CAMPAIGN_API_COLUMNS = [
     "id",
     "campaign_id",
     "domain",
+    "domain_status",
     "expiry",
+    "days_until_expiry",
+    "days_since_last_contact",
     "status",
+    "campaign_status",
     "price",
     "seq",
     "lastContact",
@@ -39,6 +53,9 @@ DOMAIN_CAMPAIGN_API_COLUMNS = [
     "lastAction",
     "latestEmails",
     "hasValues",
+    "temperature",
+    "ready_for_campaign",
+    "expiring_soon",
 ]
 
 
@@ -51,7 +68,13 @@ def _latest_history(campaign):
     ).first()
 
 
-def build_domain_campaign_table_row(domain, *, business_today=None):
+def build_domain_campaign_table_row(
+    domain,
+    *,
+    business_today=None,
+    temperature_config=None,
+    expiring_soon_days=None,
+):
     """Build one row using the same current-campaign semantics as ``/api/domains``."""
     today = business_today or get_business_today()
     campaign = select_latest_campaign(domain.campaigns)
@@ -73,12 +96,20 @@ def build_domain_campaign_table_row(domain, *, business_today=None):
 
     last_contact = campaign.last_contact_date if campaign else None
     expiry = domain.expiry_date
-    return {
+    days_until = days_until_expiry(expiry, today)
+    days_since = (today - last_contact).days if last_contact else None
+    campaign_status = campaign.status.value if campaign else ""
+    domain_status = getattr(domain.status, "value", domain.status) or ""
+    row = {
         "id": domain.id,
         "campaign_id": campaign.id if campaign else None,
         "domain": domain.domain_name,
+        "domain_status": domain_status,
         "expiry": expiry.isoformat() if expiry else "",
-        "status": campaign.status.value if campaign else "",
+        "days_until_expiry": days_until,
+        "days_since_last_contact": days_since,
+        "status": campaign_status,
+        "campaign_status": campaign_status,
         "price": campaign.current_price if campaign else "",
         "seq": campaign.current_sequence if has_history else "",
         "lastContact": last_contact.isoformat() if last_contact else "",
@@ -86,16 +117,64 @@ def build_domain_campaign_table_row(domain, *, business_today=None):
         "lastAction": ACTION_LABELS.get(str(raw_action), raw_action) if has_history else "",
         "latestEmails": ", ".join(latest_emails),
         "hasValues": has_history,
-        "daysLeft": days_until_expiry(expiry, today),
-        "daysSince": (today - last_contact).days if last_contact else None,
+        "daysLeft": days_until,
+        "daysSince": days_since,
     }
 
+    is_operational = None
+    if temperature_config is not None or expiring_soon_days is not None:
+        is_operational = (
+            str(domain_status).upper() not in {"SOLD", "EXPIRED"}
+            and not is_expired_domain(domain, business_today=today)
+        )
 
-def build_domain_campaign_table_rows(domains, *, business_today=None):
+    if temperature_config is not None:
+        temperature = (
+            calculate_campaign_temperature(
+                campaign,
+                business_today=today,
+                temperature_config=temperature_config,
+            )
+            if campaign is not None
+            else TEMPERATURE_NOT_STARTED
+        )
+        ready_for_campaign = False
+        if campaign is not None and is_operational:
+            ready_for_campaign = evaluate_ready_for_campaign(
+                campaign,
+                business_today=today,
+                threshold_days=temperature_config["ready_at"],
+            )["eligible"]
+
+        row["temperature"] = temperature
+        row["ready_for_campaign"] = ready_for_campaign
+
+    if expiring_soon_days is not None:
+        row["expiring_soon"] = is_operational and is_expiring_soon(
+            expiry,
+            today,
+            threshold_days=expiring_soon_days,
+        )
+
+    return row
+
+
+def build_domain_campaign_table_rows(
+    domains,
+    *,
+    business_today=None,
+    temperature_config=None,
+    expiring_soon_days=None,
+):
     """Build rows in the order supplied by the caller."""
     today = business_today or get_business_today()
     return [
-        build_domain_campaign_table_row(domain, business_today=today)
+        build_domain_campaign_table_row(
+            domain,
+            business_today=today,
+            temperature_config=temperature_config,
+            expiring_soon_days=expiring_soon_days,
+        )
         for domain in domains
     ]
 

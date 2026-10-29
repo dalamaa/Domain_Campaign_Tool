@@ -10,6 +10,10 @@ let businessToday = null;
 let businessTodayIso = "";
 let domainTableRenderRequestId = 0;
 let selectedExportInProgress = false;
+let quickUpdatePreviewToken = null;
+let quickUpdateFocusReturnTarget = null;
+let quickUpdateBusy = false;
+let domainToolbarMenusInitialized = false;
 let bulkImportFiles = {
   campaignHistory: null,
   emailUsage: null,
@@ -33,7 +37,28 @@ async function fetchDomains() {
 
 function updateSearch(val) {
   searchTerm = val.trim().toLowerCase();
-  renderDomainTable();
+  syncDomainSearchClearButton();
+  return renderDomainTable();
+}
+
+function syncDomainSearchClearButton() {
+  const input = document.getElementById("domain-search-input");
+  const clearButton = document.getElementById("domain-search-clear");
+  if (!input || !clearButton) return;
+
+  const hasValue = input.value.length > 0;
+  clearButton.hidden = !hasValue;
+  clearButton.disabled = !hasValue;
+}
+
+function clearDomainSearch() {
+  const input = document.getElementById("domain-search-input");
+  if (!input) return;
+
+  input.value = "";
+  const renderPromise = updateSearch(input.value);
+  input.focus();
+  return renderPromise;
 }
 
 function sortTable(key) {
@@ -299,6 +324,128 @@ function updateDomainActionBar() {
 
   // Delete button: enabled if anything is selected
   if (delBtn) delBtn.disabled = count === 0;
+}
+
+function domainToolbarMenuItems(menu) {
+  return Array.from(menu.querySelectorAll('[role="menuitem"]:not(:disabled)'));
+}
+
+function positionDomainToolbarMenu(menu) {
+  const toggle = menu.querySelector('[aria-haspopup="menu"]');
+  const panel = menu.querySelector('[role="menu"]');
+  if (!toggle || !panel || typeof toggle.getBoundingClientRect !== "function") return;
+
+  const triggerRect = toggle.getBoundingClientRect();
+  const panelRect = panel.getBoundingClientRect();
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+  const panelWidth = panelRect.width || panel.offsetWidth || 176;
+  const panelHeight = panelRect.height || panel.offsetHeight || 96;
+  const left = Math.max(8, Math.min(triggerRect.left, viewportWidth - panelWidth - 8));
+  let top = triggerRect.bottom + 4;
+  if (top + panelHeight > viewportHeight - 8) {
+    top = Math.max(8, triggerRect.top - panelHeight - 4);
+  }
+
+  panel.style.left = `${left}px`;
+  panel.style.top = `${top}px`;
+}
+
+function setDomainToolbarMenuOpen(menu, isOpen, focusEdge = "first") {
+  const toggle = menu.querySelector('[aria-haspopup="menu"]');
+  const panel = menu.querySelector('[role="menu"]');
+  if (!toggle || !panel) return;
+
+  panel.hidden = !isOpen;
+  toggle.setAttribute("aria-expanded", String(isOpen));
+  if (!isOpen) return;
+
+  positionDomainToolbarMenu(menu);
+  const items = domainToolbarMenuItems(panel);
+  const target = focusEdge === "last" ? items[items.length - 1] : items[0];
+  target?.focus();
+}
+
+function closeDomainToolbarMenus(restoreFocus = false) {
+  document.querySelectorAll("[data-domain-toolbar-menu]").forEach((menu) => {
+    const toggle = menu.querySelector('[aria-haspopup="menu"]');
+    const panel = menu.querySelector('[role="menu"]');
+    if (!toggle || !panel || panel.hidden) return;
+    panel.hidden = true;
+    toggle.setAttribute("aria-expanded", "false");
+    if (restoreFocus) toggle.focus();
+  });
+}
+
+function handleDomainToolbarMenuClick(event) {
+  const target = event.target;
+  const toggle = target.closest?.('.domain-toolbar-menu > [aria-haspopup="menu"]');
+  if (toggle) {
+    const menu = toggle.closest("[data-domain-toolbar-menu]");
+    const panel = menu?.querySelector('[role="menu"]');
+    const shouldOpen = Boolean(panel?.hidden);
+    closeDomainToolbarMenus();
+    if (shouldOpen && menu) setDomainToolbarMenuOpen(menu, true);
+    return;
+  }
+
+  if (target.closest?.('.domain-toolbar-menu-panel [role="menuitem"]')) {
+    closeDomainToolbarMenus(true);
+  } else if (!target.closest?.("[data-domain-toolbar-menu]")) {
+    closeDomainToolbarMenus();
+  }
+}
+
+function handleDomainToolbarMenuKeydown(event) {
+  const target = event.target;
+  const toggle = target.closest?.('.domain-toolbar-menu > [aria-haspopup="menu"]');
+  const item = target.closest?.('.domain-toolbar-menu-panel [role="menuitem"]');
+  const menu = toggle?.closest("[data-domain-toolbar-menu]")
+    || item?.closest("[data-domain-toolbar-menu]");
+  if (!menu) return;
+
+  const panel = menu.querySelector('[role="menu"]');
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeDomainToolbarMenus(Boolean(panel && !panel.hidden));
+    return;
+  }
+
+  if (toggle && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+    event.preventDefault();
+    closeDomainToolbarMenus();
+    setDomainToolbarMenuOpen(menu, true, event.key === "ArrowUp" ? "last" : "first");
+    return;
+  }
+
+  if (!item || !panel || panel.hidden) return;
+  if (event.key === "Tab") {
+    closeDomainToolbarMenus();
+    return;
+  }
+
+  const items = domainToolbarMenuItems(panel);
+  const currentIndex = items.indexOf(item);
+  let nextIndex = null;
+  if (event.key === "ArrowDown") nextIndex = (currentIndex + 1) % items.length;
+  if (event.key === "ArrowUp") nextIndex = (currentIndex - 1 + items.length) % items.length;
+  if (event.key === "Home") nextIndex = 0;
+  if (event.key === "End") nextIndex = items.length - 1;
+  if (nextIndex !== null && items[nextIndex]) {
+    event.preventDefault();
+    items[nextIndex].focus();
+  }
+}
+
+function setupDomainToolbarMenus() {
+  if (domainToolbarMenusInitialized) return;
+  domainToolbarMenusInitialized = true;
+  document.addEventListener("click", handleDomainToolbarMenuClick);
+  document.addEventListener("keydown", handleDomainToolbarMenuKeydown);
+  document.addEventListener("scroll", () => closeDomainToolbarMenus(), true);
+  if (typeof window.addEventListener === "function") {
+    window.addEventListener("resize", () => closeDomainToolbarMenus());
+  }
 }
 
 function selectedExportFilename(response) {
@@ -1170,6 +1317,274 @@ function closeActionModal() {
   emailPickerStates.delete("edit-action-email-picker");
 }
 
+function quickUpdateFocusableElements(modal) {
+  return Array.from(
+    modal.querySelectorAll(
+      'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((element) => !element.hidden && !element.closest("[hidden]"));
+}
+
+function handleQuickUpdateModalKeydown(event) {
+  const modal = document.getElementById("quick-update-modal");
+  if (!modal || modal.hidden) return;
+
+  if (event.key === "Escape") {
+    event.preventDefault();
+    if (!quickUpdateBusy) closeQuickUpdateModal();
+    return;
+  }
+
+  if (event.key !== "Tab") return;
+  const focusable = quickUpdateFocusableElements(modal);
+  if (!focusable.length) {
+    event.preventDefault();
+    modal.focus();
+    return;
+  }
+
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && (document.activeElement === first || !modal.contains(document.activeElement))) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && (document.activeElement === last || !modal.contains(document.activeElement))) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+function openQuickUpdateModal() {
+  const modal = document.getElementById("quick-update-modal");
+  if (!modal) return;
+
+  quickUpdateFocusReturnTarget = document.activeElement;
+  quickUpdatePreviewToken = null;
+  quickUpdateBusy = false;
+  document.getElementById("quick-update-input").value = "";
+  document.getElementById("quick-update-input-step").hidden = false;
+  document.getElementById("quick-update-preview-step").hidden = true;
+  document.getElementById("quick-update-preview-rows").replaceChildren();
+  document.getElementById("quick-update-preview-feedback").textContent = "";
+  document.getElementById("quick-update-error-summary").hidden = true;
+  setQuickUpdateInputFeedback("");
+  modal.hidden = false;
+  document.addEventListener("keydown", handleQuickUpdateModalKeydown);
+  document.getElementById("quick-update-input").focus();
+
+}
+
+function closeQuickUpdateModal() {
+  if (quickUpdateBusy) return;
+  const modal = document.getElementById("quick-update-modal");
+  if (!modal || modal.hidden) return;
+
+  modal.hidden = true;
+  document.removeEventListener("keydown", handleQuickUpdateModalKeydown);
+  quickUpdatePreviewToken = null;
+  document.getElementById("quick-update-input").value = "";
+  document.getElementById("quick-update-preview-rows").replaceChildren();
+  setQuickUpdateInputFeedback("");
+  const returnTarget = quickUpdateFocusReturnTarget;
+  quickUpdateFocusReturnTarget = null;
+  if (returnTarget && document.contains(returnTarget)) returnTarget.focus();
+}
+
+function setQuickUpdateInputFeedback(message) {
+  const feedback = document.getElementById("quick-update-input-feedback");
+  if (!feedback) return;
+  feedback.textContent = message;
+  feedback.hidden = !message;
+}
+
+function formatQuickUpdatePrice(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  const amount = Number(value);
+  return Number.isFinite(amount) ? `$${amount.toLocaleString("en-US")}` : "—";
+}
+
+function makeQuickUpdateCell(value, className = "") {
+  const cell = document.createElement("td");
+  if (className) cell.className = className;
+  cell.textContent = value === null || value === undefined || value === "" ? "—" : String(value);
+  return cell;
+}
+
+function renderQuickUpdatePreview(preview, message = "") {
+  const tbody = document.getElementById("quick-update-preview-rows");
+  const errorSummary = document.getElementById("quick-update-error-summary");
+  const errorList = document.getElementById("quick-update-error-list");
+  const confirmButton = document.getElementById("quick-update-confirm-btn");
+  const status = document.getElementById("quick-update-preview-feedback");
+  const rows = Array.isArray(preview?.rows) ? preview.rows : [];
+  tbody.replaceChildren();
+  errorList.replaceChildren();
+
+  rows.forEach((row, index) => {
+    const tr = document.createElement("tr");
+    const rowErrors = Array.isArray(row.errors) ? row.errors : [];
+    const errorId = `quick-update-row-error-${index + 1}`;
+    if (rowErrors.length) tr.setAttribute("aria-describedby", errorId);
+    tr.appendChild(makeQuickUpdateCell(row.domain || `Line ${row.line_number || index + 1}`));
+    tr.appendChild(makeQuickUpdateCell(row.action_label || "—"));
+    const sequence = row.sequence_before === null || row.sequence_before === undefined
+      ? "—"
+      : `${row.sequence_before} → ${row.sequence_after}`;
+    tr.appendChild(makeQuickUpdateCell(sequence));
+    tr.appendChild(makeQuickUpdateCell(formatQuickUpdatePrice(row.current_price)));
+    tr.appendChild(makeQuickUpdateCell(formatQuickUpdatePrice(row.new_price)));
+
+    const statusCell = document.createElement("td");
+    if (rowErrors.length) {
+      const error = document.createElement("span");
+      error.id = errorId;
+      error.className = "quick-update-row-error";
+      error.textContent = `Error: ${rowErrors.join(" ")}`;
+      statusCell.appendChild(error);
+
+      const summaryItem = document.createElement("li");
+      const summaryLink = document.createElement("a");
+      summaryLink.href = `#${errorId}`;
+      summaryLink.textContent = `Line ${row.line_number || index + 1}: ${row.domain || "invalid row"} — ${rowErrors.join(" ")}`;
+      summaryItem.appendChild(summaryLink);
+      errorList.appendChild(summaryItem);
+    } else {
+      const ready = document.createElement("span");
+      ready.className = "quick-update-row-ready";
+      ready.textContent = "Ready";
+      statusCell.appendChild(ready);
+    }
+    tr.appendChild(statusCell);
+    tbody.appendChild(tr);
+  });
+
+  const hasErrors = Number(preview?.error_count || 0) > 0;
+  errorSummary.hidden = !hasErrors;
+  quickUpdatePreviewToken = preview?.preview_token || null;
+  confirmButton.disabled = !preview?.can_update || !quickUpdatePreviewToken || quickUpdateBusy;
+  const count = Number(preview?.ready_count || 0);
+  confirmButton.textContent = count === 1
+    ? "Update 1 Campaign"
+    : `Update ${count} Campaigns`;
+  status.textContent = message || preview?.message || "Review the rows before updating.";
+
+  document.getElementById("quick-update-input-step").hidden = true;
+  document.getElementById("quick-update-preview-step").hidden = false;
+  if (hasErrors) errorSummary.focus();
+  else document.getElementById("quick-update-preview-heading").focus();
+}
+
+async function previewQuickUpdate() {
+  if (quickUpdateBusy) return;
+  const input = document.getElementById("quick-update-input");
+  setQuickUpdateInputFeedback("");
+
+  if (!input.value.trim()) {
+    setQuickUpdateInputFeedback("Paste at least one domain before Preview.");
+    input.focus();
+    return;
+  }
+  const previewButton = document.getElementById("quick-update-preview-btn");
+  previewButton.disabled = true;
+  previewButton.textContent = "Checking…";
+  try {
+    const response = await fetch("/api/campaigns/quick-update/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input: input.value }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setQuickUpdateInputFeedback(
+        result.error || "Unable to preview the batch. Check the input and try again.",
+      );
+      return;
+    }
+    renderQuickUpdatePreview(result);
+  } catch (_error) {
+    setQuickUpdateInputFeedback("Unable to reach the server. Your input is still here; try Preview again.");
+  } finally {
+    if (!document.getElementById("quick-update-modal")?.hidden) {
+      previewButton.disabled = false;
+      previewButton.textContent = "Preview";
+    }
+  }
+}
+
+function backToQuickUpdateInput() {
+  if (quickUpdateBusy) return;
+  quickUpdatePreviewToken = null;
+  document.getElementById("quick-update-preview-step").hidden = true;
+  document.getElementById("quick-update-input-step").hidden = false;
+  document.getElementById("quick-update-input").focus();
+}
+
+function setQuickUpdateBusy(isBusy) {
+  quickUpdateBusy = isBusy;
+  document.getElementById("quick-update-confirm-btn").disabled = isBusy || !quickUpdatePreviewToken;
+  document.getElementById("quick-update-back-btn").disabled = isBusy;
+  document.querySelectorAll('#quick-update-modal button[onclick="closeQuickUpdateModal()"]')
+    .forEach((button) => { button.disabled = isBusy; });
+}
+
+async function confirmQuickUpdate() {
+  if (quickUpdateBusy || !quickUpdatePreviewToken) return;
+  const confirmButton = document.getElementById("quick-update-confirm-btn");
+  setQuickUpdateBusy(true);
+  confirmButton.textContent = "Updating…";
+
+  try {
+    const response = await fetch("/api/campaigns/quick-update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ preview_token: quickUpdatePreviewToken }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (response.status === 409 && result.stale && result.preview) {
+      setQuickUpdateBusy(false);
+      renderQuickUpdatePreview(result.preview, result.error);
+      return;
+    }
+    if (!response.ok) {
+      setQuickUpdateBusy(false);
+      quickUpdatePreviewToken = null;
+      confirmButton.disabled = true;
+      confirmButton.textContent = "Update Campaigns";
+      document.getElementById("quick-update-preview-feedback").textContent =
+        result.error || "No campaigns were updated. Review the rows and preview again.";
+      document.getElementById("quick-update-preview-heading").focus();
+      return;
+    }
+
+    const updatedCount = Number(result.updated_count || 0);
+    setQuickUpdateBusy(false);
+    closeQuickUpdateModal();
+    alert(`${updatedCount} campaign${updatedCount === 1 ? "" : "s"} updated successfully.`);
+    try {
+      await renderDomainTable();
+    } catch (_refreshError) {
+      // The update was confirmed; leave the result message intact if refresh fails.
+    }
+  } catch (_error) {
+    setQuickUpdateBusy(false);
+    quickUpdatePreviewToken = null;
+    confirmButton.disabled = true;
+    confirmButton.textContent = "Update Campaigns";
+    document.getElementById("quick-update-preview-feedback").textContent =
+      "The request response was lost. The campaign table is being refreshed; review it before previewing again.";
+    document.getElementById("quick-update-preview-heading").focus();
+    try {
+      await renderDomainTable();
+    } catch (_refreshError) {
+      // Keep the uncertain result message visible so the user does not retry blindly.
+    }
+  } finally {
+    if (!document.getElementById("quick-update-modal")?.hidden && quickUpdateBusy) {
+      setQuickUpdateBusy(false);
+    }
+  }
+}
+
 function escapeEmailPickerHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -1408,6 +1823,90 @@ function removeDisabledEmailPickerCode(pickerId, code) {
   updateEmailPickerButtons(pickerId);
 }
 
+function setNewActionPriceError(message) {
+  const error = document.getElementById("action-price-error");
+  const input = document.getElementById("action-price");
+  if (!error) return;
+  error.textContent = message || "";
+  error.hidden = !message;
+  if (input) {
+    if (message) input.setAttribute("aria-invalid", "true");
+    else input.removeAttribute("aria-invalid");
+  }
+}
+
+function validateNewActionPrice() {
+  const actionType = document.getElementById("action-type")?.value;
+  const input = document.getElementById("action-price");
+  if (!input || actionType !== "PRICE_REDUCTION") return true;
+
+  const rawPrice = input.value.trim();
+  const amount = Number(rawPrice);
+  const currentPrice = Number(input.dataset.currentPrice || 0);
+  let error = "";
+  if (!rawPrice) {
+    error = "New price is required for a Price Reduction.";
+  } else if (!/^\d+$/.test(rawPrice) || !Number.isSafeInteger(amount) || amount <= 0) {
+    error = "New price must be a positive whole number.";
+  } else if (amount >= currentPrice) {
+    error = `Price Reduction must be lower than the current price of $${currentPrice.toLocaleString("en-US")}.`;
+  }
+  setNewActionPriceError(error);
+  return !error;
+}
+
+function updateNewActionPriceFields() {
+  const actionType = document.getElementById("action-type")?.value;
+  const input = document.getElementById("action-price");
+  const label = document.getElementById("action-price-label");
+  const currentPriceDisplay = document.getElementById("action-current-price");
+  const help = document.getElementById("action-price-help");
+  if (!input) return;
+
+  const rawCurrentPrice = Number(input.dataset.currentPrice || 0);
+  const currentPrice = Number.isFinite(rawCurrentPrice) ? rawCurrentPrice : 0;
+  setNewActionPriceError("");
+
+  if (actionType === "FOLLOW_UP") {
+    if (label) label.textContent = "Current price";
+    input.value = String(currentPrice);
+    input.readOnly = true;
+    input.required = false;
+    input.setAttribute("aria-readonly", "true");
+    input.removeAttribute("min");
+    input.removeAttribute("max");
+    input.removeAttribute("step");
+    if (currentPriceDisplay) currentPriceDisplay.hidden = true;
+    if (help) help.textContent = "Current campaign price. A Follow-up keeps this price.";
+    return;
+  }
+
+  input.value = "";
+  input.readOnly = false;
+  input.removeAttribute("aria-readonly");
+  if (actionType === "PRICE_REDUCTION") {
+    if (label) label.textContent = "New price (required)";
+    input.required = true;
+    input.setAttribute("min", "1");
+    input.setAttribute("max", String(Math.max(0, currentPrice - 1)));
+    input.setAttribute("step", "1");
+    if (currentPriceDisplay) {
+      currentPriceDisplay.textContent = `Current price: $${currentPrice.toLocaleString("en-US")}`;
+      currentPriceDisplay.hidden = false;
+    }
+    if (help) help.textContent = "Enter a positive whole-number price below the current price.";
+    return;
+  }
+
+  if (label) label.textContent = "Price";
+  input.required = false;
+  input.removeAttribute("min");
+  input.removeAttribute("max");
+  input.removeAttribute("step");
+  if (currentPriceDisplay) currentPriceDisplay.hidden = true;
+  if (help) help.textContent = "";
+}
+
 async function setActionMode(mode) {
   editActionLoadRequestId += 1;
   const container = document.getElementById("action-mode-content");
@@ -1484,6 +1983,9 @@ async function setActionMode(mode) {
       }
     }
     const pickerAccounts = await loadEmailPickerAccounts();
+    const currentPrice = Number.isFinite(Number(campaign?.price))
+      ? Number(campaign.price)
+      : 0;
     const firstFollowUpOption = hasFirstFollowUp
       ? ""
       : '<option value="FIRST_FOLLOW_UP">First Follow-up</option>';
@@ -1519,13 +2021,28 @@ async function setActionMode(mode) {
         <label>Date: <input type="date" id="action-date" value="${defaultActionDate}"></label>
     </div>
     <div class="form-group">
-        <label>Price: <input type="number" id="action-price"></label>
+        <label id="action-price-label" for="action-price">Price</label>
+        <div id="action-current-price" hidden></div>
+        <input type="number" id="action-price" data-current-price="${currentPrice}" aria-describedby="action-price-help action-price-error">
+        <small id="action-price-help"></small>
+        <p class="form-error" id="action-price-error" role="alert" aria-live="polite" hidden></p>
     </div>
     <div class="form-group">
         <label>Notes: <textarea id="action-notes"></textarea></label>
       </div>
       <button id="save-new-action-btn" type="button" onclick="saveNewAction(${campaignId})">Save Action</button>
     `;
+    document.getElementById("action-type")?.addEventListener(
+      "change",
+      updateNewActionPriceFields,
+    );
+    const newActionPrice = document.getElementById("action-price");
+    newActionPrice?.addEventListener("blur", validateNewActionPrice);
+    newActionPrice?.addEventListener("input", () => {
+      const error = document.getElementById("action-price-error");
+      if (error && !error.hidden) validateNewActionPrice();
+    });
+    updateNewActionPriceFields();
     renderEmailAccountPicker("new-action-email-picker", pickerAccounts, exactEmails);
   } else {
     // Edit Mode
@@ -1612,6 +2129,12 @@ async function saveNewAction(campaignId) {
   const saveButton = document.getElementById("save-new-action-btn");
   if (saveButton && saveButton.disabled) return;
 
+  const actionType = document.getElementById("action-type").value;
+  if (actionType === "PRICE_REDUCTION" && !validateNewActionPrice()) {
+    document.getElementById("action-price")?.focus();
+    return;
+  }
+
   const emailCodes = getEmailPickerSelectedCodes("new-action-email-picker");
 
   if (emailCodes.length === 0) {
@@ -1627,9 +2150,11 @@ async function saveNewAction(campaignId) {
   }
 
   const payload = {
-    action_type: document.getElementById("action-type").value,
+    action_type: actionType,
     action_date: formatDateInputValue(document.getElementById("action-date").value),
-    price_after: document.getElementById("action-price").value,
+    price_after: actionType === "FOLLOW_UP"
+      ? ""
+      : document.getElementById("action-price").value,
     notes: document.getElementById("action-notes").value,
     campaign_status: document.getElementById("action-status").value,
     email_codes: emailCodes,
@@ -1652,7 +2177,13 @@ async function saveNewAction(campaignId) {
         // The action response was already confirmed; leave the saved state intact.
       }
     } else {
-      alert(result.error || "Unable to save action. Please review the form and try again.");
+      const error = result.error || "Unable to save action. Please review the form and try again.";
+      if (actionType === "PRICE_REDUCTION") {
+        setNewActionPriceError(error);
+        document.getElementById("action-price")?.focus();
+      } else {
+        alert(error);
+      }
     }
   } catch (_error) {
     alert(
@@ -1731,6 +2262,7 @@ async function saveEditAction(campaignId, seq) {
 
 // Render the table on page load
 document.addEventListener("DOMContentLoaded", async () => {
+  setupDomainToolbarMenus();
   await renderDomainTable();
 
   const urlParams = new URLSearchParams(window.location.search);

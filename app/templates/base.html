@@ -13,6 +13,7 @@
       rel="stylesheet"
       href="{{ url_for('static', filename='css/base.css') }}"
     />
+    {% block extra_head %}{% endblock %}
   </head>
   <body>
     <div class="app-shell">
@@ -21,6 +22,7 @@
       {% set team_domains_active = request.path == url_for('dashboard.team_domains') %}
       {% set expired_historical_active = request.path == url_for('dashboard.expired_historical') %}
       {% set email_accounts_active = request.path == url_for('dashboard.email_accounts') %}
+      {% set email_code_search_active = request.path == url_for('dashboard.email_code_search') %}
       {% set settings_active = request.path == url_for('dashboard.settings') %}
       <aside class="app-sidebar">
         <a
@@ -36,6 +38,7 @@
           <a class="{% if team_domains_active %}active{% endif %}" href="{{ url_for('dashboard.team_domains') }}"{% if team_domains_active %} aria-current="page"{% endif %}>Team Domains</a>
           <a class="{% if expired_historical_active %}active{% endif %}" href="{{ url_for('dashboard.expired_historical') }}"{% if expired_historical_active %} aria-current="page"{% endif %}>Expired / Historical</a>
           <a class="{% if email_accounts_active %}active{% endif %}" href="{{ url_for('dashboard.email_accounts') }}"{% if email_accounts_active %} aria-current="page"{% endif %}>Email Accounts</a>
+          <a class="{% if email_code_search_active %}active{% endif %}" href="{{ url_for('dashboard.email_code_search') }}"{% if email_code_search_active %} aria-current="page"{% endif %}>Email Code Search</a>
           <a class="{% if settings_active %}active{% endif %}" href="{{ url_for('dashboard.settings') }}"{% if settings_active %} aria-current="page"{% endif %}>Settings</a>
         </nav>
         <form class="logout-form" method="post" action="{{ url_for('auth.logout') }}">

@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/email_code_search.css') }}" />
+{% endblock %}
+
+{% block content %}
+<section class="email-code-search-page" aria-labelledby="email-code-search-title">
+  <header class="email-code-search-heading">
+    <h1 id="email-code-search-title">Email Code Search</h1>
+    <p>Find domains associated with an exact email code across campaigns, actions, reservations, and historical snapshots.</p>
+  </header>
+
+  <form class="email-code-search-form" method="get" action="{{ url_for('dashboard.email_code_search') }}">
+    <div class="email-code-search-field">
+      <label for="email-code-search-input">Email code</label>
+      <input
+        id="email-code-search-input"
+        name="code"
+        type="search"
+        value="{{ email_code }}"
+        placeholder="For example, M13"
+        autocomplete="off"
+      />
+      <small>Exact code match; capitalization and surrounding spaces are ignored.</small>
+    </div>
+    <div class="email-code-search-actions">
+      <button class="btn btn-primary btn-compact" type="submit">Search</button>
+      {% if email_code %}
+      <a class="btn btn-secondary btn-compact" href="{{ url_for('dashboard.email_code_search') }}">Clear</a>
+      {% endif %}
+    </div>
+  </form>
+
+  {% if search %}
+  <div class="email-code-search-summary" role="status" aria-live="polite">
+    {{ search.total_count }} result{{ '' if search.total_count == 1 else 's' }} match <strong>{{ search.email_code }}</strong>.
+  </div>
+
+  {% if search.total_count == 0 %}
+  <p class="email-code-search-empty">
+    No domains matched <strong>{{ search.email_code }}</strong>. Check the code or try another exact email code.
+  </p>
+  {% else %}
+  <div class="email-code-search-groups" aria-label="Search results grouped by current domain and campaign state">
+    {% for group in search.groups %}
+    <details class="email-code-search-group" {% if group.count %}open{% endif %}>
+      <summary>
+        <span>{{ group.label }}</span>
+        <span class="email-code-search-count">{{ group.count }}</span>
+      </summary>
+      {% if group.count %}
+      <div class="email-code-search-table-wrap">
+        <table class="email-code-search-table">
+          <thead>
+            <tr>
+              <th scope="col">Domain</th>
+              <th scope="col">Current state</th>
+              <th scope="col">Expiry</th>
+              <th scope="col">Match reasons</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for result in group.results %}
+            <tr>
+              <th scope="row">{{ result.domain_name }}</th>
+              <td>{{ result.current_state }}</td>
+              <td>{{ result.expiry_date or '—' }}</td>
+              <td>
+                <ul class="email-code-match-list">
+                  {% for match in result.matches %}
+                  <li>
+                    <strong>{{ match.label }}</strong>
+                    {% if match.source == 'history_email_used' %}
+                      <span class="email-code-match-meta">
+                        <span>{{ match.action_date or 'Date unavailable' }}</span>
+                        <span>{{ match.action_type }}</span>
+                        {% if match.sequence is not none %}<span>Sequence {{ match.sequence }}</span>{% endif %}
+                      </span>
+                      {% if match.campaign_context %}<span class="email-code-match-context">{{ match.campaign_context }}</span>{% endif %}
+                    {% elif match.source == 'reservation_email_link' %}
+                      <span class="email-code-match-meta">
+                        <span>{{ match.reservation_date or 'Date unavailable' }}</span>
+                        <span>{{ match.reservation_status }}</span>
+                      </span>
+                      {% if match.campaign_context %}<span class="email-code-match-context">{{ match.campaign_context }}</span>{% endif %}
+                    {% elif match.source == 'campaign_email_block' %}
+                      {% if match.campaign_context %}<span class="email-code-match-context">{{ match.campaign_context }}</span>{% endif %}
+                    {% elif match.source == 'historical_domain_snapshot' %}
+                      <span class="email-code-match-meta">
+                        <span>Last email snapshot: {{ match.last_email_used }}</span>
+                        {% if match.retired_at %}<span>Retired {{ match.retired_at[:10] }}</span>{% endif %}
+                      </span>
+                    {% endif %}
+                  </li>
+                  {% endfor %}
+                </ul>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="email-code-search-group-empty">No matches in this group.</p>
+      {% endif %}
+    </details>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% endif %}
+</section>
+{% endblock %}

@@ -1027,6 +1027,16 @@ def get_ready_for_campaign():
         )
 
     results.sort(key=sort_key)
+    from app.services.dashboard_reservation_state_service import (
+        get_today_reservation_states,
+    )
+    reservation_states = get_today_reservation_states(
+        (item['campaign_id'] for item in results),
+        today,
+    )
+    for item in results:
+        item['reservation'] = reservation_states[item['campaign_id']]
+
     return jsonify({
         'business_today': today.isoformat(),
         'ready_for_campaign_days': threshold_days,
@@ -1142,6 +1152,16 @@ def get_resting_suggestions():
                 'price_progression_items': context['price_progression_items'],
                 'expiry_severity': context['expiry_severity'],
             })
+
+    from app.services.dashboard_reservation_state_service import (
+        get_today_reservation_states,
+    )
+    reservation_states = get_today_reservation_states(
+        (item['campaign_id'] for item in suggestions),
+        today,
+    )
+    for item in suggestions:
+        item['reservation'] = reservation_states[item['campaign_id']]
 
     return jsonify({
         'business_today': today.isoformat(),
@@ -1360,44 +1380,75 @@ def get_reservation_board():
 
 @bp.route('/dashboard/todays-campaigns', methods=['GET'])
 def get_todays_campaigns():
-    from app.models.models import Reservation, ReservationStatus, ReservationEmailLink, Campaign
-    from app.services.expired_historical_service import is_expired_domain
-    from app.services.time_service import get_business_today
+    from app.services.today_board_service import get_today_board
 
-    today = get_business_today()
+    return jsonify(get_today_board())
 
-    # Get all reservations for today
-    reservations = [
-        reservation for reservation in Reservation.query.filter_by(
-            date=today,
-            status=ReservationStatus.RESERVED,
-        ).all()
-        if not is_expired_domain(reservation.campaign.domain, business_today=today)
-    ]
 
-    # Get all email usage counts for today to identify shared accounts
-    email_usage = {}
-    for reservation in reservations:
-        for link in reservation.email_links:
-            email_usage[link.email_code] = email_usage.get(link.email_code, 0) + 1
+@bp.route('/dashboard/todays-campaigns/<int:campaign_id>/done', methods=['POST'])
+def set_todays_campaign_done(campaign_id):
+    from app.services.today_board_service import (
+        TodayBoardNotFound,
+        set_today_entry_done,
+    )
 
-    shared_emails = {code: count > 1 for code, count in email_usage.items()}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or type(data.get('is_done')) is not bool:
+        return jsonify({'error': 'is_done must be a boolean.'}), 400
+    try:
+        return jsonify(set_today_entry_done(campaign_id, data['is_done']))
+    except TodayBoardNotFound as exc:
+        return jsonify({'error': str(exc)}), 404
+    except Exception:
+        db.session.rollback()
+        return jsonify({'error': 'Unable to update Today board state.'}), 500
 
-    results = []
-    for res in reservations:
-        email_codes = [link.email_code for link in res.email_links]
 
-        results.append({
-            'domain': res.campaign.domain.domain_name,
-            'campaign_id': res.campaign.id,
-            'status': res.campaign.status.value,
-            'sequence': res.campaign.current_sequence,
-            'current_price': res.campaign.current_price,
-            'emails': email_codes,
-            'shared_emails': [code for code in email_codes if shared_emails.get(code, False)]
-        })
+@bp.route('/dashboard/todays-campaigns/<int:campaign_id>/remove', methods=['POST'])
+def remove_todays_campaign(campaign_id):
+    from app.services.today_board_service import (
+        TodayBoardNotFound,
+        remove_today_entry,
+    )
 
-    return jsonify(results)
+    try:
+        return jsonify(remove_today_entry(campaign_id))
+    except TodayBoardNotFound as exc:
+        return jsonify({'error': str(exc)}), 404
+    except Exception:
+        db.session.rollback()
+        return jsonify({'error': 'Unable to remove Today board entry.'}), 500
+
+
+@bp.route('/dashboard/todays-campaigns/reorder', methods=['POST'])
+def reorder_todays_campaigns():
+    from app.services.today_board_service import (
+        InvalidTodayBoardOrder,
+        reorder_today_board,
+    )
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error': 'A JSON object is required.'}), 400
+    try:
+        entries = reorder_today_board(data.get('campaign_ids'))
+        return jsonify({'entries': entries})
+    except InvalidTodayBoardOrder as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception:
+        db.session.rollback()
+        return jsonify({'error': 'Unable to reorder Today board entries.'}), 500
+
+
+@bp.route('/dashboard/todays-campaigns/reset', methods=['POST'])
+def reset_todays_campaigns():
+    from app.services.today_board_service import reset_today_board
+
+    try:
+        return jsonify({'entries': reset_today_board()})
+    except Exception:
+        db.session.rollback()
+        return jsonify({'error': 'Unable to reset Today board.'}), 500
 
 @bp.route('/domains', methods=['GET'])
 def get_domains():
@@ -1408,15 +1459,21 @@ def get_domains():
         serialize_domain_campaign_api_row,
     )
     from app.services.expired_historical_service import is_expired_domain
+    from app.services.expiry_service import get_expiring_soon_days
+    from app.services.campaign_temperature_service import get_campaign_temperature_config
 
     today = get_business_today()
     domains = [
         domain for domain in Domain.query.options(selectinload(Domain.campaigns)).all()
         if not is_expired_domain(domain, business_today=today)
     ]
+    temperature_config = get_campaign_temperature_config()
+    expiring_soon_days = get_expiring_soon_days()
     rows = build_domain_campaign_table_rows(
         domains,
         business_today=today,
+        temperature_config=temperature_config,
+        expiring_soon_days=expiring_soon_days,
     )
     return jsonify([serialize_domain_campaign_api_row(row) for row in rows])
 
@@ -1798,8 +1855,8 @@ def bulk_edit_domains():
 def add_campaign_action(campaign_id):
     from app.services.campaign_service import (
         FirstFollowUpAlreadyExistsError,
-        create_new_action,
-        sync_campaign_state,
+        PriceReductionValidationError,
+        record_campaign_action,
     )
     from app.models.models import ActionType, Campaign, CampaignStatus
     from datetime import datetime
@@ -1814,19 +1871,25 @@ def add_campaign_action(campaign_id):
             require_nonempty=action_type == ActionType.FIRST_OUTREACH,
         )
         action_date = _parse_campaign_action_date(data['action_date'])
-        price = int(data['price_after'])
+        if action_type in {ActionType.FOLLOW_UP, ActionType.PRICE_REDUCTION}:
+            price = data.get('price_after')
+        else:
+            price = int(data['price_after'])
         notes = data.get('notes', '')
 
         campaign_status = None
         if 'campaign_status' in data:
             campaign_status = CampaignStatus(data['campaign_status'])
 
-        new_hist = create_new_action(campaign_id, action_type, action_date, price, notes, email_codes)
-        sync_campaign_state(campaign_id, commit=False)
-        camp = Campaign.query.get(campaign_id)
-        if camp and campaign_status is not None:
-            camp.status = campaign_status
-        db.session.commit()
+        new_hist = record_campaign_action(
+            campaign_id,
+            action_type,
+            action_date,
+            price,
+            notes,
+            email_codes,
+            campaign_status=campaign_status,
+        )
         return jsonify({'success': True, 'sequence': new_hist.sequence}), 201
     except EmailCodeValidationError as exc:
         db.session.rollback()
@@ -1834,9 +1897,63 @@ def add_campaign_action(campaign_id):
     except FirstFollowUpAlreadyExistsError as exc:
         db.session.rollback()
         return jsonify({'success': False, 'error': str(exc)}), 400
+    except PriceReductionValidationError as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 400
     except Exception:
         db.session.rollback()
         return jsonify({'error': 'Unable to save campaign action.'}), 400
+
+
+@bp.route('/campaigns/quick-update/preview', methods=['POST'])
+def preview_campaign_quick_update():
+    from app.services.quick_update_service import (
+        QuickUpdateRequestError,
+        preview_quick_update,
+    )
+
+    data = request.get_json(silent=True) or {}
+    try:
+        preview = preview_quick_update(
+            data.get('input'),
+        )
+        return jsonify(preview)
+    except QuickUpdateRequestError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+
+
+@bp.route('/campaigns/quick-update', methods=['POST'])
+def confirm_campaign_quick_update():
+    from app.services.quick_update_service import (
+        QuickUpdateRequestError,
+        QuickUpdateTokenError,
+        StaleQuickUpdateError,
+        confirm_quick_update,
+    )
+
+    data = request.get_json(silent=True) or {}
+    try:
+        result = confirm_quick_update(data.get('preview_token'))
+        return jsonify({
+            'success': True,
+            'updated_count': result['updated_count'],
+        })
+    except StaleQuickUpdateError as exc:
+        return jsonify({
+            'success': False,
+            'stale': True,
+            'error': str(exc),
+            'preview': exc.preview,
+        }), 409
+    except (QuickUpdateRequestError, QuickUpdateTokenError) as exc:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except Exception:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'error': 'Unable to update campaigns. No campaigns were updated.',
+        }), 500
 
 @bp.route('/campaigns/<int:campaign_id>/actions', methods=['GET'])
 def get_campaign_actions(campaign_id):
@@ -1958,13 +2075,16 @@ def edit_campaign_action(campaign_id, sequence):
 
 @bp.route('/dashboard/first-follow-ups', methods=['GET'])
 def get_first_follow_ups():
-    from app.models.models import Campaign, CampaignStatus, CampaignHistory, ActionType, Reservation, ReservationStatus
+    from app.models.models import Campaign, CampaignStatus, Reservation, ReservationStatus
     from app.services.dashboard_campaign_context_service import build_campaign_context
     from app.services.resting_eligibility_service import evaluate_resting_eligibility
     from app.services.settings_service import get_resting_eligibility_config
     from app.services.time_service import get_business_today
-    from app.services.settings_service import get_setting
     from app.services.expiry_service import select_latest_campaign
+    from app.services.followup_timing_service import (
+        get_campaign_followup_timing,
+        get_followup_timing_config,
+    )
     from app.services.campaign_temperature_service import (
         TEMPERATURE_HOT,
         TEMPERATURE_READY,
@@ -1973,11 +2093,9 @@ def get_first_follow_ups():
         get_campaign_temperature_config,
     )
     from app.services.expired_historical_service import is_expired_domain
-    from sqlalchemy import and_
 
     today = get_business_today()
-    min_days = int(get_setting('FIRST_FOLLOW_UP_MIN', '2'))
-    max_days = int(get_setting('FIRST_FOLLOW_UP_MAX', '5'))
+    timing_config = get_followup_timing_config("first")
     resting_config = get_resting_eligibility_config()
     temperature_config = get_campaign_temperature_config()
 
@@ -2001,17 +2119,10 @@ def get_first_follow_ups():
         )
         if temperature == TEMPERATURE_READY:
             continue
-        latest = CampaignHistory.query.filter_by(
-            campaign_id=camp.id
-        ).order_by(CampaignHistory.sequence.desc()).first()
-
-        if not latest:
-            continue
-
-        if not latest.action_date:
-            continue
-        days_since = (today - latest.action_date.date()).days
-        if days_since < min_days:
+        timing = get_campaign_followup_timing(camp, today, timing_config)
+        latest = timing['latest_history']
+        days_since = timing['days_since_action']
+        if not timing['is_due']:
             continue
 
         context = build_campaign_context(
@@ -2057,7 +2168,7 @@ def get_first_follow_ups():
             'price_progression_items': context['price_progression_items'],
         }
 
-        if days_since <= max_days:
+        if days_since <= timing['max_days']:
             due.append(camp_info)
         else:
             past_due.append(camp_info)
@@ -2066,13 +2177,16 @@ def get_first_follow_ups():
 
 @bp.route('/dashboard/normal-follow-ups', methods=['GET'])
 def get_normal_follow_ups():
-    from app.models.models import Campaign, CampaignStatus, CampaignHistory, Reservation, ReservationStatus
+    from app.models.models import Campaign, CampaignStatus, Reservation, ReservationStatus
     from app.services.dashboard_campaign_context_service import build_campaign_context
     from app.services.resting_eligibility_service import evaluate_resting_eligibility
     from app.services.settings_service import get_resting_eligibility_config
     from app.services.time_service import get_business_today
-    from app.services.settings_service import get_setting
     from app.services.expiry_service import select_latest_campaign
+    from app.services.followup_timing_service import (
+        get_campaign_followup_timing,
+        get_followup_timing_config,
+    )
     from app.services.campaign_temperature_service import (
         calculate_campaign_temperature,
         get_campaign_temperature_config,
@@ -2081,8 +2195,7 @@ def get_normal_follow_ups():
     from app.services.expired_historical_service import is_expired_domain
 
     today = get_business_today()
-    min_days = int(get_setting('NORMAL_FOLLOW_UP_MIN', '7'))
-    max_days = int(get_setting('NORMAL_FOLLOW_UP_MAX', '7'))
+    timing_config = get_followup_timing_config("normal")
     resting_config = get_resting_eligibility_config()
     temperature_config = get_campaign_temperature_config()
 
@@ -2106,17 +2219,10 @@ def get_normal_follow_ups():
         )
         if not is_active_followup_temperature(temperature):
             continue
-        latest = CampaignHistory.query.filter_by(
-            campaign_id=camp.id
-        ).order_by(CampaignHistory.sequence.desc()).first()
-
-        if not latest:
-            continue
-
-        if not latest.action_date:
-            continue
-        days_since = (today - latest.action_date.date()).days
-        if days_since < min_days:
+        timing = get_campaign_followup_timing(camp, today, timing_config)
+        latest = timing['latest_history']
+        days_since = timing['days_since_action']
+        if not timing['is_due']:
             continue
 
         context = build_campaign_context(
@@ -2159,12 +2265,19 @@ def get_normal_follow_ups():
             'price_progression_items': context['price_progression_items'],
         }
 
-        if days_since <= max_days:
+        if days_since <= timing['max_days']:
             due.append(camp_info)
         else:
             past_due.append(camp_info)
 
     return jsonify({"due": due, "past_due": past_due})
+
+
+@bp.route('/dashboard/recently-worked', methods=['GET'])
+def get_recently_worked_campaigns():
+    from app.services.recently_worked_service import list_recently_worked_campaigns
+
+    return jsonify(list_recently_worked_campaigns())
 
 
 @bp.route('/dashboard/cooling', methods=['GET'])
@@ -2234,6 +2347,16 @@ def get_cooling_campaigns():
             'price_progression_items': context['price_progression_items'],
             'can_rest': campaign.status == CampaignStatus.ACTIVE,
         })
+
+    from app.services.dashboard_reservation_state_service import (
+        get_today_reservation_states,
+    )
+    reservation_states = get_today_reservation_states(
+        (item['campaign_id'] for item in results),
+        today,
+    )
+    for item in results:
+        item['reservation'] = reservation_states[item['campaign_id']]
 
     return jsonify({
         'business_today': today.isoformat(),
