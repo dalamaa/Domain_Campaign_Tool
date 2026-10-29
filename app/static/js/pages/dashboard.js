@@ -1,6 +1,7 @@
 const DASHBOARD_SECTION_ORDER_DEFAULT = [
   "first_followups",
   "normal_followups",
+  "recently_worked",
   "cooling",
   "resting_suggestions",
   "expiring_soon",
@@ -474,6 +475,17 @@ function renderDashboardLastContact(campaign) {
   if (days == null) return '<span class="dashboard-muted">—</span>';
   const title = date ? ` title="${date}"` : "";
   return `<span class="last-contact"${title}>${days}d</span>`;
+}
+
+function renderDashboardActionAge(campaign) {
+  const days = campaign.days_since_action;
+  const date = campaign.latest_action_date;
+  if (days == null) return '<span class="dashboard-muted">—</span>';
+  const title = date
+    ? ` title="Last worked ${escapeDashboardHtml(date)}"`
+    : "";
+  const label = days === 0 ? "Today" : `${days}d ago`;
+  return `<span class="last-contact"${title}>${label}</span>`;
 }
 
 function renderDashboardExpiry(campaign) {
@@ -1072,9 +1084,79 @@ function renderSuggestedWork() {
     });
   };
 
+  const renderRecentlyWorked = async () => {
+    const container = document.getElementById("recently-worked");
+    const count = document.getElementById("recently-worked-count");
+    if (!container) return;
+
+    container.innerHTML = "<p>Loading Recently Worked...</p>";
+    try {
+      const response = await fetch("/api/dashboard/recently-worked");
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Unable to load Recently Worked.");
+      }
+
+      const domains = data.domains || [];
+      if (count) count.textContent = data.count ?? domains.length;
+      if (domains.length === 0) {
+        container.innerHTML = "<p>No campaigns were worked recently.</p>";
+        return;
+      }
+
+      const columns = [
+        { key: "domain", label: "Domain", type: "text", defaultDirection: "asc" },
+        { key: "temperature", label: "Temperature", type: "text", defaultDirection: "asc" },
+        { key: "days_since_action", label: "Worked", sortLabel: "Sort by Recent Action", type: "number", defaultDirection: "asc", className: "dashboard-metric-column" },
+        { key: "expiry", label: "Expiry", type: "number", defaultDirection: "asc", className: "dashboard-metric-column" },
+        { key: "sequence", label: "Seq", type: "number", defaultDirection: "asc", className: "dashboard-metric-column" },
+      ];
+
+      container.innerHTML = `
+        <div class="table-container">
+          <table class="dashboard-suggested-table dashboard-followup-table" data-sort-table="recently_worked">
+            <thead>
+              <tr>
+                ${renderDashboardSortHeaders(columns.slice(0, 2))}
+                <th>Email Used</th>
+                ${renderDashboardSortHeaders(columns.slice(2))}
+              </tr>
+            </thead>
+            <tbody>
+              ${domains.map((campaign) => `
+                <tr
+                  data-sort-domain="${campaign.domain || ""}"
+                  data-sort-temperature="${campaign.temperature || ""}"
+                  data-sort-days-since-action="${campaign.days_since_action ?? ""}"
+                  data-sort-expiry="${campaign.days_until_expiry ?? ""}"
+                  data-sort-sequence="${campaign.current_sequence ?? ""}"
+                >
+                  <td class="dashboard-domain-cell">${renderDashboardDomain(campaign.domain)}</td>
+                  <td>${renderDashboardTemperature(campaign.temperature, campaign.label, campaign.emoji)}</td>
+                  <td class="dashboard-email-cell">${renderDashboardEmailSummary(campaign.operational_emails)}</td>
+                  <td class="dashboard-metric-column">${renderDashboardActionAge(campaign)}</td>
+                  <td class="dashboard-metric-column">${renderDashboardExpiry(campaign)}</td>
+                  <td class="dashboard-metric-column">${renderDashboardSequence(campaign.current_sequence)}</td>
+                </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+      setupDashboardSortableTable(
+        container.querySelector('table[data-sort-table="recently_worked"]'),
+        "recently_worked",
+        columns,
+      );
+    } catch (error) {
+      if (count) count.textContent = "—";
+      container.innerHTML = `<p class="dashboard-error">${error.message}</p>`;
+    }
+  };
+
   return Promise.all([
     renderFirstFollowups(),
     renderNormalFollowups(),
+    renderRecentlyWorked(),
     renderCooling(),
     renderRestingSuggestions(),
     renderExpiringSoon(),

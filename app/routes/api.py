@@ -1958,13 +1958,16 @@ def edit_campaign_action(campaign_id, sequence):
 
 @bp.route('/dashboard/first-follow-ups', methods=['GET'])
 def get_first_follow_ups():
-    from app.models.models import Campaign, CampaignStatus, CampaignHistory, ActionType, Reservation, ReservationStatus
+    from app.models.models import Campaign, CampaignStatus, Reservation, ReservationStatus
     from app.services.dashboard_campaign_context_service import build_campaign_context
     from app.services.resting_eligibility_service import evaluate_resting_eligibility
     from app.services.settings_service import get_resting_eligibility_config
     from app.services.time_service import get_business_today
-    from app.services.settings_service import get_setting
     from app.services.expiry_service import select_latest_campaign
+    from app.services.followup_timing_service import (
+        get_campaign_followup_timing,
+        get_followup_timing_config,
+    )
     from app.services.campaign_temperature_service import (
         TEMPERATURE_HOT,
         TEMPERATURE_READY,
@@ -1973,11 +1976,9 @@ def get_first_follow_ups():
         get_campaign_temperature_config,
     )
     from app.services.expired_historical_service import is_expired_domain
-    from sqlalchemy import and_
 
     today = get_business_today()
-    min_days = int(get_setting('FIRST_FOLLOW_UP_MIN', '2'))
-    max_days = int(get_setting('FIRST_FOLLOW_UP_MAX', '5'))
+    timing_config = get_followup_timing_config("first")
     resting_config = get_resting_eligibility_config()
     temperature_config = get_campaign_temperature_config()
 
@@ -2001,17 +2002,10 @@ def get_first_follow_ups():
         )
         if temperature == TEMPERATURE_READY:
             continue
-        latest = CampaignHistory.query.filter_by(
-            campaign_id=camp.id
-        ).order_by(CampaignHistory.sequence.desc()).first()
-
-        if not latest:
-            continue
-
-        if not latest.action_date:
-            continue
-        days_since = (today - latest.action_date.date()).days
-        if days_since < min_days:
+        timing = get_campaign_followup_timing(camp, today, timing_config)
+        latest = timing['latest_history']
+        days_since = timing['days_since_action']
+        if not timing['is_due']:
             continue
 
         context = build_campaign_context(
@@ -2057,7 +2051,7 @@ def get_first_follow_ups():
             'price_progression_items': context['price_progression_items'],
         }
 
-        if days_since <= max_days:
+        if days_since <= timing['max_days']:
             due.append(camp_info)
         else:
             past_due.append(camp_info)
@@ -2066,13 +2060,16 @@ def get_first_follow_ups():
 
 @bp.route('/dashboard/normal-follow-ups', methods=['GET'])
 def get_normal_follow_ups():
-    from app.models.models import Campaign, CampaignStatus, CampaignHistory, Reservation, ReservationStatus
+    from app.models.models import Campaign, CampaignStatus, Reservation, ReservationStatus
     from app.services.dashboard_campaign_context_service import build_campaign_context
     from app.services.resting_eligibility_service import evaluate_resting_eligibility
     from app.services.settings_service import get_resting_eligibility_config
     from app.services.time_service import get_business_today
-    from app.services.settings_service import get_setting
     from app.services.expiry_service import select_latest_campaign
+    from app.services.followup_timing_service import (
+        get_campaign_followup_timing,
+        get_followup_timing_config,
+    )
     from app.services.campaign_temperature_service import (
         calculate_campaign_temperature,
         get_campaign_temperature_config,
@@ -2081,8 +2078,7 @@ def get_normal_follow_ups():
     from app.services.expired_historical_service import is_expired_domain
 
     today = get_business_today()
-    min_days = int(get_setting('NORMAL_FOLLOW_UP_MIN', '7'))
-    max_days = int(get_setting('NORMAL_FOLLOW_UP_MAX', '7'))
+    timing_config = get_followup_timing_config("normal")
     resting_config = get_resting_eligibility_config()
     temperature_config = get_campaign_temperature_config()
 
@@ -2106,17 +2102,10 @@ def get_normal_follow_ups():
         )
         if not is_active_followup_temperature(temperature):
             continue
-        latest = CampaignHistory.query.filter_by(
-            campaign_id=camp.id
-        ).order_by(CampaignHistory.sequence.desc()).first()
-
-        if not latest:
-            continue
-
-        if not latest.action_date:
-            continue
-        days_since = (today - latest.action_date.date()).days
-        if days_since < min_days:
+        timing = get_campaign_followup_timing(camp, today, timing_config)
+        latest = timing['latest_history']
+        days_since = timing['days_since_action']
+        if not timing['is_due']:
             continue
 
         context = build_campaign_context(
@@ -2159,12 +2148,19 @@ def get_normal_follow_ups():
             'price_progression_items': context['price_progression_items'],
         }
 
-        if days_since <= max_days:
+        if days_since <= timing['max_days']:
             due.append(camp_info)
         else:
             past_due.append(camp_info)
 
     return jsonify({"due": due, "past_due": past_due})
+
+
+@bp.route('/dashboard/recently-worked', methods=['GET'])
+def get_recently_worked_campaigns():
+    from app.services.recently_worked_service import list_recently_worked_campaigns
+
+    return jsonify(list_recently_worked_campaigns())
 
 
 @bp.route('/dashboard/cooling', methods=['GET'])

@@ -38,6 +38,13 @@
       </button>
       <div id="normal-followup" class="content"></div>
     </div>
+    <div class="accordion dashboard-section" data-dashboard-section="recently_worked">
+      <button class="accordion-toggle" type="button" onclick="toggleAccordion('recently-worked')">
+        <span class="dashboard-section-drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag Recently Worked">⋮⋮</span>
+        Recently Worked (<span id="recently-worked-count">0</span>)
+      </button>
+      <div id="recently-worked" class="content"></div>
+    </div>
     <div class="accordion dashboard-section" data-dashboard-section="cooling">
       <button class="accordion-toggle" type="button" onclick="toggleAccordion('cooling')">
         <span class="dashboard-section-drag-handle" draggable="true" title="Drag to reorder" aria-label="Drag Cooling">⋮⋮</span>
