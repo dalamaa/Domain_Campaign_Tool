@@ -1867,7 +1867,7 @@ function updateNewActionPriceFields() {
   const currentPrice = Number.isFinite(rawCurrentPrice) ? rawCurrentPrice : 0;
   setNewActionPriceError("");
 
-  if (actionType === "FOLLOW_UP") {
+  if (actionType === "FIRST_FOLLOW_UP" || actionType === "FOLLOW_UP") {
     if (label) label.textContent = "Current price";
     input.value = String(currentPrice);
     input.readOnly = true;
@@ -1921,28 +1921,25 @@ async function setActionMode(mode) {
   const tabNew = document.getElementById("tab-new");
   const tabEdit = document.getElementById("tab-edit");
 
-  // Add Domain Header
-  const modalHeader = document.querySelector("#action-modal h3");
+  const modalHeader = document.getElementById("action-modal-title")
+    || document.querySelector("#action-modal h3");
+  const modalDomain = document.getElementById("action-modal-domain");
   if (campaign) {
-    modalHeader.innerHTML = `<div>${campaign.domain}</div><div style="font-size: 0.8em; font-weight: normal;">Campaign Action</div>`;
+    if (modalDomain) {
+      modalDomain.textContent = campaign.domain || "Selected campaign";
+    } else if (modalHeader) {
+      modalHeader.innerHTML = `${campaign.domain}<span>Campaign Action</span>`;
+    }
   }
 
   if (tabNew && tabEdit) {
-    if (mode === "new") {
-      tabNew.style.background = "#007bff";
-      tabNew.style.color = "white";
-      tabNew.style.fontWeight = "bold";
-      tabEdit.style.background = "#e0e0e0";
-      tabEdit.style.color = "black";
-      tabEdit.style.fontWeight = "normal";
-    } else {
-      tabEdit.style.background = "#007bff";
-      tabEdit.style.color = "white";
-      tabEdit.style.fontWeight = "bold";
-      tabNew.style.background = "#e0e0e0";
-      tabNew.style.color = "black";
-      tabNew.style.fontWeight = "normal";
-    }
+    const isNewMode = mode === "new";
+    tabNew.classList?.toggle("btn-primary", isNewMode);
+    tabNew.classList?.toggle("btn-secondary", !isNewMode);
+    tabEdit.classList?.toggle("btn-primary", !isNewMode);
+    tabEdit.classList?.toggle("btn-secondary", isNewMode);
+    tabNew.setAttribute?.("aria-selected", String(isNewMode));
+    tabEdit.setAttribute?.("aria-selected", String(!isNewMode));
   }
 
   if (mode === "new") {
@@ -1990,10 +1987,22 @@ async function setActionMode(mode) {
       ? ""
       : '<option value="FIRST_FOLLOW_UP">First Follow-up</option>';
 
+    const currentSequence = campaign && campaign.hasValues && Number(campaign.seq) > 0
+      ? Number(campaign.seq)
+      : 0;
+    const sequenceBefore = currentSequence > 0 ? `S${currentSequence}` : "Not started";
+    const sequenceAfter = `S${currentSequence + 1}`;
+    const domainName = escapeEmailPickerHtml(campaign?.domain || "Selected campaign");
     container.innerHTML = `
-    ${emailPickerSectionMarkup("new-action-email-picker")}
-    <div class="form-group">
-      <label>Action Type:
+    <div class="action-form">
+      <div class="action-campaign-summary">
+        <span class="action-field-label">Domain</span>
+        <strong class="action-domain-name">${domainName}</strong>
+      </div>
+
+      <div class="action-form-grid">
+        <div class="form-group action-field action-field-wide">
+          <label for="action-type">Action</label>
           <select id="action-type">
             ${
               campaign && campaign.hasValues
@@ -2005,32 +2014,56 @@ async function setActionMode(mode) {
             `
                 : `<option value="FIRST_OUTREACH">First Outreach</option>`
             }
-        </select>
-        </label>
-      </div>
-      <div class="form-group">
-      <label>Campaign Status:
+          </select>
+        </div>
+
+        <div class="action-sequence action-field-wide" aria-live="polite">
+          <span class="action-field-label">Sequence</span>
+          <span class="action-sequence-value">
+            <span>Current: ${sequenceBefore}</span>
+            <span aria-hidden="true">→</span>
+            <strong>New: ${sequenceAfter}</strong>
+          </span>
+        </div>
+
+        <div class="form-group action-field">
+          <label for="action-status">Campaign Status</label>
           <select id="action-status">
             <option value="ACTIVE" selected>Active</option>
             <option value="DORMANT">Dormant</option>
             <option value="RESTING">Resting</option>
-        </select>
-      </label>
-    </div>
-    <div class="form-group">
-        <label>Date: <input type="date" id="action-date" value="${defaultActionDate}"></label>
-    </div>
-    <div class="form-group">
-        <label id="action-price-label" for="action-price">Price</label>
-        <div id="action-current-price" hidden></div>
-        <input type="number" id="action-price" data-current-price="${currentPrice}" aria-describedby="action-price-help action-price-error">
-        <small id="action-price-help"></small>
-        <p class="form-error" id="action-price-error" role="alert" aria-live="polite" hidden></p>
-    </div>
-    <div class="form-group">
-        <label>Notes: <textarea id="action-notes"></textarea></label>
+          </select>
+        </div>
+
+        <div class="form-group action-field">
+          <label for="action-date">Date</label>
+          <input type="date" id="action-date" value="${defaultActionDate}">
+        </div>
       </div>
-      <button id="save-new-action-btn" type="button" onclick="saveNewAction(${campaignId})">Save Action</button>
+
+      <fieldset class="action-price-section">
+        <legend>Price</legend>
+        <div id="action-current-price" class="action-current-price" hidden></div>
+        <div class="form-group action-field">
+          <label id="action-price-label" for="action-price">Price</label>
+          <input type="number" id="action-price" data-current-price="${currentPrice}" aria-describedby="action-price-help action-price-error">
+          <small id="action-price-help"></small>
+          <p class="form-error" id="action-price-error" role="alert" aria-live="polite" hidden></p>
+        </div>
+      </fieldset>
+
+      ${emailPickerSectionMarkup("new-action-email-picker")}
+
+      <div class="form-group action-field action-notes-field">
+        <label for="action-notes">Notes</label>
+        <textarea id="action-notes"></textarea>
+      </div>
+
+      <div class="action-modal-footer">
+        <button class="btn btn-secondary" type="button" onclick="closeActionModal()">Cancel</button>
+        <button class="btn btn-primary" id="save-new-action-btn" type="button" onclick="saveNewAction(${campaignId})">Record Activity</button>
+      </div>
+    </div>
     `;
     document.getElementById("action-type")?.addEventListener(
       "change",
@@ -2115,7 +2148,10 @@ async function loadActionForEdit(campaignId) {
     <div class="form-group">
       <label>Notes: <textarea id="edit-notes">${data.notes || ""}</textarea></label>
     </div>
-    <button id="save-edit-action-btn" type="button" onclick="saveEditAction(${campaignId}, ${seq})">Save Changes</button>
+    <div class="action-modal-footer">
+      <button class="btn btn-secondary" type="button" onclick="closeActionModal()">Cancel</button>
+      <button class="btn btn-primary" id="save-edit-action-btn" type="button" onclick="saveEditAction(${campaignId}, ${seq})">Save Changes</button>
+    </div>
   `;
   renderEmailAccountPicker(
     "edit-action-email-picker",
@@ -2152,7 +2188,7 @@ async function saveNewAction(campaignId) {
   const payload = {
     action_type: actionType,
     action_date: formatDateInputValue(document.getElementById("action-date").value),
-    price_after: actionType === "FOLLOW_UP"
+    price_after: actionType === "FIRST_FOLLOW_UP" || actionType === "FOLLOW_UP"
       ? ""
       : document.getElementById("action-price").value,
     notes: document.getElementById("action-notes").value,

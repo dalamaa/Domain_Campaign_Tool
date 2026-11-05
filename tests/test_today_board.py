@@ -303,6 +303,80 @@ def test_remove_hides_entry_after_refresh_without_changing_reservation_or_campai
     }
 
 
+def test_unreserve_removes_active_reservation_and_today_row_without_touching_campaign_history(client):
+    campaign = _make_campaign("unreserve-today.example", sequence=5, price=410)
+    reservation = _reserve(campaign, email_codes=("M09",))
+    history = _add_history(campaign, email_code="M09")
+    db.session.commit()
+
+    assert [row["campaign_id"] for row in _today_rows(client)] == [campaign.id]
+    marked_done = client.post(
+        f"/api/dashboard/todays-campaigns/{campaign.id}/done",
+        json={"is_done": True},
+    )
+    assert marked_done.status_code == 200
+
+    campaign_before = _snapshot_query(
+        Campaign.query.filter_by(id=campaign.id),
+        Campaign,
+    )
+    history_before = _snapshot_query(
+        CampaignHistory.query.filter_by(campaign_id=campaign.id),
+        CampaignHistory,
+    )
+    history_email_used_before = _snapshot_query(
+        HistoryEmailUsed.query.filter_by(history_id=history.id),
+        HistoryEmailUsed,
+    )
+    email_blocks_before = _snapshot_query(
+        CampaignEmailBlock.query.filter_by(campaign_id=campaign.id),
+        CampaignEmailBlock,
+    )
+    links_before = _snapshot_query(
+        ReservationEmailLink.query.filter_by(reservation_id=reservation.id),
+        ReservationEmailLink,
+    )
+
+    unreserved = client.delete(f"/api/campaigns/{campaign.id}/reservation")
+
+    assert unreserved.status_code == 200
+    assert _today_rows(client) == []
+    assert Reservation.query.filter_by(
+        campaign_id=campaign.id,
+        status=ReservationStatus.RESERVED,
+    ).count() == 0
+    assert Reservation.query.filter_by(
+        campaign_id=campaign.id,
+        status=ReservationStatus.COMPLETED,
+    ).count() == 0
+    assert ReservationEmailLink.query.filter_by(
+        reservation_id=reservation.id,
+    ).count() == 0
+    assert links_before
+    assert _snapshot_query(Campaign.query.filter_by(id=campaign.id), Campaign) == campaign_before
+    assert _snapshot_query(
+        CampaignHistory.query.filter_by(campaign_id=campaign.id),
+        CampaignHistory,
+    ) == history_before
+    assert _snapshot_query(
+        HistoryEmailUsed.query.filter_by(history_id=history.id),
+        HistoryEmailUsed,
+    ) == history_email_used_before
+    assert _snapshot_query(
+        CampaignEmailBlock.query.filter_by(campaign_id=campaign.id),
+        CampaignEmailBlock,
+    ) == email_blocks_before
+    entry = TodayBoardEntry.query.filter_by(campaign_id=campaign.id).one()
+    assert entry.is_done is True
+    assert entry.is_removed is False
+    assert _reservation_board_snapshot(client, ("M09",))["M09"] == {
+        "state": "AVAILABLE",
+        "reserved_domain": None,
+        "reserved_domains": [],
+        "count": 0,
+    }
+
+
 def test_reorder_changes_only_today_positions_and_new_reservation_appends(client):
     first = _make_campaign("first-order.example")
     second = _make_campaign("second-order.example")
@@ -342,6 +416,137 @@ def test_reorder_changes_only_today_positions_and_new_reservation_appends(client
     rows = _today_rows(client)
     assert [row["campaign_id"] for row in rows] == [second.id, first.id, third.id]
     assert [row["position"] for row in rows] == [0, 1, 2]
+
+
+def test_two_row_reorder_payload_positions_and_today_get_stay_in_sync(client):
+    campaign_a = _make_campaign("two-row-a.example")
+    campaign_b = _make_campaign("two-row-b.example")
+    _reserve(campaign_a, email_codes=("M04",))
+    _reserve(campaign_b, email_codes=("M05",))
+
+    initial = _today_rows(client)
+    assert [row["campaign_id"] for row in initial] == [campaign_a.id, campaign_b.id]
+    initial_entries = {
+        entry.campaign_id: entry
+        for entry in TodayBoardEntry.query.all()
+    }
+    assert initial_entries[campaign_a.id].position == 0
+    assert initial_entries[campaign_b.id].position == 1
+
+    moved_b_above_a = client.post(
+        "/api/dashboard/todays-campaigns/reorder",
+        json={"campaign_ids": [campaign_b.id, campaign_a.id]},
+    )
+    assert moved_b_above_a.status_code == 200
+    assert [row["campaign_id"] for row in moved_b_above_a.get_json()["entries"]] == [
+        campaign_b.id,
+        campaign_a.id,
+    ]
+    after_b_above_a = {
+        entry.campaign_id: entry
+        for entry in TodayBoardEntry.query.all()
+    }
+    assert after_b_above_a[campaign_b.id].position == 0
+    assert after_b_above_a[campaign_a.id].position == 1
+    assert [row["campaign_id"] for row in _today_rows(client)] == [
+        campaign_b.id,
+        campaign_a.id,
+    ]
+
+    moved_a_above_b = client.post(
+        "/api/dashboard/todays-campaigns/reorder",
+        json={"campaign_ids": [campaign_a.id, campaign_b.id]},
+    )
+    assert moved_a_above_b.status_code == 200
+    assert [row["campaign_id"] for row in moved_a_above_b.get_json()["entries"]] == [
+        campaign_a.id,
+        campaign_b.id,
+    ]
+    after_a_above_b = {
+        entry.campaign_id: entry
+        for entry in TodayBoardEntry.query.all()
+    }
+    assert after_a_above_b[campaign_a.id].position == 0
+    assert after_a_above_b[campaign_b.id].position == 1
+    assert [row["campaign_id"] for row in _today_rows(client)] == [
+        campaign_a.id,
+        campaign_b.id,
+    ]
+
+
+def test_reorder_refetch_keeps_custom_order_and_attaches_today_state_to_campaigns(client):
+    campaigns = [
+        _make_campaign(f"reorder-state-{index}.example")
+        for index in range(3)
+    ]
+    for index, campaign in enumerate(campaigns):
+        _reserve(campaign, email_codes=(f"M{index + 4:02d}",))
+
+    assert [row["campaign_id"] for row in _today_rows(client)] == [
+        campaign.id for campaign in campaigns
+    ]
+    assert client.post(
+        f"/api/dashboard/todays-campaigns/{campaigns[1].id}/done",
+        json={"is_done": True},
+    ).status_code == 200
+    assert client.post(
+        f"/api/dashboard/todays-campaigns/{campaigns[2].id}/remove",
+    ).status_code == 200
+
+    reordered = client.post(
+        "/api/dashboard/todays-campaigns/reorder",
+        json={"campaign_ids": [campaigns[1].id, campaigns[0].id]},
+    )
+    assert reordered.status_code == 200
+
+    refreshed = client.get("/api/dashboard/todays-campaigns")
+    assert refreshed.status_code == 200
+    assert refreshed.headers["Cache-Control"] == "no-store"
+    assert [row["campaign_id"] for row in refreshed.get_json()] == [
+        campaigns[1].id,
+        campaigns[0].id,
+    ]
+    assert refreshed.get_json()[0]["is_done"] is True
+
+    entries = {
+        entry.campaign_id: entry
+        for entry in TodayBoardEntry.query.order_by(TodayBoardEntry.position).all()
+    }
+    assert entries[campaigns[1].id].position == 0
+    assert entries[campaigns[1].id].is_done is True
+    assert entries[campaigns[2].id].is_removed is True
+
+
+def test_reorder_endpoint_supports_single_step_up_and_down_persistence(client):
+    campaigns = [
+        _make_campaign(f"single-step-{index}.example")
+        for index in range(3)
+    ]
+    for index, campaign in enumerate(campaigns):
+        _reserve(campaign, email_codes=(f"M{index + 4:02d}",))
+
+    _today_rows(client)
+    moved_up = client.post(
+        "/api/dashboard/todays-campaigns/reorder",
+        json={"campaign_ids": [campaigns[0].id, campaigns[2].id, campaigns[1].id]},
+    )
+    assert moved_up.status_code == 200
+    assert [row["campaign_id"] for row in _today_rows(client)] == [
+        campaigns[0].id,
+        campaigns[2].id,
+        campaigns[1].id,
+    ]
+
+    moved_down = client.post(
+        "/api/dashboard/todays-campaigns/reorder",
+        json={"campaign_ids": [campaigns[2].id, campaigns[0].id, campaigns[1].id]},
+    )
+    assert moved_down.status_code == 200
+    assert [row["campaign_id"] for row in _today_rows(client)] == [
+        campaigns[2].id,
+        campaigns[0].id,
+        campaigns[1].id,
+    ]
 
 
 def test_reset_reseeds_default_order_clears_done_and_removal_preserving_campaign_data(client):

@@ -1000,20 +1000,34 @@ td:last-child {
 .today-board-toolbar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   flex-wrap: wrap;
   gap: var(--space-2);
   margin-bottom: var(--space-3);
 }
 
+.today-board-reorder-controls,
+.today-board-toolbar-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.today-board-reorder-controls { min-width: 0; }
+.today-board-toolbar-actions { margin-left: auto; }
 .today-board-toolbar [hidden] { display: none; }
 .today-board-toolbar #today-board-status { color: var(--color-muted-text); font-size: 0.875rem; }
 #todays-campaigns-table { min-width: 760px; }
-#todays-campaigns-table th:nth-child(2),
-#todays-campaigns-table td:nth-child(2) { min-width: 12rem; }
+#todays-campaigns-table th:first-child,
+#todays-campaigns-table td:first-child,
+#todays-campaigns-table .today-board-select-cell { width: 3.5rem; text-align: center; }
+#todays-campaigns-table .today-board-select { min-height: auto; }
+#todays-campaigns-table th:nth-child(4),
+#todays-campaigns-table td:nth-child(4) { min-width: 12rem; }
 #todays-campaigns-table .today-board-done-checkbox { min-height: auto; }
 #todays-campaigns-table .today-board-domain { overflow-wrap: normal; white-space: nowrap; }
 #todays-campaigns-table .today-board-done { color: var(--color-muted-text); }
-#todays-campaigns-table .today-board-done td:nth-child(n+2):nth-child(-n+7) {
+#todays-campaigns-table .today-board-done td:nth-child(n+4):nth-child(-n+9) {
   color: var(--color-muted-text);
   text-decoration: line-through;
   text-decoration-thickness: 1px;
@@ -1026,15 +1040,17 @@ td:last-child {
 .today-board-drag-cell { width: 3rem; text-align: center; }
 #todays-campaigns-table .today-board-drag-handle {
   display: inline-flex;
+  border: 0;
+  background: transparent;
+  padding: 0;
   min-width: 2rem;
   min-height: 2rem;
   align-items: center;
   justify-content: center;
   color: var(--color-muted-text);
   cursor: grab;
-  font-size: 1rem;
+  font-size: 1.25rem;
   font-weight: 700;
-  letter-spacing: -0.25em;
   touch-action: none;
   user-select: none;
 }
@@ -1047,12 +1063,54 @@ td:last-child {
   cursor: not-allowed;
   opacity: 0.45;
 }
-#todays-campaigns-table .today-board-dragging { opacity: 0.45; }
+#todays-campaigns-table .today-board-dragging { opacity: 0.5; }
+#todays-campaigns-table .today-board-dragging td {
+  background: rgba(106, 167, 216, 0.08);
+}
+#todays-campaigns-table .today-board-drop-before td {
+  border-top: 2px solid rgba(106, 167, 216, 0.8);
+}
+#todays-campaigns-table .today-board-drop-after td {
+  border-bottom: 2px solid rgba(106, 167, 216, 0.8);
+}
+.today-board-drag-preview {
+  position: absolute;
+  top: -10000px;
+  left: -10000px;
+  z-index: 1000;
+  border-collapse: collapse;
+  background: var(--color-surface, #fff);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+  opacity: 0.96;
+  pointer-events: none;
+}
+.today-board-drag-preview td {
+  padding: 0.55rem 0.65rem;
+  background: var(--color-surface, #fff);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  white-space: nowrap;
+}
+#todays-campaigns-table .today-board-actions-cell {
+  width: 5.5rem;
+  text-align: center;
+  white-space: nowrap;
+}
+#todays-campaigns-table .today-board-row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+}
+#todays-campaigns-table .today-board-unreserve,
 #todays-campaigns-table .today-board-remove {
   min-width: 2rem;
   min-height: 2rem;
   padding: 0.2rem 0.45rem;
   line-height: 1;
+}
+#todays-campaigns-table .today-board-unreserve {
+  color: var(--color-primary);
+  font-size: 1.05rem;
 }
 #todays-campaigns-table .today-board-remove {
   color: var(--color-danger);
@@ -1218,10 +1276,144 @@ td:last-child {
 }
 
 #history-modal { width: min(92vw, 820px); }
-#action-modal { width: min(92vw, 620px); }
+#action-modal {
+  width: min(92vw, 560px);
+  padding: var(--space-4);
+}
 #bulk-import-modal { width: min(92vw, 900px); height: 90vh; flex-direction: column; overflow: hidden; }
 #add-email-modal { width: min(92vw, 480px); }
 #bulk-add-email-modal { width: min(92vw, 680px); }
+
+#action-modal .action-modal-header {
+  margin-bottom: var(--space-3);
+}
+
+#action-modal .action-modal-header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+#action-modal .action-modal-domain {
+  margin: var(--space-1) 0 0;
+  color: var(--color-muted-text);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+
+#action-modal .action-mode-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+#action-modal .action-form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+#action-modal .action-campaign-summary {
+  display: grid;
+  gap: var(--space-1);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+
+#action-modal .action-field-label {
+  color: var(--color-muted-text);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+#action-modal .action-domain-name {
+  overflow-wrap: anywhere;
+}
+
+#action-modal .action-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+#action-modal .action-field-wide {
+  grid-column: 1 / -1;
+}
+
+#action-modal .action-form .form-group {
+  margin-bottom: 0;
+}
+
+#action-modal .action-form .action-field > label {
+  display: grid;
+  align-items: start;
+  gap: var(--space-1);
+}
+
+#action-modal .action-form .action-field input,
+#action-modal .action-form .action-field select,
+#action-modal .action-form .action-field textarea {
+  width: 100%;
+}
+
+#action-modal .action-sequence {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
+#action-modal .action-sequence-value {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+#action-modal .action-price-section {
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+#action-modal .action-price-section legend {
+  padding-inline: var(--space-1);
+  font-weight: 700;
+}
+
+#action-modal #action-current-price:not([hidden]) {
+  margin-bottom: var(--space-2);
+  padding: var(--space-2);
+  border-left: 3px solid var(--color-border-strong);
+  background: var(--color-surface-subtle);
+  color: var(--color-text);
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+#action-modal #action-price-help {
+  min-height: 1.25em;
+}
+
+#action-modal .action-notes-field textarea {
+  min-height: 5.5rem;
+}
+
+#action-modal .action-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
 
 #quick-update-modal {
   width: min(94vw, 780px);
@@ -1669,6 +1861,9 @@ tr[draggable="true"]:active { cursor: grabbing; }
   .domain-toolbar-actions > .btn { flex: 0 0 auto; }
   .domain-toolbar-menu-panel > button { flex: 0 0 auto; }
   .modal { padding: var(--space-4); }
+  #action-modal .action-form-grid { grid-template-columns: 1fr; }
+  #action-modal .action-modal-footer { justify-content: stretch; }
+  #action-modal .action-modal-footer .btn { flex: 1 1 auto; }
   #side-panel { width: min(92vw, 400px); }
 }
 

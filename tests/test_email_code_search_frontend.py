@@ -8,14 +8,18 @@ def test_email_code_search_tables_keep_identifiers_and_metadata_readable():
     template = (ROOT / "app/templates/email_code_search.html").read_text()
     styles = (ROOT / "app/static/css/email_code_search.css").read_text()
 
-    assert 'class="email-code-match-meta"' in template
+    header = template.split('<thead>', 1)[1].split('</thead>', 1)[0]
+    assert header.index('>Domain</th>') < header.index('>State</th>')
+    assert header.index('>State</th>') < header.index('>Email Accounts Used</th>')
+    assert "Match reasons" not in template
     assert ".email-code-search-table-wrap {" in styles
     assert "overflow-x: auto;" in styles
-    assert "min-width: 760px;" in styles
+    assert "min-width: 900px;" in styles
     assert '.email-code-search-table tbody th[scope="row"] {' in styles
     assert "position: static;" in styles
-    assert ".email-code-match-meta > span {" in styles
-    assert "white-space: nowrap;" in styles
+    assert ".email-code-search-table th:nth-child(3)" in styles
+    assert "width: 54%;" in styles
+    assert "min-width: 26rem;" in styles
 
 
 def test_email_code_search_form_fills_desktop_row_and_wraps_on_narrow_screens():

@@ -1,4 +1,6 @@
+import json
 from pathlib import Path
+import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -71,8 +73,46 @@ def test_reserve_button_uses_existing_endpoint_and_shows_existing_reserved_state
     assert "Start first" in buttons
 
 
+def test_today_board_unreserve_is_compact_before_board_only_remove_and_reuses_delete_flow():
+    source = SCRIPT.read_text()
+    renderer = source.split("async function renderTodaysCampaigns()", 1)[1].split(
+        "async function updateTodayBoardDone", 1
+    )[0]
+    click_handler = source.split('table.addEventListener("click"', 1)[1].split(
+        'table.addEventListener("keydown"', 1
+    )[0]
+    today_unreserve = source.split("async function unreserveTodayBoardEntry", 1)[1].split(
+        "async function resetTodayBoard", 1
+    )[0]
+    unreserve_helper = source.split("async function unreserveCampaign", 1)[1].split(
+        "function attachDashboardReservationActions", 1
+    )[0]
+    dashboard_actions = source.split("function attachDashboardReservationActions", 1)[1].split(
+        "function escapeDashboardHtml", 1
+    )[0]
+
+    assert 'class="today-board-unreserve"' in renderer
+    assert 'title="Unreserve"' in renderer
+    assert 'aria-label="Unreserve"' in renderer
+    assert renderer.index("today-board-unreserve") < renderer.index("today-board-remove")
+    assert ".today-board-unreserve" in click_handler
+    assert "await unreserveTodayBoardEntry(unreserveButton)" in click_handler
+    assert "window.confirm(`Unreserve ${domain}? This will remove its current reservation and free the reserved email allocation.`)" in today_unreserve
+    assert "await Promise.all([renderTodaysCampaigns(), updateReservationBoard()]);" in today_unreserve
+    assert "Unreserve ${domain}? This will remove its current reservation and free the reserved email allocation." not in source.split(
+        "async function removeTodayBoardEntry", 1
+    )[1].split("async function unreserveTodayBoardEntry", 1)[0]
+    assert "Remove ${domain} from today's board only? Its reservation will remain unchanged." in source
+    assert "`/api/campaigns/${campaignId}/reservation`" in unreserve_helper
+    assert 'method: "DELETE"' in unreserve_helper
+    assert source.count('method: "DELETE"') == 1
+    assert "await unreserveCampaign(campaignId)" in dashboard_actions
+
+
 def test_today_board_drag_handle_preserves_done_remove_and_sort_interactions():
     source = SCRIPT.read_text()
+    template = (ROOT / "app/templates/dashboard.html").read_text()
+    styles = (ROOT / "app/static/css/base.css").read_text()
     sort_function = source.split("function sortDashboardTable(", 1)[1].split(
         "function setupDashboardSortableTable(", 1
     )[0]
@@ -86,11 +126,28 @@ def test_today_board_drag_handle_preserves_done_remove_and_sort_interactions():
         "async function removeTodayBoardEntry", 1
     )[0]
 
-    assert 'class="today-board-drag-handle" draggable="true"' in renderer
+    assert '<tr class="today-board-row${doneClass}"' in renderer
+    assert 'draggable="true"' in renderer
+    assert 'class="today-board-drag-handle" tabindex="0"' in renderer
+    assert 'class="today-board-drag-handle" draggable="true"' not in renderer
     assert "ArrowUp" in board and "ArrowDown" in board
+    assert 'table.addEventListener("pointerdown"' in board
     assert 'table.addEventListener("dragstart"' in board
     assert 'table.addEventListener("dragover"' in board
     assert 'table.addEventListener("drop"' in board
+    assert "createTodayBoardDragPreview(row)" in board
+    assert "setDragImage(" in board
+    assert "today-board-drop-before" in board
+    assert "today-board-drop-after" in board
+    dragover = board.split('table.addEventListener("dragover"', 1)[1]
+    assert dragover.index("event.preventDefault();") < dragover.index(
+        "targetRow === draggingRow"
+    )
+    assert "calculateTodayBoardDropOrder(" in board
+    assert "applyTodayBoardRowOrder(table, calculated.order)" in board
+    assert "todayBoardDragState.lastOrder" in board
+    assert "row.draggable = !disabled" in source
+    assert "handle.draggable = false" in source
     assert '"/api/dashboard/todays-campaigns/reorder"' in persist
     assert 'table.addEventListener("change"' in board
     assert '.today-board-done-checkbox' in board
@@ -98,6 +155,105 @@ def test_today_board_drag_handle_preserves_done_remove_and_sort_interactions():
     assert "dashboardTableSortState.todays_campaigns" in board
     assert "fetch(" not in sort_function
     assert "today-board-custom-order" in source
+    assert template.index('class="today-board-drag-cell">Reorder') < template.index('>Select</th>')
+    assert template.index('>Select</th>') < template.index('>Done</th>')
+    assert template.index('id="today-board-move-up"') < template.index('id="today-board-reset"')
+    assert ".today-board-drag-preview" in styles
+    assert ".today-board-drop-before" in styles
+    assert ".today-board-drop-after" in styles
+
+
+def test_today_board_toolbar_keeps_reorder_controls_left_and_reset_right():
+    template = (ROOT / "app/templates/dashboard.html").read_text()
+    styles = (ROOT / "app/static/css/base.css").read_text()
+
+    toolbar = template.split('<div class="today-board-toolbar">', 1)[1].split(
+        '<div class="table-container">', 1
+    )[0]
+    assert toolbar.index('id="today-board-move-up"') < toolbar.index(
+        'id="today-board-move-down"'
+    )
+    assert toolbar.index('id="today-board-move-down"') < toolbar.index(
+        'id="today-board-reset"'
+    )
+    assert 'class="btn btn-secondary btn-compact"' in toolbar
+
+    toolbar_css = styles.split(".today-board-toolbar {", 1)[1].split(
+        ".today-board-reorder-controls", 1
+    )[0]
+    assert "justify-content: space-between;" in toolbar_css
+    assert "flex-wrap: wrap;" in toolbar_css
+    assert ".today-board-toolbar-actions { margin-left: auto; }" in styles
+    assert ".today-board-reorder-controls { min-width: 0; }" in styles
+
+
+def test_today_board_drop_order_calculation_handles_two_row_before_and_after_moves():
+    node_script = f"""
+const fs = require("fs");
+const vm = require("vm");
+const source = fs.readFileSync({json.dumps(str(SCRIPT))}, "utf8");
+const context = {{ document: {{ addEventListener() {{}} }} }};
+vm.createContext(context);
+vm.runInContext(source, context);
+
+function assertOrder(result, expected, sourceIndex, destinationIndex) {{
+  if (!result || result.order.join(",") !== expected.join(",")) {{
+    throw new Error(`expected ${{expected}}, got ${{result && result.order}}`);
+  }}
+  if (result.sourceIndex !== sourceIndex || result.destinationIndex !== destinationIndex) {{
+    throw new Error(`unexpected indexes: ${{JSON.stringify(result)}}`);
+  }}
+}}
+
+// A,B: dragging B onto the top half of A inserts B before A.
+assertOrder(
+  context.calculateTodayBoardDropOrder([101, 202], 202, 101, true),
+  [202, 101],
+  1,
+  0,
+);
+// B,A: dragging B onto the bottom half of A inserts B after A.
+assertOrder(
+  context.calculateTodayBoardDropOrder([202, 101], 202, 101, false),
+  [101, 202],
+  0,
+  1,
+);
+"""
+    result = subprocess.run(
+        ["node", "-e", node_script],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_today_board_reorder_controls_share_authoritative_path_and_guard_stale_fetches():
+    source = SCRIPT.read_text()
+    template = (ROOT / "app/templates/dashboard.html").read_text()
+    move_function = source.split("async function moveTodayBoardCampaign", 1)[1].split(
+        "async function renderTodaysCampaigns", 1
+    )[0]
+    render_function = source.split("async function renderTodaysCampaigns", 1)[1].split(
+        "async function updateTodayBoardDone", 1
+    )[0]
+
+    assert 'id="today-board-move-up"' in template
+    assert 'id="today-board-move-down"' in template
+    assert 'class="today-board-select"' in render_function
+    assert "selectedIndex === 0" in source
+    assert "selectedIndex === rows.length - 1" in source
+    assert 'status.textContent = "Column sort is temporary.' in source
+    assert "handle.draggable = false" in source
+    assert "⠿" in render_function
+    assert 'cache: "no-store"' in render_function
+    assert "todayBoardRenderVersion" in render_function
+    assert "persistTodayBoardOrder(" in move_function
+    assert "responseData.entries" in source
+    assert "Today board reorder was not confirmed by the server." in source
+    assert "moveTodayBoardCampaign(" in source
+    assert '"/api/dashboard/todays-campaigns/reorder"' in source
 
 
 def test_suggested_action_wrapper_wraps_compact_controls_without_overflowing_cells():

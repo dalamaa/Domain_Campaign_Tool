@@ -92,14 +92,22 @@
   <section id="todays-campaigns">
     <h2>Today's Campaigns</h2>
     <div class="today-board-toolbar">
-      <button class="btn btn-secondary btn-compact" id="today-board-custom-order" type="button" hidden>Custom order</button>
-      <button class="btn btn-secondary btn-compact" id="today-board-reset" type="button">Reset Today Board</button>
-      <span id="today-board-status" role="status" aria-live="polite"></span>
+      <div class="today-board-reorder-controls" aria-label="Today board reorder controls">
+        <button class="btn btn-secondary btn-compact" id="today-board-custom-order" type="button" hidden>Custom order</button>
+        <button class="btn btn-secondary btn-compact" id="today-board-move-up" type="button" disabled>↑ Move up</button>
+        <button class="btn btn-secondary btn-compact" id="today-board-move-down" type="button" disabled>↓ Move down</button>
+        <span id="today-board-status" role="status" aria-live="polite"></span>
+      </div>
+      <div class="today-board-toolbar-actions">
+        <button class="btn btn-secondary btn-compact" id="today-board-reset" type="button">Reset Today Board</button>
+      </div>
     </div>
     <div class="table-container">
       <table id="todays-campaigns-table">
       <thead>
         <tr>
+          <th scope="col" class="today-board-drag-cell">Reorder</th>
+          <th scope="col" class="today-board-select-cell">Select</th>
           <th scope="col">Done</th>
           <th scope="col" data-sort-column="domain"><button class="dashboard-sort-button" type="button" data-sort-key="domain" aria-label="Sort by Domain">Domain <span data-sort-indicator="domain">↕</span></button></th>
           <th scope="col" data-sort-column="status"><button class="dashboard-sort-button" type="button" data-sort-key="status" aria-label="Sort by Status">Status <span data-sort-indicator="status">↕</span></button></th>
@@ -107,8 +115,7 @@
           <th scope="col" data-sort-column="current_price"><button class="dashboard-sort-button" type="button" data-sort-key="current_price" aria-label="Sort by Current Price">Current Price <span data-sort-indicator="current_price">↕</span></button></th>
           <th scope="col" data-sort-column="emails"><button class="dashboard-sort-button" type="button" data-sort-key="emails" aria-label="Sort by Email">Email <span data-sort-indicator="emails">↕</span></button></th>
           <th scope="col" data-sort-column="shared_emails"><button class="dashboard-sort-button" type="button" data-sort-key="shared_emails" aria-label="Sort by Shared Email">Shared Email <span data-sort-indicator="shared_emails">↕</span></button></th>
-          <th scope="col">Order</th>
-          <th scope="col">Remove</th>
+          <th scope="col">Actions</th>
         </tr>
       </thead>
       <tbody>

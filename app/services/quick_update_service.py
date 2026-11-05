@@ -30,6 +30,7 @@ QUICK_UPDATE_TOKEN_MAX_AGE_SECONDS = 30 * 60
 QUICK_UPDATE_TOKEN_SALT = "domain-campaign-quick-update-preview"
 
 ACTION_LABELS = {
+    ActionType.FIRST_FOLLOW_UP.value: "First Follow-up",
     ActionType.FOLLOW_UP.value: "Follow-up",
     ActionType.PRICE_REDUCTION.value: "Price Reduction",
 }
@@ -49,6 +50,27 @@ class StaleQuickUpdateError(ValueError):
     def __init__(self, message, preview):
         super().__init__(message)
         self.preview = preview
+
+
+def _history_sequence(history):
+    if history is None:
+        return 0
+    for value in (
+        history.sequence,
+        history.sequence_after,
+        history.sequence_before,
+    ):
+        if value is not None:
+            return int(value)
+    return 0
+
+
+def _non_reduction_action_type(latest_sequence):
+    return (
+        ActionType.FIRST_FOLLOW_UP.value
+        if latest_sequence == 1
+        else ActionType.FOLLOW_UP.value
+    )
 
 
 def parse_quick_update_input(raw_input):
@@ -260,13 +282,10 @@ def _build_preview(raw_input, *, lock_rows=False):
                         "No existing email association found."
                     )
 
-                max_sequence = max(
-                    (history.sequence for history in history_rows if history.sequence is not None),
-                    default=0,
-                )
+                latest_sequence = _history_sequence(latest_history)
                 current_price = int(campaign.current_price or 0)
-                row["sequence_before"] = max_sequence
-                row["sequence_after"] = max_sequence + 1
+                row["sequence_before"] = latest_sequence
+                row["sequence_after"] = latest_sequence + 1
                 row["current_price"] = current_price
                 row["new_price"] = current_price
                 row["_campaign_id"] = campaign.id
@@ -288,11 +307,15 @@ def _build_preview(raw_input, *, lock_rows=False):
                                 f"New price ${entered_price:,} is higher than the current price of ${current_price:,}."
                             )
                         elif entered_price == current_price:
-                            row["action_type"] = ActionType.FOLLOW_UP.value
+                            row["action_type"] = _non_reduction_action_type(
+                                latest_sequence
+                            )
                         else:
                             row["action_type"] = ActionType.PRICE_REDUCTION.value
                 elif parsed["price_text"] is None and not parsed["parse_error"]:
-                    row["action_type"] = ActionType.FOLLOW_UP.value
+                    row["action_type"] = _non_reduction_action_type(
+                        latest_sequence
+                    )
 
                 row["_snapshot"] = {
                     "domain_id": domain.id,
@@ -303,7 +326,7 @@ def _build_preview(raw_input, *, lock_rows=False):
                     "campaign_sequence": campaign.current_sequence,
                     "campaign_price": campaign.current_price,
                     "history_exists": bool(history_rows),
-                    "history_max_sequence": max_sequence,
+                    "history_latest_sequence": latest_sequence,
                     "email_context": {
                         "latest_history_id": latest_history.id if latest_history else None,
                         "source": email_context["source"],

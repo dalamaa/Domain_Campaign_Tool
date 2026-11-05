@@ -9,6 +9,7 @@ SOURCE = ROOT / "app/static/js/pages/domains.js"
 def test_action_modal_has_single_first_follow_up_option_and_date_only_controls():
     source = SOURCE.read_text()
     styles = (ROOT / "app/static/css/base.css").read_text()
+    template = (ROOT / "app/templates/domains.html").read_text()
 
     assert source.count('type="date"') == 2
     assert 'datetime-local' not in source
@@ -23,6 +24,12 @@ def test_action_modal_has_single_first_follow_up_option_and_date_only_controls()
     assert 'toggleEmailEditMode' not in source
     assert 'label.textContent = "Current price"' in source
     assert "#action-price[readonly]" in styles
+    assert 'id="action-modal"' in template
+    assert 'role="dialog"' in template
+    assert 'aria-labelledby="action-modal-title"' in template
+    assert 'id="action-modal-title">Record Activity</h3>' in template
+    assert 'class="action-modal-footer"' in source
+    assert 'id="save-new-action-btn"' in source
 
 
 def test_action_modal_hides_used_first_follow_up_and_save_is_pending_and_network_safe():
@@ -137,6 +144,9 @@ context.selectedDomainRecord = () => record;
   actionHistory = [{ sequence: 1, action_type: "FOLLOW_UP" }];
   await context.setActionMode("new");
   if (!container.innerHTML.includes('value="FIRST_FOLLOW_UP"')) process.exit(3);
+  changeActionType("FIRST_FOLLOW_UP");
+  if (priceInput.value !== "650" || !priceInput.readOnly || priceInput.required) process.exit(31);
+  changeActionType("FOLLOW_UP");
   const emailFetchCallsBeforeEdit = fetchCalls;
   context.startEmailPickerEdit("new-action-email-picker");
   context.toggleEmailPickerCode("new-action-email-picker", "M02");

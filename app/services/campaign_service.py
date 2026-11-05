@@ -19,7 +19,10 @@ def _is_first_follow_up(action_type):
 
 
 def _is_follow_up(action_type):
-    return _action_type_value(action_type) == ActionType.FOLLOW_UP.value
+    return _action_type_value(action_type) in {
+        ActionType.FIRST_FOLLOW_UP.value,
+        ActionType.FOLLOW_UP.value,
+    }
 
 
 def _is_price_reduction(action_type):
