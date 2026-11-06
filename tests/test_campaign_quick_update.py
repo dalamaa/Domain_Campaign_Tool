@@ -173,6 +173,59 @@ def test_preview_infers_follow_up_for_domain_only_and_equal_price(client, app):
     assert all(any("Duplicate domain" in error for error in row["errors"]) for row in rows)
 
 
+@pytest.mark.parametrize(
+    ("sequence", "domain", "input_line", "expected_type", "expected_label"),
+    [
+        (1, "s1-domain.example", "s1-domain.example", "FIRST_FOLLOW_UP", "First Follow-up"),
+        (1, "s1-same.example", "s1-same.example 399", "FIRST_FOLLOW_UP", "First Follow-up"),
+        (2, "s2-domain.example", "s2-domain.example", "FOLLOW_UP", "Follow-up"),
+        (2, "s2-same.example", "s2-same.example 399", "FOLLOW_UP", "Follow-up"),
+        (5, "s5-same.example", "s5-same.example 399", "FOLLOW_UP", "Follow-up"),
+    ],
+)
+def test_preview_infers_non_reduction_action_from_latest_history_sequence(
+    client,
+    app,
+    sequence,
+    domain,
+    input_line,
+    expected_type,
+    expected_label,
+):
+    _create_campaign(app, domain, sequence=sequence)
+
+    row = _preview(client, input_line).get_json()["rows"][0]
+
+    assert row["sequence_before"] == sequence
+    assert row["sequence_after"] == sequence + 1
+    assert row["action_type"] == expected_type
+    assert row["action_label"] == expected_label
+
+
+def test_sequence_one_lower_price_is_still_a_price_reduction(client, app):
+    _create_campaign(app, "s1-lower-price.example", sequence=1)
+
+    row = _preview(client, "s1-lower-price.example 150").get_json()["rows"][0]
+
+    assert row["action_type"] == "PRICE_REDUCTION"
+    assert row["action_label"] == "Price Reduction"
+
+
+def test_sequence_one_preview_and_confirmation_record_first_follow_up(client, app):
+    _domain_id, campaign_id = _create_campaign(app, "s1-confirm.example", sequence=1)
+    preview = _preview(client, "s1-confirm.example").get_json()
+
+    assert preview["rows"][0]["action_type"] == "FIRST_FOLLOW_UP"
+    assert preview["rows"][0]["action_label"] == "First Follow-up"
+    assert _confirm(client, preview["preview_token"]).status_code == 200
+    with app.app_context():
+        action = CampaignHistory.query.filter_by(
+            campaign_id=campaign_id,
+            sequence=2,
+        ).one()
+        assert action.action_type == ActionType.FIRST_FOLLOW_UP
+
+
 def test_preview_infers_price_reduction_for_lower_price(client, app):
     _create_campaign(app, "abc.com", current_price=399, sequence=3)
     data = _preview(client, "abc.com, 150").get_json()

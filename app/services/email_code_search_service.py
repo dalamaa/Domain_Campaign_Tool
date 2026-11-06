@@ -1,6 +1,8 @@
 """Exact email-code search across operational and archived records."""
 
 from datetime import date, datetime
+from math import inf
+import re
 
 from sqlalchemy import func
 
@@ -10,6 +12,7 @@ from app.models.models import (
     CampaignHistory,
     CampaignStatus,
     Domain,
+    EmailAccount,
     HistoricalDomain,
     HistoryEmailUsed,
     Reservation,
@@ -113,6 +116,78 @@ def _historical_email_tokens(value):
         for token in str(value).split(",")
         if normalize_email_code(token)
     }
+
+
+def _email_code_sort_key(code, account_orders):
+    prefix, _, number = code.partition("0")
+    if not number:
+        match = re.match(r"^([A-Z]+)(\d+)$", code)
+        prefix = match.group(1) if match else code
+        number = match.group(2) if match else ""
+    return (
+        account_orders.get(code, inf),
+        prefix,
+        int(number) if number.isdigit() else inf,
+        code,
+    )
+
+
+def _order_email_codes(codes):
+    normalized = {
+        normalize_email_code(code)
+        for code in codes
+        if normalize_email_code(code)
+    }
+    if not normalized:
+        return []
+
+    account_orders = {
+        normalize_email_code(account.code): account.profile_order
+        for account in EmailAccount.query.all()
+    }
+    return sorted(
+        normalized,
+        key=lambda code: _email_code_sort_key(code, account_orders),
+    )
+
+
+def _associated_email_codes(domain):
+    """Return all account codes associated with every campaign for a domain.
+
+    This summary intentionally combines the existing read-only sources.  It
+    does not reinterpret reservation links as confirmed historical usage; the
+    exact-match entries retain their source labels for that distinction.
+    """
+    campaign_ids = [campaign.id for campaign in domain.campaigns]
+    if not campaign_ids:
+        return []
+
+    codes = []
+    codes.extend(
+        email_code
+        for (email_code,) in CampaignEmailBlock.query.with_entities(
+            CampaignEmailBlock.email_code
+        ).filter(CampaignEmailBlock.campaign_id.in_(campaign_ids)).all()
+    )
+    codes.extend(
+        email_code
+        for (email_code,) in HistoryEmailUsed.query.with_entities(
+            HistoryEmailUsed.email_code
+        ).join(
+            CampaignHistory,
+            CampaignHistory.id == HistoryEmailUsed.history_id,
+        ).filter(CampaignHistory.campaign_id.in_(campaign_ids)).all()
+    )
+    codes.extend(
+        email_code
+        for (email_code,) in ReservationEmailLink.query.with_entities(
+            ReservationEmailLink.email_code
+        ).join(
+            Reservation,
+            Reservation.id == ReservationEmailLink.reservation_id,
+        ).filter(Reservation.campaign_id.in_(campaign_ids)).all()
+    )
+    return _order_email_codes(codes)
 
 
 def search_email_code(email_code, *, business_today=None):
@@ -225,6 +300,7 @@ def search_email_code(email_code, *, business_today=None):
             _campaign_context(match, latest_campaign)
         result["group_key"] = group_key
         result["current_state"] = _current_state(domain, latest_campaign, group_key)
+        result["email_codes"] = _associated_email_codes(domain)
         result["campaign_id"] = latest_campaign.id if latest_campaign else None
         result["campaign_status"] = (
             _enum_value(latest_campaign.status) if latest_campaign else None
@@ -247,6 +323,9 @@ def search_email_code(email_code, *, business_today=None):
             "campaign_id": None,
             "campaign_status": None,
             "expiry_date": _date_text(historical.expiry_date),
+            "email_codes": _order_email_codes(
+                _historical_email_tokens(historical.last_email_used)
+            ),
             "matches": [{
                 "source": "historical_domain_snapshot",
                 "label": "Historical Snapshot",

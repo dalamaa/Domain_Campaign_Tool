@@ -55,9 +55,8 @@
           <thead>
             <tr>
               <th scope="col">Domain</th>
-              <th scope="col">Current state</th>
-              <th scope="col">Expiry</th>
-              <th scope="col">Match reasons</th>
+              <th scope="col">State</th>
+              <th scope="col">Email Accounts Used</th>
             </tr>
           </thead>
           <tbody>
@@ -65,36 +64,8 @@
             <tr>
               <th scope="row">{{ result.domain_name }}</th>
               <td>{{ result.current_state }}</td>
-              <td>{{ result.expiry_date or '—' }}</td>
               <td>
-                <ul class="email-code-match-list">
-                  {% for match in result.matches %}
-                  <li>
-                    <strong>{{ match.label }}</strong>
-                    {% if match.source == 'history_email_used' %}
-                      <span class="email-code-match-meta">
-                        <span>{{ match.action_date or 'Date unavailable' }}</span>
-                        <span>{{ match.action_type }}</span>
-                        {% if match.sequence is not none %}<span>Sequence {{ match.sequence }}</span>{% endif %}
-                      </span>
-                      {% if match.campaign_context %}<span class="email-code-match-context">{{ match.campaign_context }}</span>{% endif %}
-                    {% elif match.source == 'reservation_email_link' %}
-                      <span class="email-code-match-meta">
-                        <span>{{ match.reservation_date or 'Date unavailable' }}</span>
-                        <span>{{ match.reservation_status }}</span>
-                      </span>
-                      {% if match.campaign_context %}<span class="email-code-match-context">{{ match.campaign_context }}</span>{% endif %}
-                    {% elif match.source == 'campaign_email_block' %}
-                      {% if match.campaign_context %}<span class="email-code-match-context">{{ match.campaign_context }}</span>{% endif %}
-                    {% elif match.source == 'historical_domain_snapshot' %}
-                      <span class="email-code-match-meta">
-                        <span>Last email snapshot: {{ match.last_email_used }}</span>
-                        {% if match.retired_at %}<span>Retired {{ match.retired_at[:10] }}</span>{% endif %}
-                      </span>
-                    {% endif %}
-                  </li>
-                  {% endfor %}
-                </ul>
+                {{ result.email_codes | join(', ') or '—' }}
               </td>
             </tr>
             {% endfor %}

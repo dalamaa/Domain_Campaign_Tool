@@ -10,6 +10,10 @@ const DASHBOARD_SECTION_ORDER_DEFAULT = [
 let dashboardSectionOrder = null;
 const dashboardTableSortState = {};
 let dashboardRefreshInProgress = false;
+let todayBoardReorderInProgress = false;
+let todayBoardRenderVersion = 0;
+let todayBoardDragPreview = null;
+let todayBoardDragState = null;
 
 function normalizeDashboardSectionOrder(order, availableSectionIds = null) {
   const knownSectionIds = Array.from(
@@ -407,16 +411,104 @@ function escapeDashboardHtml(value) {
 }
 
 function updateTodayBoardDragHandles(table) {
+  if (!table) return;
   const sorted = Boolean(dashboardTableSortState.todays_campaigns);
-  const rows = Array.from(table.tBodies[0]?.rows || []);
+  const disabled = sorted || todayBoardReorderInProgress;
+  const rows = getTodayBoardRows(table);
   rows.forEach((row) => {
     const handle = row.querySelector(".today-board-drag-handle");
     if (!handle) return;
-    handle.draggable = !sorted;
-    handle.tabIndex = sorted ? -1 : 0;
-    handle.setAttribute("aria-disabled", sorted ? "true" : "false");
-    handle.classList.toggle("is-disabled", sorted);
+    row.draggable = !disabled;
+    handle.draggable = false;
+    handle.disabled = disabled;
+    handle.tabIndex = disabled ? -1 : 0;
+    handle.setAttribute("aria-disabled", disabled ? "true" : "false");
+    handle.classList.toggle("is-disabled", disabled);
   });
+}
+
+function getTodayBoardRows(table) {
+  return Array.from(table?.tBodies[0]?.rows || []).filter(
+    (row) => row.dataset.campaignId,
+  );
+}
+
+function getTodayBoardCampaignIds(table) {
+  return getTodayBoardRows(table).map((row) => Number(row.dataset.campaignId));
+}
+
+function calculateTodayBoardDropOrder(
+  baseOrder,
+  draggedCampaignId,
+  targetCampaignId,
+  insertBefore,
+) {
+  const order = Array.from(baseOrder || [], (campaignId) => Number(campaignId));
+  const draggedId = Number(draggedCampaignId);
+  const targetId = Number(targetCampaignId);
+  const sourceIndex = order.indexOf(draggedId);
+  if (sourceIndex < 0 || draggedId === targetId) return null;
+
+  order.splice(sourceIndex, 1);
+  const targetIndex = order.indexOf(targetId);
+  if (targetIndex < 0) return null;
+
+  const destinationIndex = targetIndex + (insertBefore ? 0 : 1);
+  order.splice(destinationIndex, 0, draggedId);
+  return { order, sourceIndex, targetIndex, destinationIndex };
+}
+
+function applyTodayBoardRowOrder(table, campaignIds) {
+  const body = table?.tBodies[0];
+  if (!body) return;
+  const rowsByCampaignId = new Map(
+    getTodayBoardRows(table).map((row) => [Number(row.dataset.campaignId), row]),
+  );
+  campaignIds.forEach((campaignId) => {
+    const row = rowsByCampaignId.get(Number(campaignId));
+    if (row) body.appendChild(row);
+  });
+}
+
+function getTodayBoardSelectedCampaignId(table) {
+  return table?.querySelector(".today-board-select:checked")?.value || null;
+}
+
+function clearTodayBoardDropIndicators(table) {
+  table?.querySelectorAll(
+    ".today-board-drop-before, .today-board-drop-after",
+  ).forEach((row) => {
+    row.classList.remove("today-board-drop-before", "today-board-drop-after");
+  });
+}
+
+function clearTodayBoardDragPreview() {
+  if (todayBoardDragPreview) todayBoardDragPreview.remove();
+  todayBoardDragPreview = null;
+}
+
+function createTodayBoardDragPreview(row) {
+  clearTodayBoardDragPreview();
+  const previewTable = document.createElement("table");
+  previewTable.className = "today-board-drag-preview";
+  previewTable.setAttribute("aria-hidden", "true");
+  previewTable.style.width = `${row.getBoundingClientRect().width}px`;
+  const previewBody = document.createElement("tbody");
+  const previewRow = row.cloneNode(true);
+  previewRow.removeAttribute("draggable");
+  previewRow.classList.remove(
+    "today-board-dragging",
+    "today-board-drop-before",
+    "today-board-drop-after",
+  );
+  previewRow.querySelectorAll("button, input").forEach((control) => {
+    control.disabled = true;
+  });
+  previewBody.appendChild(previewRow);
+  previewTable.appendChild(previewBody);
+  document.body.appendChild(previewTable);
+  todayBoardDragPreview = previewTable;
+  return previewTable;
 }
 
 function updateTodayBoardSortControls(table) {
@@ -425,9 +517,41 @@ function updateTodayBoardSortControls(table) {
   if (customOrderButton) {
     customOrderButton.hidden = !sorted;
   }
-  const status = document.getElementById("today-board-status");
-  if (status) status.textContent = sorted ? "Temporary column sort is active." : "";
   updateTodayBoardDragHandles(table);
+  updateTodayBoardMoveControls(table);
+}
+
+function updateTodayBoardMoveControls(table) {
+  const moveUpButton = document.getElementById("today-board-move-up");
+  const moveDownButton = document.getElementById("today-board-move-down");
+  const status = document.getElementById("today-board-status");
+  const rows = getTodayBoardRows(table);
+  const selectedCampaignId = getTodayBoardSelectedCampaignId(table);
+  const selectedIndex = rows.findIndex(
+    (row) => row.dataset.campaignId === selectedCampaignId,
+  );
+  const sorted = Boolean(dashboardTableSortState.todays_campaigns);
+  const disabled = sorted || todayBoardReorderInProgress || selectedIndex < 0;
+
+  if (moveUpButton) moveUpButton.disabled = disabled || selectedIndex === 0;
+  if (moveDownButton) {
+    moveDownButton.disabled = disabled || selectedIndex === rows.length - 1;
+  }
+
+  if (!status) return;
+  if (todayBoardReorderInProgress) {
+    status.textContent = "Saving custom order…";
+  } else if (sorted) {
+    status.textContent = "Column sort is temporary. Choose Custom order to reorder Today.";
+  } else if (selectedIndex < 0) {
+    status.textContent = "Select one row to enable Move Up and Move Down.";
+  } else if (selectedIndex === 0) {
+    status.textContent = "First row selected. Move Up is unavailable.";
+  } else if (selectedIndex === rows.length - 1) {
+    status.textContent = "Last row selected. Move Down is unavailable.";
+  } else {
+    status.textContent = "";
+  }
 }
 
 function resetTodayBoardSort(table) {
@@ -450,8 +574,16 @@ function initializeTodayBoardTable() {
   table.addEventListener("change", async (event) => {
     const checkbox = event.target.closest(".today-board-done-checkbox");
     if (checkbox) await updateTodayBoardDone(checkbox);
+    if (event.target.closest(".today-board-select")) {
+      updateTodayBoardMoveControls(table);
+    }
   });
   table.addEventListener("click", async (event) => {
+    const unreserveButton = event.target.closest(".today-board-unreserve");
+    if (unreserveButton) {
+      await unreserveTodayBoardEntry(unreserveButton);
+      return;
+    }
     const removeButton = event.target.closest(".today-board-remove");
     if (removeButton) await removeTodayBoardEntry(removeButton);
   });
@@ -460,34 +592,66 @@ function initializeTodayBoardTable() {
     if (!handle || dashboardTableSortState.todays_campaigns) return;
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
     event.preventDefault();
-    const row = handle.closest("tr");
-    const rows = Array.from(table.tBodies[0].rows);
-    const index = rows.indexOf(row);
-    const nextIndex = index + (event.key === "ArrowUp" ? -1 : 1);
-    if (nextIndex < 0 || nextIndex >= rows.length) return;
-    if (event.key === "ArrowUp") {
-      row.parentElement.insertBefore(row, rows[nextIndex]);
-    } else {
-      row.parentElement.insertBefore(rows[nextIndex], row);
-    }
-    await persistTodayBoardOrder(
-      Array.from(table.tBodies[0].rows, (item) => Number(item.dataset.campaignId)),
-      row.dataset.campaignId,
+    await moveTodayBoardCampaign(
+      table,
+      handle.closest("tr")?.dataset.campaignId,
+      event.key === "ArrowUp" ? -1 : 1,
     );
   });
-  table.addEventListener("dragstart", (event) => {
+  table.addEventListener("pointerdown", (event) => {
     const handle = event.target.closest(".today-board-drag-handle");
-    const row = handle?.closest("tr");
-    if (!handle || !row || dashboardTableSortState.todays_campaigns) {
+    const row = handle?.closest("tr.today-board-row");
+    if (
+      !handle ||
+      !row ||
+      dashboardTableSortState.todays_campaigns ||
+      todayBoardReorderInProgress
+    ) return;
+    table.dataset.todayBoardDragArmed = row.dataset.campaignId;
+  });
+  table.addEventListener("pointerup", () => {
+    if (!table.querySelector("tr.today-board-dragging")) {
+      delete table.dataset.todayBoardDragArmed;
+    }
+  });
+  table.addEventListener("dragstart", (event) => {
+    const row = event.target.closest("tr.today-board-row");
+    const armedCampaignId = table.dataset.todayBoardDragArmed;
+    const handle = row?.querySelector(".today-board-drag-handle");
+    if (
+      !row ||
+      !armedCampaignId ||
+      row.dataset.campaignId !== armedCampaignId ||
+      dashboardTableSortState.todays_campaigns ||
+      todayBoardReorderInProgress
+    ) {
       event.preventDefault();
       return;
     }
+    clearTodayBoardDropIndicators(table);
     row.classList.add("today-board-dragging");
     table.dataset.todayBoardDropHandled = "false";
+    const baseOrder = getTodayBoardCampaignIds(table);
+    todayBoardDragState = {
+      campaignId: Number(row.dataset.campaignId),
+      baseOrder,
+      lastOrder: baseOrder.slice(),
+      sourceIndex: baseOrder.indexOf(Number(row.dataset.campaignId)),
+      destinationIndex: baseOrder.indexOf(Number(row.dataset.campaignId)),
+    };
     handle.setAttribute("aria-grabbed", "true");
+    const preview = createTodayBoardDragPreview(row);
     if (event.dataTransfer) {
       event.dataTransfer.effectAllowed = "move";
       event.dataTransfer.setData("text/plain", row.dataset.campaignId);
+      const bounds = row.getBoundingClientRect();
+      if (typeof event.dataTransfer.setDragImage === "function") {
+        event.dataTransfer.setDragImage(
+          preview,
+          Math.max(0, event.clientX - bounds.left),
+          Math.max(0, Math.min(bounds.height / 2, event.clientY - bounds.top)),
+        );
+      }
     }
     event.stopPropagation();
   });
@@ -495,19 +659,31 @@ function initializeTodayBoardTable() {
     const targetRow = event.target.closest("tbody tr.today-board-row");
     const draggingRow = table.querySelector("tbody tr.today-board-dragging");
     if (
-      !targetRow ||
       !draggingRow ||
-      targetRow === draggingRow ||
-      dashboardTableSortState.todays_campaigns
+      dashboardTableSortState.todays_campaigns ||
+      todayBoardReorderInProgress
     ) return;
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    // Keep the drop valid even after the dragged row has been moved under the
+    // pointer. The last valid before/after destination remains authoritative.
+    if (!targetRow || targetRow === draggingRow || !todayBoardDragState) return;
     const bounds = targetRow.getBoundingClientRect();
-    if (event.clientY < bounds.top + bounds.height / 2) {
-      targetRow.parentElement.insertBefore(draggingRow, targetRow);
-    } else {
-      targetRow.parentElement.insertBefore(draggingRow, targetRow.nextSibling);
-    }
+    const insertBefore = event.clientY < bounds.top + bounds.height / 2;
+    const calculated = calculateTodayBoardDropOrder(
+      todayBoardDragState.baseOrder,
+      todayBoardDragState.campaignId,
+      targetRow.dataset.campaignId,
+      insertBefore,
+    );
+    if (!calculated) return;
+    todayBoardDragState.lastOrder = calculated.order;
+    todayBoardDragState.destinationIndex = calculated.destinationIndex;
+    clearTodayBoardDropIndicators(table);
+    targetRow.classList.add(
+      insertBefore ? "today-board-drop-before" : "today-board-drop-after",
+    );
+    applyTodayBoardRowOrder(table, calculated.order);
   });
   table.addEventListener("drop", async (event) => {
     const draggingRow = table.querySelector("tbody tr.today-board-dragging");
@@ -516,17 +692,23 @@ function initializeTodayBoardTable() {
     event.stopPropagation();
     table.dataset.todayBoardDropHandled = "true";
     const campaignId = draggingRow.dataset.campaignId;
-    const campaignIds = Array.from(
-      table.tBodies[0].rows,
-      (row) => Number(row.dataset.campaignId),
-    );
+    const campaignIds = todayBoardDragState?.campaignId === Number(campaignId)
+      ? todayBoardDragState.lastOrder.slice()
+      : getTodayBoardCampaignIds(table);
+    clearTodayBoardDropIndicators(table);
+    draggingRow.querySelector(".today-board-drag-handle")?.setAttribute("aria-grabbed", "false");
     draggingRow.classList.remove("today-board-dragging");
     await persistTodayBoardOrder(campaignIds, campaignId);
   });
   table.addEventListener("dragend", (event) => {
-    const handle = event.target.closest(".today-board-drag-handle");
+    const handle = event.target.closest(".today-board-drag-handle")
+      || table.querySelector("tr.today-board-dragging .today-board-drag-handle");
     if (handle) handle.setAttribute("aria-grabbed", "false");
     table.querySelector("tbody tr.today-board-dragging")?.classList.remove("today-board-dragging");
+    clearTodayBoardDropIndicators(table);
+    clearTodayBoardDragPreview();
+    delete table.dataset.todayBoardDragArmed;
+    todayBoardDragState = null;
     const dropped = table.dataset.todayBoardDropHandled === "true";
     delete table.dataset.todayBoardDropHandled;
     if (!dropped) renderTodaysCampaigns();
@@ -535,6 +717,14 @@ function initializeTodayBoardTable() {
   document.getElementById("today-board-custom-order")?.addEventListener(
     "click",
     () => renderTodaysCampaigns(),
+  );
+  document.getElementById("today-board-move-up")?.addEventListener(
+    "click",
+    () => moveSelectedTodayBoardCampaign(table, -1),
+  );
+  document.getElementById("today-board-move-down")?.addEventListener(
+    "click",
+    () => moveSelectedTodayBoardCampaign(table, 1),
   );
   document.getElementById("today-board-reset")?.addEventListener(
     "click",
@@ -554,15 +744,59 @@ async function postTodayBoardRequest(url, payload = {}) {
   return data;
 }
 
+async function moveSelectedTodayBoardCampaign(table, offset) {
+  const campaignId = getTodayBoardSelectedCampaignId(table);
+  if (!campaignId) {
+    updateTodayBoardMoveControls(table);
+    return;
+  }
+  await moveTodayBoardCampaign(table, campaignId, offset);
+}
+
+async function moveTodayBoardCampaign(table, campaignId, offset) {
+  if (
+    !table ||
+    !campaignId ||
+    dashboardTableSortState.todays_campaigns ||
+    todayBoardReorderInProgress
+  ) {
+    updateTodayBoardMoveControls(table);
+    return;
+  }
+
+  const rows = getTodayBoardRows(table);
+  const row = rows.find((item) => item.dataset.campaignId === String(campaignId));
+  const currentIndex = rows.indexOf(row);
+  const nextIndex = currentIndex + offset;
+  if (currentIndex < 0 || nextIndex < 0 || nextIndex >= rows.length) {
+    updateTodayBoardMoveControls(table);
+    return;
+  }
+
+  if (offset < 0) row.parentElement.insertBefore(row, rows[nextIndex]);
+  else row.parentElement.insertBefore(rows[nextIndex], row);
+
+  const selected = row.querySelector(".today-board-select");
+  if (selected) selected.checked = true;
+  await persistTodayBoardOrder(
+    getTodayBoardRows(table).map((item) => Number(item.dataset.campaignId)),
+    String(campaignId),
+  );
+}
+
 async function renderTodaysCampaigns() {
   const table = initializeTodayBoardTable();
   const container = table?.querySelector("tbody");
   if (!container) return;
+  const renderVersion = ++todayBoardRenderVersion;
 
   try {
-    const response = await fetch("/api/dashboard/todays-campaigns");
+    const response = await fetch("/api/dashboard/todays-campaigns", {
+      cache: "no-store",
+    });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Unable to load Today board.");
+    if (renderVersion !== todayBoardRenderVersion) return;
 
     resetTodayBoardSort(table);
     container.innerHTML = data.map((campaign) => {
@@ -574,6 +808,7 @@ async function renderTodaysCampaigns() {
       const doneClass = campaign.is_done ? " today-board-done" : "";
       return `
         <tr class="today-board-row${doneClass}"
+          draggable="true"
           data-campaign-id="${campaign.campaign_id}"
           data-sort-domain="${domain}"
           data-sort-status="${escapeDashboardHtml(campaign.status)}"
@@ -582,6 +817,10 @@ async function renderTodaysCampaigns() {
           data-sort-emails="${escapeDashboardHtml(emails.join(", "))}"
           data-sort-shared-emails="${escapeDashboardHtml(sharedEmails.join(", "))}"
         >
+          <td class="today-board-drag-cell">
+          <button type="button" class="today-board-drag-handle" tabindex="0" aria-label="Drag to reorder ${domain}" aria-keyshortcuts="ArrowUp ArrowDown" aria-grabbed="false" title="Drag to reorder">⠿</button>
+          </td>
+          <td class="today-board-select-cell"><input class="today-board-select" type="radio" name="today-board-selection" value="${campaign.campaign_id}" aria-label="Select ${domain} for reordering"></td>
           <td><input class="today-board-done-checkbox" type="checkbox"${checked} aria-label="Mark ${domain} as done"></td>
           <td class="dashboard-domain-cell"><a class="today-board-domain" href="/domains?history_id=${campaign.campaign_id}&domain=${encodedDomain}" target="_blank" rel="noopener noreferrer">${domain}</a></td>
           <td>${escapeDashboardHtml(campaign.status)}</td>
@@ -589,15 +828,13 @@ async function renderTodaysCampaigns() {
           <td>$${escapeDashboardHtml(campaign.current_price)}</td>
           <td>${escapeDashboardHtml(emails.join(", "))}</td>
           <td>${escapeDashboardHtml(sharedEmails.join(", ")) || "—"}</td>
-          <td class="today-board-drag-cell">
-          <span class="today-board-drag-handle" draggable="true" role="button" tabindex="0" aria-label="Reorder ${domain}; use arrow keys to move" aria-grabbed="false" title="Drag to reorder">⋮⋮</span>
-          </td>
-          <td><button type="button" class="today-board-remove" aria-label="Remove ${domain} from Today board" title="Remove from Today board">×</button></td>
+          <td class="today-board-actions-cell"><div class="today-board-row-actions"><button type="button" class="today-board-unreserve" aria-label="Unreserve" title="Unreserve">↩</button><button type="button" class="today-board-remove" aria-label="Remove ${domain} from Today board" title="Remove from Today board">×</button></div></td>
         </tr>`;
     }).join("");
-    updateTodayBoardDragHandles(table);
+    updateTodayBoardSortControls(table);
   } catch (error) {
-    container.innerHTML = `<tr><td colspan="9" class="dashboard-error">${escapeDashboardHtml(error.message)}</td></tr>`;
+    if (renderVersion !== todayBoardRenderVersion) return;
+    container.innerHTML = `<tr><td colspan="10" class="dashboard-error">${escapeDashboardHtml(error.message)}</td></tr>`;
   }
 }
 
@@ -630,17 +867,39 @@ async function persistTodayBoardOrder(campaignIds, focusCampaignId = null) {
       .querySelector(`#todays-campaigns-table tr[data-campaign-id="${focusCampaignId}"] .today-board-drag-handle`)
       ?.focus();
   };
+  if (todayBoardReorderInProgress) return;
+  todayBoardReorderInProgress = true;
+  // Invalidate any GET that began before the user committed this new order.
+  todayBoardRenderVersion += 1;
+  updateTodayBoardSortControls(document.getElementById("todays-campaigns-table"));
   try {
-    await postTodayBoardRequest(
+    const responseData = await postTodayBoardRequest(
       "/api/dashboard/todays-campaigns/reorder",
       { campaign_ids: campaignIds },
     );
+    const confirmedOrder = Array.isArray(responseData.entries)
+      ? responseData.entries.map((entry) => Number(entry.campaign_id))
+      : [];
+    if (confirmedOrder.join(",") !== campaignIds.join(",")) {
+      throw new Error("Today board reorder was not confirmed by the server.");
+    }
     await renderTodaysCampaigns();
+    const selected = document.querySelector(
+      `#todays-campaigns-table .today-board-select[value="${focusCampaignId}"]`,
+    );
+    if (selected) selected.checked = true;
     focusHandle();
   } catch (error) {
     if (typeof showToast === "function") showToast(error.message, "error");
     await renderTodaysCampaigns();
+    const selected = document.querySelector(
+      `#todays-campaigns-table .today-board-select[value="${focusCampaignId}"]`,
+    );
+    if (selected) selected.checked = true;
     focusHandle();
+  } finally {
+    todayBoardReorderInProgress = false;
+    updateTodayBoardSortControls(document.getElementById("todays-campaigns-table"));
   }
 }
 
@@ -661,6 +920,28 @@ async function removeTodayBoardEntry(button) {
   } catch (error) {
     if (typeof showToast === "function") showToast(error.message, "error");
     await renderTodaysCampaigns();
+  }
+}
+
+async function unreserveTodayBoardEntry(button) {
+  const row = button.closest("tr");
+  const campaignId = row?.dataset.campaignId;
+  const domain = row?.querySelector(".today-board-domain")?.textContent || "this campaign";
+  if (!campaignId || !window.confirm(`Unreserve ${domain}? This will remove its current reservation and free the reserved email allocation.`)) return;
+
+  button.disabled = true;
+  try {
+    await unreserveCampaign(campaignId);
+    row.remove();
+    const table = document.getElementById("todays-campaigns-table");
+    updateTodayBoardSortControls(table);
+    await Promise.all([renderTodaysCampaigns(), updateReservationBoard()]);
+    if (typeof showToast === "function") showToast("Unreserved. Reservation board updated.");
+  } catch (error) {
+    if (typeof showToast === "function") showToast(error.message || "Unable to unreserve campaign.", "error");
+    await renderTodaysCampaigns();
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -766,6 +1047,17 @@ async function reserveFromDashboardButton(button, campaignId) {
   }
 }
 
+async function unreserveCampaign(campaignId) {
+  const response = await fetch(`/api/campaigns/${campaignId}/reservation`, {
+    method: "DELETE",
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    throw new Error(result.error || "Unable to unreserve campaign.");
+  }
+  return result;
+}
+
 function attachDashboardReservationActions(container) {
   if (!container) return;
   container.querySelectorAll("button.dashboard-reservation-button[data-action]").forEach((button) => {
@@ -781,13 +1073,7 @@ function attachDashboardReservationActions(container) {
 
       clicked.disabled = true;
       try {
-        const response = await fetch(`/api/campaigns/${campaignId}/reservation`, {
-          method: "DELETE",
-        });
-        const result = await response.json();
-        if (!response.ok) {
-          throw new Error(result.error || "Unable to unreserve campaign.");
-        }
+        await unreserveCampaign(campaignId);
         await refreshDashboard();
       } catch (error) {
         alert(error.message || "Unable to unreserve campaign.");

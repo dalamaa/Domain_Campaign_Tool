@@ -1,6 +1,11 @@
 {% extends 'base.html' %} {% block content %}
 <div class="domain-management">
-  <h2>Domains / Campaigns</h2>
+  <header class="page-header domain-page-header">
+    <div>
+      <h1>Domains / Campaigns</h1>
+      <p>Manage domains, campaign activity, and outreach assignments.</p>
+    </div>
+  </header>
 
   <div class="action-bar" id="domain-action-bar">
     <div class="domain-search-control">
@@ -134,11 +139,21 @@
 <div
   id="action-modal"
   class="modal"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="action-modal-title"
+  tabindex="-1"
 >
-  <h3>Campaign Action</h3>
-  <div style="margin-bottom: 15px">
+  <div class="action-modal-header">
+    <h3 id="action-modal-title">Record Activity</h3>
+    <p id="action-modal-domain" class="action-modal-domain">Campaign action</p>
+  </div>
+  <div class="action-mode-tabs" role="tablist" aria-label="Campaign action mode">
     <button
       id="tab-new"
+      type="button"
+      role="tab"
+      aria-selected="true"
       onclick="setActionMode('new')"
       class="btn btn-primary btn-compact"
     >
@@ -146,16 +161,16 @@
     </button>
     <button
       id="tab-edit"
+      type="button"
+      role="tab"
+      aria-selected="false"
       onclick="setActionMode('edit')"
       class="btn btn-secondary btn-compact"
     >
       Edit History
     </button>
   </div>
-  <hr />
   <div id="action-mode-content"></div>
-  <br />
-  <button class="btn btn-secondary" type="button" onclick="closeActionModal()">Cancel</button>
 </div>
 <div
   id="quick-update-modal"

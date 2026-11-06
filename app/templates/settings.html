@@ -1,364 +1,340 @@
 {% extends 'base.html' %} {% block content %}
 <div class="settings-management">
-  <h2>Settings</h2>
-  <div class="form-group" style="margin-top: 20px">
-    <label>Business Timezone:</label><br />
-    <select id="timezone-select" style="width: 300px; padding: 5px">
-      <!-- Populated by JS -->
-    </select>
-    <button class="btn btn-primary" type="button" onclick="saveTimezone()">Save Timezone</button>
-  </div>
-  <div style="margin-top: 20px">
-    <h3>First Follow-up</h3>
-    <div id="first-view">
-      <p>Current: <span id="first-display"></span></p>
-      <button class="btn btn-secondary" type="button" onclick="editSection('first')">Change</button>
+  <header class="page-header settings-page-header">
+    <div>
+      <h1>Settings</h1>
+      <p>Configure campaign timing, reservations, and data retention.</p>
     </div>
-    <div id="first-edit" style="display: none">
-      <label
-        ><input
-          type="radio"
-          name="first-mode"
-          value="fixed"
-          onchange="toggleMode('first', 'fixed')"
-        />
-        Fixed day</label
-      >
-      <input type="number" id="first-fixed" style="width: 60px" /> days<br />
-      <label
-        ><input
-          type="radio"
-          name="first-mode"
-          value="range"
-          onchange="toggleMode('first', 'range')"
-        />
-        Range</label
-      >
-      From
-      <input type="number" id="first-min" style="width: 60px" disabled /> To
-      <input type="number" id="first-max" style="width: 60px" disabled />
-      days<br />
-      <button class="btn btn-primary" type="button" onclick="saveSection('first')">Save</button>
-      <button class="btn btn-secondary" type="button" onclick="cancelEdit('first')">Cancel</button>
-    </div>
-  </div>
+  </header>
+  <div class="settings-grid">
+    <section class="settings-section settings-section-wide" aria-labelledby="settings-schedule-heading">
+      <header class="settings-section-header">
+        <div>
+          <h2 id="settings-schedule-heading">Schedule &amp; follow-up</h2>
+          <p>Set the business clock and the timing windows used for outreach.</p>
+        </div>
+      </header>
+      <div class="settings-section-content">
+        <div class="settings-setting settings-setting-wide settings-timezone">
+          <label class="settings-field-label" for="timezone-select">Business timezone</label>
+          <div class="settings-field-control">
+            <select id="timezone-select" class="settings-select">
+              <!-- Populated by JS -->
+            </select>
+            <button class="btn btn-primary" type="button" onclick="saveTimezone()">Save Timezone</button>
+          </div>
+        </div>
+        <div class="settings-subgrid">
+          <div class="settings-setting">
+            <h3>First Follow-up</h3>
+            <div id="first-view" class="settings-setting-view">
+              <p class="settings-current-value">Current: <span id="first-display"></span></p>
+              <button class="btn btn-secondary" type="button" onclick="editSection('first')">Change</button>
+            </div>
+            <div id="first-edit" class="settings-edit-panel" hidden>
+              <div class="settings-option-row">
+                <label class="settings-choice">
+                  <input
+                    type="radio"
+                    name="first-mode"
+                    value="fixed"
+                    onchange="toggleMode('first', 'fixed')"
+                  />
+                  Fixed day
+                </label>
+                <div class="settings-inline-field">
+                  <label for="first-fixed">Day</label>
+                  <input type="number" id="first-fixed" class="settings-number-input" />
+                  <span>days</span>
+                </div>
+              </div>
+              <div class="settings-option-row">
+                <label class="settings-choice">
+                  <input
+                    type="radio"
+                    name="first-mode"
+                    value="range"
+                    onchange="toggleMode('first', 'range')"
+                  />
+                  Range
+                </label>
+                <div class="settings-inline-field settings-range-field">
+                  <label for="first-min">From</label>
+                  <input type="number" id="first-min" class="settings-number-input" disabled />
+                  <label for="first-max">To</label>
+                  <input type="number" id="first-max" class="settings-number-input" disabled />
+                  <span>days</span>
+                </div>
+              </div>
+              <div class="settings-actions">
+                <button class="btn btn-primary" type="button" onclick="saveSection('first')">Save</button>
+                <button class="btn btn-secondary" type="button" onclick="cancelEdit('first')">Cancel</button>
+              </div>
+            </div>
+          </div>
 
-  <div style="margin-top: 20px">
-    <h3>Normal Follow-up</h3>
-    <div id="normal-view">
-      <p>Current: <span id="normal-display"></span></p>
-      <button class="btn btn-secondary" type="button" onclick="editSection('normal')">Change</button>
-    </div>
-    <div id="normal-edit" style="display: none">
-      <label
-        ><input
-          type="radio"
-          name="normal-mode"
-          value="fixed"
-          onchange="toggleMode('normal', 'fixed')"
-        />
-        Fixed day</label
-      >
-      <input type="number" id="normal-fixed" style="width: 60px" /> days<br />
-      <label
-        ><input
-          type="radio"
-          name="normal-mode"
-          value="range"
-          onchange="toggleMode('normal', 'range')"
-        />
-        Range</label
-      >
-      From
-      <input type="number" id="normal-min" style="width: 60px" disabled /> To
-      <input type="number" id="normal-max" style="width: 60px" disabled />
-      days<br />
-      <button class="btn btn-primary" type="button" onclick="saveSection('normal')">Save</button>
-      <button class="btn btn-secondary" type="button" onclick="cancelEdit('normal')">Cancel</button>
-    </div>
-  </div>
+          <div class="settings-setting">
+            <h3>Normal Follow-up</h3>
+            <div id="normal-view" class="settings-setting-view">
+              <p class="settings-current-value">Current: <span id="normal-display"></span></p>
+              <button class="btn btn-secondary" type="button" onclick="editSection('normal')">Change</button>
+            </div>
+            <div id="normal-edit" class="settings-edit-panel" hidden>
+              <div class="settings-option-row">
+                <label class="settings-choice">
+                  <input
+                    type="radio"
+                    name="normal-mode"
+                    value="fixed"
+                    onchange="toggleMode('normal', 'fixed')"
+                  />
+                  Fixed day
+                </label>
+                <div class="settings-inline-field">
+                  <label for="normal-fixed">Day</label>
+                  <input type="number" id="normal-fixed" class="settings-number-input" />
+                  <span>days</span>
+                </div>
+              </div>
+              <div class="settings-option-row">
+                <label class="settings-choice">
+                  <input
+                    type="radio"
+                    name="normal-mode"
+                    value="range"
+                    onchange="toggleMode('normal', 'range')"
+                  />
+                  Range
+                </label>
+                <div class="settings-inline-field settings-range-field">
+                  <label for="normal-min">From</label>
+                  <input type="number" id="normal-min" class="settings-number-input" disabled />
+                  <label for="normal-max">To</label>
+                  <input type="number" id="normal-max" class="settings-number-input" disabled />
+                  <span>days</span>
+                </div>
+              </div>
+              <div class="settings-actions">
+                <button class="btn btn-primary" type="button" onclick="saveSection('normal')">Save</button>
+                <button class="btn btn-secondary" type="button" onclick="cancelEdit('normal')">Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
 
-  <div style="margin-top: 20px" id="resting-campaign-rules">
-    <h3>Resting Campaign Rules</h3>
-    <p>
-      These rules determine when an ACTIVE campaign becomes eligible to be
-      suggested for Resting. A campaign becomes eligible when any enabled rule is met.
-    </p>
-    <div class="resting-rule" data-resting-trigger="sequence">
-      <strong>Sequence</strong><br />
-      <small>Eligible when the campaign reaches this sequence number.</small><br />
-      <label>
-        <input type="checkbox" id="resting-sequence-enabled" /> Enabled
-      </label>
-      <label for="resting-sequence-threshold">Threshold</label>
-      <input
-        type="number"
-        id="resting-sequence-threshold"
-        min="0"
-        step="1"
-        required
-        style="width: 80px"
-      />
-      <span>sequence</span>
-    </div>
-    <div class="resting-rule" data-resting-trigger="days_since_last_contact">
-      <strong>Days Since Last Contact</strong><br />
-      <small>Eligible after this many days since the most recent contact.</small><br />
-      <label>
-        <input type="checkbox" id="resting-days-since-last-contact-enabled" />
-        Enabled
-      </label>
-      <label for="resting-days-since-last-contact-threshold">Threshold</label>
-      <input
-        type="number"
-        id="resting-days-since-last-contact-threshold"
-        min="0"
-        step="1"
-        required
-        style="width: 80px"
-      />
-      <span>days</span>
-    </div>
-    <div class="resting-rule" data-resting-trigger="campaign_age">
-      <strong>Campaign Age</strong><br />
-      <small>Eligible after the campaign has been active for this many days.</small><br />
-      <label>
-        <input type="checkbox" id="resting-campaign-age-enabled" /> Enabled
-      </label>
-      <label for="resting-campaign-age-threshold">Threshold</label>
-      <input
-        type="number"
-        id="resting-campaign-age-threshold"
-        min="0"
-        step="1"
-        required
-        style="width: 80px"
-      />
-      <span>days</span>
-    </div>
-    <div class="resting-rule" data-resting-trigger="known_activity_age">
-      <strong>Known Activity Age</strong><br />
-      <small>Eligible when the earliest known activity is at least this old.</small><br />
-      <label>
-        <input type="checkbox" id="resting-known-activity-age-enabled" /> Enabled
-      </label>
-      <label for="resting-known-activity-age-threshold">Threshold</label>
-      <input
-        type="number"
-        id="resting-known-activity-age-threshold"
-        min="0"
-        step="1"
-        required
-        style="width: 80px"
-      />
-      <span>days</span>
-    </div>
-    <button class="btn btn-primary" type="button" onclick="saveRestingRules()">Save Resting Rules</button>
-    <p id="resting-rules-status" role="status" aria-live="polite"></p>
-  </div>
+    <section class="settings-section settings-section-wide" aria-labelledby="settings-lifecycle-heading">
+      <header class="settings-section-header">
+        <div>
+          <h2 id="settings-lifecycle-heading">Campaign lifecycle</h2>
+          <p>Control when campaigns surface, cool down, and move into historical records.</p>
+        </div>
+      </header>
+      <div class="settings-section-content settings-lifecycle-grid">
+        <div class="settings-setting settings-setting-span" id="resting-campaign-rules">
+          <h3>Resting Campaign Rules</h3>
+          <p class="settings-helper">
+            These rules determine when an ACTIVE campaign becomes eligible to be suggested for Resting. A campaign becomes eligible when any enabled rule is met.
+          </p>
+          <div class="resting-rules-grid">
+            <div class="resting-rule" data-resting-trigger="sequence">
+              <div class="settings-rule-heading"><strong>Sequence</strong><small>Eligible when the campaign reaches this sequence number.</small></div>
+              <div class="settings-rule-control">
+                <label class="settings-choice"><input type="checkbox" id="resting-sequence-enabled" /> Enabled</label>
+                <label for="resting-sequence-threshold">Threshold</label>
+                <input type="number" id="resting-sequence-threshold" class="settings-number-input" min="0" step="1" required />
+                <span>sequence</span>
+              </div>
+            </div>
+            <div class="resting-rule" data-resting-trigger="days_since_last_contact">
+              <div class="settings-rule-heading"><strong>Days Since Last Contact</strong><small>Eligible after this many days since the most recent contact.</small></div>
+              <div class="settings-rule-control">
+                <label class="settings-choice"><input type="checkbox" id="resting-days-since-last-contact-enabled" /> Enabled</label>
+                <label for="resting-days-since-last-contact-threshold">Threshold</label>
+                <input type="number" id="resting-days-since-last-contact-threshold" class="settings-number-input" min="0" step="1" required />
+                <span>days</span>
+              </div>
+            </div>
+            <div class="resting-rule" data-resting-trigger="campaign_age">
+              <div class="settings-rule-heading"><strong>Campaign Age</strong><small>Eligible after the campaign has been active for this many days.</small></div>
+              <div class="settings-rule-control">
+                <label class="settings-choice"><input type="checkbox" id="resting-campaign-age-enabled" /> Enabled</label>
+                <label for="resting-campaign-age-threshold">Threshold</label>
+                <input type="number" id="resting-campaign-age-threshold" class="settings-number-input" min="0" step="1" required />
+                <span>days</span>
+              </div>
+            </div>
+            <div class="resting-rule" data-resting-trigger="known_activity_age">
+              <div class="settings-rule-heading"><strong>Known Activity Age</strong><small>Eligible when the earliest known activity is at least this old.</small></div>
+              <div class="settings-rule-control">
+                <label class="settings-choice"><input type="checkbox" id="resting-known-activity-age-enabled" /> Enabled</label>
+                <label for="resting-known-activity-age-threshold">Threshold</label>
+                <input type="number" id="resting-known-activity-age-threshold" class="settings-number-input" min="0" step="1" required />
+                <span>days</span>
+              </div>
+            </div>
+          </div>
+          <div class="settings-actions">
+            <button class="btn btn-primary" type="button" onclick="saveRestingRules()">Save Resting Rules</button>
+            <p id="resting-rules-status" class="settings-status" role="status" aria-live="polite"></p>
+          </div>
+        </div>
 
-  <div style="margin-top: 20px" id="expiring-soon-settings">
-    <h3>Expiring Domains</h3>
-    <label for="expiring-soon-days">Show domains expiring within:</label>
-    <input
-      type="number"
-      id="expiring-soon-days"
-      min="0"
-      max="3650"
-      step="1"
-      required
-      style="width: 80px"
-    />
-    days
-    <p>
-      Examples: 14 days ≈ 2 weeks, 30 days ≈ 1 month, 60 days ≈ 2 months,
-      90 days ≈ 3 months.
-    </p>
-    <button class="btn btn-primary" type="button" onclick="saveExpiringSoonDays()">
-      Save Expiring Domains
-    </button>
-    <p id="expiring-soon-status" role="status" aria-live="polite"></p>
-  </div>
+        <div class="settings-setting" id="expiring-soon-settings">
+          <h3>Expiring Domains</h3>
+          <div class="settings-field-row">
+            <label for="expiring-soon-days">Show domains expiring within</label>
+            <div class="settings-inline-field"><input type="number" id="expiring-soon-days" class="settings-number-input" min="0" max="3650" step="1" required /><span>days</span></div>
+          </div>
+          <p class="settings-helper">Examples: 14 days ≈ 2 weeks, 30 days ≈ 1 month, 60 days ≈ 2 months, 90 days ≈ 3 months.</p>
+          <div class="settings-actions">
+            <button class="btn btn-primary" type="button" onclick="saveExpiringSoonDays()">Save Expiring Domains</button>
+            <p id="expiring-soon-status" class="settings-status" role="status" aria-live="polite"></p>
+          </div>
+        </div>
 
-  <div style="margin-top: 20px" id="expired-domain-settings">
-    <h3>Expired Domain Retention</h3>
-    <p>
-      Domains become manually archivable after the first threshold. If still
-      present at the second threshold, the scheduler moves them to Historical.
-    </p>
-    <label for="expired-domain-retention-days">Manual archive eligibility:</label>
-    <input
-      type="number"
-      id="expired-domain-retention-days"
-      min="0"
-      max="3650"
-      step="1"
-      required
-      style="width: 80px"
-    />
-    days
-    <br />
-    <label for="expired-domain-auto-archive-days">Automatically archive after:</label>
-    <input
-      type="number"
-      id="expired-domain-auto-archive-days"
-      min="1"
-      max="3650"
-      step="1"
-      required
-      style="width: 80px"
-    />
-    days
-    <button class="btn btn-primary" type="button" onclick="saveExpiredDomainRetention()">
-      Save Expired Domain Retention
-    </button>
-    <p id="expired-domain-retention-status" role="status" aria-live="polite"></p>
-  </div>
+        <div class="settings-setting" id="expired-domain-settings">
+          <h3>Expired Domain Retention</h3>
+          <p class="settings-helper">Domains become manually archivable after the first threshold. If still present at the second threshold, the scheduler moves them to Historical.</p>
+          <div class="settings-field-list">
+            <div class="settings-field-row">
+              <label for="expired-domain-retention-days">Manual archive eligibility</label>
+              <div class="settings-inline-field"><input type="number" id="expired-domain-retention-days" class="settings-number-input" min="0" max="3650" step="1" required /><span>days</span></div>
+            </div>
+            <div class="settings-field-row">
+              <label for="expired-domain-auto-archive-days">Automatically archive after</label>
+              <div class="settings-inline-field"><input type="number" id="expired-domain-auto-archive-days" class="settings-number-input" min="1" max="3650" step="1" required /><span>days</span></div>
+            </div>
+          </div>
+          <div class="settings-actions">
+            <button class="btn btn-primary" type="button" onclick="saveExpiredDomainRetention()">Save Expired Domain Retention</button>
+            <p id="expired-domain-retention-status" class="settings-status" role="status" aria-live="polite"></p>
+          </div>
+        </div>
 
-  <div style="margin-top: 20px" id="ready-for-campaign-settings">
-    <h3>Campaign Temperature</h3>
-    <label for="campaign-temperature-hot-through">
-      Hot through:
-    </label>
-    <input
-      type="number"
-      id="campaign-temperature-hot-through"
-      min="0"
-      max="3650"
-      step="1"
-      required
-      style="width: 80px"
-      oninput="updateCampaignTemperatureRanges()"
-    />
-    days
-    <br />
-    <label for="campaign-temperature-tepid-through">
-      Tepid through:
-    </label>
-    <input
-      type="number"
-      id="campaign-temperature-tepid-through"
-      min="0"
-      max="3650"
-      step="1"
-      required
-      style="width: 80px"
-      oninput="updateCampaignTemperatureRanges()"
-    />
-    days
-    <br />
-    <label for="ready-for-campaign-days">
-      Ready at:
-    </label>
-    <input
-      type="number"
-      id="ready-for-campaign-days"
-      min="0"
-      max="3650"
-      step="1"
-      required
-      style="width: 80px"
-      oninput="updateCampaignTemperatureRanges()"
-    />
-    days since last contact
-    <p id="campaign-temperature-ranges" aria-live="polite"></p>
-    <p>
-      Temperature is derived from last contact. Dormant campaigns are always
-      ready for campaign, while Active and Resting campaigns keep the same
-      last-contact clock.
-    </p>
-    <button class="btn btn-primary" type="button" onclick="saveCampaignTemperature()">
-      Save Campaign Temperature
-    </button>
-    <p id="campaign-temperature-status" role="status" aria-live="polite"></p>
-    <p id="ready-for-campaign-status" role="status" aria-live="polite"></p>
-  </div>
+        <div class="settings-setting" id="ready-for-campaign-settings">
+          <h3>Campaign Temperature</h3>
+          <div class="settings-field-list">
+            <div class="settings-field-row">
+              <label for="campaign-temperature-hot-through">Hot through</label>
+              <div class="settings-inline-field"><input type="number" id="campaign-temperature-hot-through" class="settings-number-input" min="0" max="3650" step="1" required oninput="updateCampaignTemperatureRanges()" /><span>days</span></div>
+            </div>
+            <div class="settings-field-row">
+              <label for="campaign-temperature-tepid-through">Tepid through</label>
+              <div class="settings-inline-field"><input type="number" id="campaign-temperature-tepid-through" class="settings-number-input" min="0" max="3650" step="1" required oninput="updateCampaignTemperatureRanges()" /><span>days</span></div>
+            </div>
+            <div class="settings-field-row">
+              <label for="ready-for-campaign-days">Ready at</label>
+              <div class="settings-inline-field"><input type="number" id="ready-for-campaign-days" class="settings-number-input" min="0" max="3650" step="1" required oninput="updateCampaignTemperatureRanges()" /><span>days since last contact</span></div>
+            </div>
+          </div>
+          <p id="campaign-temperature-ranges" class="settings-preview" aria-live="polite"></p>
+          <p class="settings-helper">Temperature is derived from last contact. Dormant campaigns are always ready for campaign, while Active and Resting campaigns keep the same last-contact clock.</p>
+          <div class="settings-actions">
+            <button class="btn btn-primary" type="button" onclick="saveCampaignTemperature()">Save Campaign Temperature</button>
+            <p id="campaign-temperature-status" class="settings-status" role="status" aria-live="polite"></p>
+            <p id="ready-for-campaign-status" class="settings-status" role="status" aria-live="polite"></p>
+          </div>
+        </div>
+      </div>
+    </section>
 
-  <div style="margin-top: 20px" id="team-domain-settings">
-    <h3>Team Domains</h3>
-    <p>
-      Campaign age is calculated from each assignment date. Assignments are Normal
-      before the warning threshold, Approaching Rest at the warning threshold,
-      and Due to Rest at the rest threshold.
-    </p>
-    <label for="team-domain-warning-days">Warning at:</label>
-    <input
-      type="number"
-      id="team-domain-warning-days"
-      min="0"
-      step="1"
-      required
-      style="width: 80px"
-      oninput="updateTeamDomainRanges()"
-    />
-    days
-    <br />
-    <label for="team-domain-rest-days">Due to Rest at:</label>
-    <input
-      type="number"
-      id="team-domain-rest-days"
-      min="0"
-      step="1"
-      required
-      style="width: 80px"
-      oninput="updateTeamDomainRanges()"
-    />
-    days
-    <p id="team-domain-ranges" aria-live="polite"></p>
-    <button class="btn btn-primary" type="button" onclick="saveTeamDomainSettings()">
-      Save Team Domains Settings
-    </button>
-    <p id="team-domain-settings-status" role="status" aria-live="polite"></p>
-  </div>
+    <section class="settings-section settings-section-wide" aria-labelledby="settings-workflow-heading">
+      <header class="settings-section-header">
+        <div>
+          <h2 id="settings-workflow-heading">Reservation &amp; team workflow</h2>
+          <p>Keep daily capacity and team assignment thresholds aligned.</p>
+        </div>
+      </header>
+      <div class="settings-section-content">
+        <div class="settings-setting" id="reservation-settings">
+          <h3>Reservation</h3>
+          <div id="reservation-view" class="settings-setting-view">
+            <p class="settings-current-value">Current: <span id="reservation-display"></span></p>
+            <button class="btn btn-secondary" type="button" onclick="editSection('reservation')">Change</button>
+          </div>
+          <div id="reservation-edit" class="settings-edit-panel" hidden>
+            <div class="settings-field-row">
+              <label for="daily-use-limit">Daily limit</label>
+              <div class="settings-inline-field"><input type="number" id="daily-use-limit" class="settings-number-input" /><span>campaigns per email account per day</span></div>
+            </div>
+            <div class="settings-actions">
+              <button class="btn btn-primary" type="button" onclick="saveSection('reservation')">Save</button>
+              <button class="btn btn-secondary" type="button" onclick="cancelEdit('reservation')">Cancel</button>
+            </div>
+          </div>
+        </div>
 
-  <div style="margin-top: 20px">
-    <h3>Reservation</h3>
-    <div id="reservation-view">
-      <p>Current: <span id="reservation-display"></span></p>
-      <button class="btn btn-secondary" type="button" onclick="editSection('reservation')">Change</button>
-    </div>
-    <div id="reservation-edit" style="display: none">
-      <input type="number" id="daily-use-limit" style="width: 100px" />
-      campaigns per email account per day<br />
-      <button class="btn btn-primary" type="button" onclick="saveSection('reservation')">Save</button>
-      <button class="btn btn-secondary" type="button" onclick="cancelEdit('reservation')">Cancel</button>
-    </div>
-  </div>
+        <div class="settings-setting" id="team-domain-settings">
+          <h3>Team Domains</h3>
+          <p class="settings-helper">Campaign age is calculated from each assignment date. Assignments are Normal before the warning threshold, Approaching Rest at the warning threshold, and Due to Rest at the rest threshold.</p>
+          <div class="settings-field-list">
+            <div class="settings-field-row">
+              <label for="team-domain-warning-days">Warning at</label>
+              <div class="settings-inline-field"><input type="number" id="team-domain-warning-days" class="settings-number-input" min="0" step="1" required oninput="updateTeamDomainRanges()" /><span>days</span></div>
+            </div>
+            <div class="settings-field-row">
+              <label for="team-domain-rest-days">Due to Rest at</label>
+              <div class="settings-inline-field"><input type="number" id="team-domain-rest-days" class="settings-number-input" min="0" step="1" required oninput="updateTeamDomainRanges()" /><span>days</span></div>
+            </div>
+          </div>
+          <p id="team-domain-ranges" class="settings-preview" aria-live="polite"></p>
+          <div class="settings-actions">
+            <button class="btn btn-primary" type="button" onclick="saveTeamDomainSettings()">Save Team Domains Settings</button>
+            <p id="team-domain-settings-status" class="settings-status" role="status" aria-live="polite"></p>
+          </div>
+        </div>
+      </div>
+    </section>
 
-  <div style="margin-top: 20px" id="backup-export">
-    <h3>Exact App Backup</h3>
-    <p>Complete normalized application snapshot intended for exact disaster recovery.</p>
-    <a href="/api/backup/export.xlsx" download>
-      <button class="btn btn-secondary" type="button">Export XLSX</button>
-    </a>
-    <a href="/api/backup/export.zip" download>
-      <button class="btn btn-secondary" type="button">Export CSV Backup (.zip)</button>
-    </a>
-    <h3>Spreadsheet Export</h3>
-    <p>Human-readable campaign export for Excel, Google Sheets, email/archive, or fallback reconstruction.</p>
-    <a href="/api/export/spreadsheet.xlsx" download>
-      <button class="btn btn-secondary" type="button">Export XLSX</button>
-    </a>
-    <a href="/api/export/spreadsheet.zip" download>
-      <button class="btn btn-secondary" type="button">Export CSV (.zip)</button>
-    </a>
-  </div>
+    <section class="settings-section settings-section-wide" aria-labelledby="settings-backup-heading">
+      <header class="settings-section-header">
+        <div>
+          <h2 id="settings-backup-heading">Backup &amp; data</h2>
+          <p>Export a copy of your data or validate an exact backup before restoring it.</p>
+        </div>
+      </header>
+      <div class="settings-section-content settings-backup-grid">
+        <div class="settings-setting" id="backup-export">
+          <div class="settings-subsection-heading">
+            <h3>Exact App Backup</h3>
+            <p class="settings-helper">Complete normalized application snapshot intended for exact disaster recovery.</p>
+          </div>
+          <div class="settings-action-row">
+            <a class="btn btn-secondary" href="/api/backup/export.xlsx" download>Export XLSX</a>
+            <a class="btn btn-secondary" href="/api/backup/export.zip" download>Export CSV Backup (.zip)</a>
+          </div>
+          <div class="settings-subsection-heading settings-subsection-divider">
+            <h3>Spreadsheet Export</h3>
+            <p class="settings-helper">Human-readable campaign export for Excel, Google Sheets, email/archive, or fallback reconstruction.</p>
+          </div>
+          <div class="settings-action-row">
+            <a class="btn btn-secondary" href="/api/export/spreadsheet.xlsx" download>Export XLSX</a>
+            <a class="btn btn-secondary" href="/api/export/spreadsheet.zip" download>Export CSV (.zip)</a>
+          </div>
+        </div>
 
-  <div style="margin-top: 20px" id="exact-backup-restore">
-    <h3>Restore Exact App Backup</h3>
-    <p>
-      Only a normalized Exact App Backup ZIP is supported. Restore is allowed
-      only when the operational database is empty; backups cannot be merged.
-      Environment credentials and authentication secrets are not restored.
-    </p>
-    <label for="exact-backup-restore-file">Choose Exact Backup ZIP:</label>
-    <input id="exact-backup-restore-file" type="file" accept=".zip,application/zip" />
-    <button class="btn btn-secondary" type="button" onclick="validateExactBackup()">Validate Backup</button>
-    <p id="exact-backup-restore-status" role="status" aria-live="polite"></p>
-    <pre id="exact-backup-restore-summary" style="display: none; white-space: pre-wrap"></pre>
-    <button class="btn btn-danger" id="exact-backup-restore-button" type="button" onclick="restoreExactBackup()" style="display: none">
-      Restore Backup
-    </button>
+        <div class="settings-setting settings-danger-setting" id="exact-backup-restore">
+          <div class="settings-subsection-heading">
+            <h3>Restore Exact App Backup</h3>
+            <p class="settings-helper">Only a normalized Exact App Backup ZIP is supported. Restore is allowed only when the operational database is empty; backups cannot be merged. Environment credentials and authentication secrets are not restored.</p>
+          </div>
+          <div class="settings-restore-form">
+            <label class="settings-field-label" for="exact-backup-restore-file">Choose Exact Backup ZIP</label>
+            <div class="settings-file-actions">
+              <input id="exact-backup-restore-file" type="file" accept=".zip,application/zip" />
+              <button class="btn btn-secondary" type="button" onclick="validateExactBackup()">Validate Backup</button>
+            </div>
+          </div>
+          <p id="exact-backup-restore-status" class="settings-status" role="status" aria-live="polite"></p>
+          <pre id="exact-backup-restore-summary" class="settings-backup-summary" hidden></pre>
+          <button class="btn btn-danger" id="exact-backup-restore-button" type="button" onclick="restoreExactBackup()" hidden>
+            Restore Backup
+          </button>
+        </div>
+      </div>
+    </section>
   </div>
 </div>
 
@@ -505,46 +481,35 @@
     scheduleNextTimezoneUpdate();
   }
 
-  function setRestingRulesStatus(message, isError = false) {
-    const status = document.getElementById("resting-rules-status");
+  function setSettingsStatus(status, message, isError = false) {
     if (!status) return;
     status.textContent = message;
-    status.style.color = isError ? "#b00020" : "#176b2c";
+    status.classList.toggle("settings-status-error", isError);
+    status.classList.toggle("settings-status-success", !isError && Boolean(message));
+  }
+
+  function setRestingRulesStatus(message, isError = false) {
+    setSettingsStatus(document.getElementById("resting-rules-status"), message, isError);
   }
 
   function setExpiringSoonStatus(message, isError = false) {
-    const status = document.getElementById("expiring-soon-status");
-    if (!status) return;
-    status.textContent = message;
-    status.style.color = isError ? "#b00020" : "#176b2c";
+    setSettingsStatus(document.getElementById("expiring-soon-status"), message, isError);
   }
 
   function setReadyForCampaignStatus(message, isError = false) {
-    const status = document.getElementById("ready-for-campaign-status");
-    if (!status) return;
-    status.textContent = message;
-    status.style.color = isError ? "#b00020" : "#176b2c";
+    setSettingsStatus(document.getElementById("ready-for-campaign-status"), message, isError);
   }
 
   function setCampaignTemperatureStatus(message, isError = false) {
-    const status = document.getElementById("campaign-temperature-status");
-    if (!status) return;
-    status.textContent = message;
-    status.style.color = isError ? "#b00020" : "#176b2c";
+    setSettingsStatus(document.getElementById("campaign-temperature-status"), message, isError);
   }
 
   function setTeamDomainSettingsStatus(message, isError = false) {
-    const status = document.getElementById("team-domain-settings-status");
-    if (!status) return;
-    status.textContent = message;
-    status.style.color = isError ? "#b00020" : "#176b2c";
+    setSettingsStatus(document.getElementById("team-domain-settings-status"), message, isError);
   }
 
   function setExpiredDomainRetentionStatus(message, isError = false) {
-    const status = document.getElementById("expired-domain-retention-status");
-    if (!status) return;
-    status.textContent = message;
-    status.style.color = isError ? "#b00020" : "#176b2c";
+    setSettingsStatus(document.getElementById("expired-domain-retention-status"), message, isError);
   }
 
   function readCampaignTemperatureConfig() {
@@ -936,8 +901,8 @@
   }
 
   function editSection(type) {
-    document.getElementById(`${type}-view`).style.display = "none";
-    document.getElementById(`${type}-edit`).style.display = "block";
+    document.getElementById(`${type}-view`).hidden = true;
+    document.getElementById(`${type}-edit`).hidden = false;
 
     if (type !== "reservation") {
       const c = originalConfig.config[type];
@@ -958,8 +923,8 @@
   }
 
   function cancelEdit(type) {
-    document.getElementById(`${type}-view`).style.display = "block";
-    document.getElementById(`${type}-edit`).style.display = "none";
+    document.getElementById(`${type}-view`).hidden = false;
+    document.getElementById(`${type}-edit`).hidden = true;
   }
 
   async function saveSection(type) {
@@ -1011,8 +976,7 @@
 
   function setExactBackupRestoreStatus(message, isError = false) {
     const status = document.getElementById("exact-backup-restore-status");
-    status.textContent = message;
-    status.style.color = isError ? "#b00020" : "#176b2c";
+    setSettingsStatus(status, message, isError);
   }
 
   function selectedExactBackupFile() {
@@ -1023,8 +987,8 @@
     const file = selectedExactBackupFile();
     exactBackupValidated = false;
     exactBackupValidatedFile = null;
-    document.getElementById("exact-backup-restore-button").style.display = "none";
-    document.getElementById("exact-backup-restore-summary").style.display = "none";
+    document.getElementById("exact-backup-restore-button").hidden = true;
+    document.getElementById("exact-backup-restore-summary").hidden = true;
     if (!file) {
       setExactBackupRestoreStatus("Choose an Exact App Backup ZIP first.", true);
       return;
@@ -1051,8 +1015,8 @@
         "Dataset counts:",
         ...Object.entries(data.datasets).map(([name, count]) => `  ${name}: ${count}`),
       ].join("\n");
-      summary.style.display = "block";
-      document.getElementById("exact-backup-restore-button").style.display = "inline-block";
+      summary.hidden = false;
+      document.getElementById("exact-backup-restore-button").hidden = false;
       setExactBackupRestoreStatus("Backup validated. Review the counts before restoring.");
     } catch (error) {
       setExactBackupRestoreStatus(error.message, true);
@@ -1085,7 +1049,7 @@
       setExactBackupRestoreStatus("Exact App Backup restored successfully.");
       exactBackupValidated = false;
       exactBackupValidatedFile = null;
-      document.getElementById("exact-backup-restore-button").style.display = "none";
+      document.getElementById("exact-backup-restore-button").hidden = true;
     } catch (error) {
       setExactBackupRestoreStatus(error.message, true);
     }

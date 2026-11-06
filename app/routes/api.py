@@ -1382,7 +1382,9 @@ def get_reservation_board():
 def get_todays_campaigns():
     from app.services.today_board_service import get_today_board
 
-    return jsonify(get_today_board())
+    response = jsonify(get_today_board())
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 
 @bp.route('/dashboard/todays-campaigns/<int:campaign_id>/done', methods=['POST'])
@@ -1871,7 +1873,11 @@ def add_campaign_action(campaign_id):
             require_nonempty=action_type == ActionType.FIRST_OUTREACH,
         )
         action_date = _parse_campaign_action_date(data['action_date'])
-        if action_type in {ActionType.FOLLOW_UP, ActionType.PRICE_REDUCTION}:
+        if action_type in {
+            ActionType.FIRST_FOLLOW_UP,
+            ActionType.FOLLOW_UP,
+            ActionType.PRICE_REDUCTION,
+        }:
             price = data.get('price_after')
         else:
             price = int(data['price_after'])

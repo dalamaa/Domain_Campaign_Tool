@@ -190,6 +190,7 @@ def test_historical_snapshot_matches_exact_comma_separated_token(app):
     result = historical["results"][0]
     assert result["domain_name"] == "snapshot-match.example"
     assert result["matches"][0]["label"] == "Historical Snapshot"
+    assert result["email_codes"] == ["M13", "M14", "M130"]
 
 
 def test_historical_snapshot_stays_separate_from_reworked_operational_domain(app):
@@ -241,6 +242,45 @@ def test_multiple_sources_for_one_domain_are_deduplicated_and_reasons_aggregate(
         "Used in History",
         "Reserved Today",
     }
+
+
+def test_result_summary_shows_all_deduplicated_associated_codes_in_account_order(app):
+    for code in ("M09", "M10", "M11", "M12", "M13", "M14"):
+        _add_email(code)
+    _, campaign = _add_domain_campaign("all-codes.example")
+    db.session.add_all([
+        CampaignEmailBlock(campaign_id=campaign.id, email_code="M10"),
+        CampaignEmailBlock(campaign_id=campaign.id, email_code="M13"),
+    ])
+    history = CampaignHistory(
+        campaign_id=campaign.id,
+        sequence=2,
+        action_type=ActionType.FOLLOW_UP,
+        action_date=datetime(2026, 1, 2),
+    )
+    db.session.add(history)
+    db.session.flush()
+    db.session.add_all([
+        HistoryEmailUsed(history_id=history.id, email_code="M09"),
+        HistoryEmailUsed(history_id=history.id, email_code="M13"),
+    ])
+    reservation = Reservation(
+        campaign_id=campaign.id,
+        date=TODAY,
+        status=ReservationStatus.RESERVED,
+    )
+    db.session.add(reservation)
+    db.session.flush()
+    db.session.add_all([
+        ReservationEmailLink(reservation_id=reservation.id, email_code="M11"),
+        ReservationEmailLink(reservation_id=reservation.id, email_code="M13"),
+        ReservationEmailLink(reservation_id=reservation.id, email_code="M14"),
+    ])
+    db.session.commit()
+
+    result = _group(search_email_code("M13", business_today=TODAY), "active")["results"][0]
+
+    assert result["email_codes"] == ["M09", "M10", "M11", "M13", "M14"]
 
 
 def test_older_campaign_history_is_found_in_current_domain_group(app):
@@ -346,7 +386,7 @@ def test_search_page_renders_exact_query_and_no_result_state(client):
     assert 'href="/email-code-search"' in html
 
 
-def test_search_page_renders_grouped_source_reasons(client, app):
+def test_search_page_renders_grouped_code_summary_without_match_reasons(client, app):
     with app.app_context():
         _add_email("M13")
         _, campaign = _add_domain_campaign("rendered-match.example")
@@ -358,7 +398,10 @@ def test_search_page_renders_grouped_source_reasons(client, app):
 
     assert response.status_code == 200
     assert "Active Campaigns" in html
-    assert "Assigned Email Block" in html
+    assert "Email Accounts Used" in html
+    assert "Match reasons" not in html
+    assert "Assigned Email Block" not in html
+    assert "M13" in html
     assert "rendered-match.example" in html
     assert "Dormant / Ready" in html
 

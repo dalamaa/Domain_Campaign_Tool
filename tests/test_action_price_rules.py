@@ -75,6 +75,52 @@ def test_new_follow_up_uses_current_price_without_manual_entry(client, campaign,
         assert current_campaign.current_price == 650
 
 
+def test_new_first_follow_up_uses_current_price_without_manual_entry(client, campaign, app):
+    campaign_id = _campaign_id(campaign)
+    _set_current_price(app, campaign_id, 650)
+    _add_history(
+        app,
+        campaign_id,
+        sequence=1,
+        action_type=ActionType.FIRST_OUTREACH,
+        price_before=0,
+        price_after=600,
+    )
+
+    response = _post_action(client, campaign_id, "FIRST_FOLLOW_UP")
+
+    assert response.status_code == 201
+    with app.app_context():
+        history = CampaignHistory.query.filter_by(
+            campaign_id=campaign_id,
+            sequence=2,
+        ).one()
+        current_campaign = db.session.get(Campaign, campaign_id)
+        assert history.price_before == 650
+        assert history.price_after == 650
+        assert current_campaign.current_price == 650
+
+
+def test_first_follow_up_ignores_client_submitted_price_change(client, campaign, app):
+    campaign_id = _campaign_id(campaign)
+    _set_current_price(app, campaign_id, 650)
+
+    response = _post_action(
+        client,
+        campaign_id,
+        "FIRST_FOLLOW_UP",
+        price_after=900,
+    )
+
+    assert response.status_code == 201
+    with app.app_context():
+        history = CampaignHistory.query.filter_by(campaign_id=campaign_id).one()
+        current_campaign = db.session.get(Campaign, campaign_id)
+        assert history.price_before == 650
+        assert history.price_after == 650
+        assert current_campaign.current_price == 650
+
+
 def test_follow_up_ignores_client_submitted_price_change(client, campaign, app):
     campaign_id = _campaign_id(campaign)
     _set_current_price(app, campaign_id, 650)
