@@ -1,6 +1,11 @@
 {% extends 'base.html' %} {% block content %}
 <div class="email-management">
-  <h2>Email Accounts Management</h2>
+  <header class="page-header email-accounts-page-header">
+    <div>
+      <h1>Email Accounts Management</h1>
+      <p>Maintain the ordered email profiles available for outreach.</p>
+    </div>
+  </header>
   <div class="action-bar" id="action-bar">
     <button class="btn btn-primary" type="button" onclick="openAddModal()">+ Add Account</button>
     <button class="btn btn-primary" id="bulk-add-btn" type="button" onclick="openBulkAddModal()">Bulk Add Accounts</button>
